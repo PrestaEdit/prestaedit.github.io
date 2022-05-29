@@ -1,6 +1,6 @@
 module.exports = {
   title: 'PrestaEdit | Blog',
-  base: '/prestaedit.github.io/',
+  base: 'https://prestaedit.github.io/',
   description: 'PrestaEdit | Blog',
   logo: './assets/img/logo.png',
   theme: require.resolve('../../'),
