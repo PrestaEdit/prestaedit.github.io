@@ -13,7 +13,7 @@ export default {
 </script>
 
 <style lang="stylus" scoped>
-@import url('https://fonts.googleapis.com/css?family=Merriweather:400,400i,700&display=swap')
+@import url('https://fonts.googleapis.com/css?family=Proxima+Nova:400,400i,700&display=swap')
 .blog-tags
   min-height:500px
 .blog-tag
