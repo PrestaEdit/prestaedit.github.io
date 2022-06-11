@@ -5,7 +5,7 @@ module.exports = {
   logo: './assets/img/logo.jpg',
   theme: require.resolve('../../'),
   themeConfig: {
-  authors: [
+    authors: [
       {
       name: 'PrestaEdit',
       avatar: '/assets/img/avatar.png',
@@ -13,9 +13,6 @@ module.exports = {
       linktext: 'Suivre',
       },
     ],
-    sitemap: {
-      hostname: 'https://prestaedit.github.io/'
-    },
     globalPagination: {
       lengthPerPage: 6,
       prevText: 'Précédent',
@@ -24,4 +21,7 @@ module.exports = {
     dateFormat: 'LL',
     smoothScroll: true
   },
+  plugins: [
+    "@kawarimidoll/tailwind",
+  ],
 }

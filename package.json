@@ -48,9 +48,10 @@
     ]
   },
   "dependencies": {
+    "@kawarimidoll/vuepress-plugin-tailwind": "^2.0.0",
     "@vuepress/plugin-blog": "^1.9.2",
     "@vuepress/plugin-medium-zoom": "1.0.0",
-    "@vuepress/plugin-nprogress": "1.0.0",
+    "@vuepress/plugin-nprogress": "^1.9.7",
     "@vuepress/plugin-pwa": "1.0.0",
     "@vuepress/plugin-search": "1.0.0",
     "bootstrap-4-stylus": "^1.0.7",

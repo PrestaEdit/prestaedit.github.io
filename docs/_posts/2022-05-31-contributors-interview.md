@@ -5,6 +5,7 @@ tags:
   - annonce
 author: PrestaEdit
 summary: Billet de blog publié en 2013 sur PrestaShop.
+featuredimg: 'https://prestaedit.github.io/head/2022-05-31-contributors-interview.png'
 ---
 
 ## Introduction

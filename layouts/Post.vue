@@ -21,18 +21,7 @@
         </div>
       </div>
 
-      <div
-        v-if="$frontmatter.featuredimg"
-        class="row justify-content-center text-center mt-4 mb-40"
-      >
-        <div class="col-md-9">
-          <img class="featuredimg" :src="$frontmatter.featuredimg" />
-        </div>
-      </div>
-      <div
-        v-else
-        class="row justify-content-center text-center mt-4 mb-20"
-      ></div>
+      <div class="row justify-content-center text-center mt-2 mb-2"></div>
 
       <div class="row justify-content-center">
         <div class="col-md-8">
@@ -50,6 +39,12 @@
       </div>
     </div>
 
+    <div class="row justify-content-center">
+      <div class="col-md-9">
+        <Book />
+      </div>
+    </div>
+
     <Toc />
   </div>
 </template>
@@ -59,11 +54,13 @@ import Toc from '@theme/components/Toc.vue'
 import PostMeta from '@theme/components/PostMeta.vue'
 import Avatar from '@theme/components/Avatar.vue'
 import { Comment } from '@vuepress/plugin-blog/lib/client/components'
+import Book from '@theme/components/Book.vue'
 
 export default {
   components: {
     Toc,
     PostMeta,
+    Book,
     //Avatar,
     Comment,
     Newsletter: () => import('@theme/components/Newsletter.vue'),
