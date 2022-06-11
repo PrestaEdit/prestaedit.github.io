@@ -1,6 +1,6 @@
 <template>
   <div class="row justify-content-center">
-    <div class="blog-tags col-md-10 text-center mt-5">
+    <div class="blog-tags col-md-10 text-center mt-5 space-x-4">
       <BlogTag v-for="tag in tags" :key="tag.name" :tag="tag" />
     </div>
   </div>
