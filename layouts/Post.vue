@@ -39,11 +39,13 @@
       </div>
     </div>
 
-    <div class="row justify-content-center">
+    <!--
+      <div class="row justify-content-center">
       <div class="col-md-9">
         <Book />
       </div>
     </div>
+    -->
 
     <Toc />
   </div>
@@ -54,13 +56,13 @@ import Toc from '@theme/components/Toc.vue'
 import PostMeta from '@theme/components/PostMeta.vue'
 import Avatar from '@theme/components/Avatar.vue'
 import { Comment } from '@vuepress/plugin-blog/lib/client/components'
-import Book from '@theme/components/Book.vue'
+//import Book from '@theme/components/Book.vue'
 
 export default {
   components: {
     Toc,
     PostMeta,
-    Book,
+    //Book,
     //Avatar,
     Comment,
     Newsletter: () => import('@theme/components/Newsletter.vue'),
