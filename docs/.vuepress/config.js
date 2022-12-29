@@ -29,7 +29,7 @@ module.exports = {
       repo: 'prestaedit.github.io',
       // The clientId & clientSecret introduced in OAuth2 spec.
       clientId: '43fe6e41a3fa438c8387',
-      clientSecret: 'Your clientSecret',
+      clientSecret: '61e5fbaa4e0c7bff568363dfa061cc35ee5c7a89',
     },
   },
   plugins: [
