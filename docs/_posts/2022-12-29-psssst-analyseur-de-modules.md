@@ -12,7 +12,7 @@ summary: Découverte d'un outil léger, en CLI, permettant l'analyse de modules.
 
 ## Préambule
 
-La toute première version de cet outil est née en avril 2018. On l'a doit à [@mickaelandrieu](https://github.com/mickaelandrieu).
+La toute première version de cet outil est née en avril 2018. On la doit à [@mickaelandrieu](https://github.com/mickaelandrieu).
 
 Fin octobre 2021, PrestaShop devient propriétaire du repository et la compatibilité avec PHP 8 est réalisée.
 <br/>
@@ -39,7 +39,7 @@ composer install
 
 ## Utilisation
 
-<Warning title="Il vous sera sans nuls doutes nécessaires d'octroyer les droits d'éxécution sur l'invite de commande, représentée par le fichier pssst, au préalable." />
+<Warning title="Il vous sera sans nuls doutes nécessaires d'octroyer les droits d'exécution sur l'invite de commande, représentée par le fichier pssst, au préalable." />
 
 ```
 cd psssst
