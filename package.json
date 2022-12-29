@@ -50,7 +50,7 @@
   "dependencies": {
     "@kawarimidoll/vuepress-plugin-tailwind": "^2.0.0",
     "@vuepress/plugin-blog": "^1.9.2",
-    "@vuepress/plugin-medium-zoom": "1.0.0",
+    "@vuepress/plugin-medium-zoom": "^1.9.7",
     "@vuepress/plugin-nprogress": "^1.9.7",
     "@vuepress/plugin-pwa": "1.0.0",
     "@vuepress/plugin-search": "1.0.0",
@@ -74,6 +74,7 @@
     "jest": "^24.9.0",
     "lint-staged": "^9.5.0",
     "sort-package-json": "^1.31.0",
+    "vssue": "^1.4.8",
     "vuepress": "^1.2.0"
   },
   "peerDependencies": {

@@ -1,5 +1,5 @@
 module.exports = {
-  title: '| Blog',
+  title: 'Blog',
   base: '/',
   description: 'PrestaEdit | Blog',
   logo: './assets/img/logo.png',
@@ -19,9 +19,22 @@ module.exports = {
       nextText: 'Suivant'
     },
     dateFormat: 'LL',
-    smoothScroll: true
+    smoothScroll: true,
+    comment: {
+      // Which service you'd like to use
+      service: 'vssue',
+      // The owner's name of repository to store the issues and comments.
+      owner: 'PrestaEdit',
+      // The name of repository to store the issues and comments.
+      repo: 'prestaedit.github.io',
+      // The clientId & clientSecret introduced in OAuth2 spec.
+      clientId: '43fe6e41a3fa438c8387',
+      clientSecret: 'Your clientSecret',
+    },
   },
   plugins: [
+    '@vuepress/last-updated',
+    '@vuepress/medium-zoom',
     "@kawarimidoll/tailwind",
   ],
 }
