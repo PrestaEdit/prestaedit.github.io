@@ -4,7 +4,7 @@ date: 2022-12-29
 tags:
   - outils
 author: PrestaEdit
-featuredimg: 'https://prestaedit.github.io/public/head/2022-12-29-psssst-analyseur-de-modules.png'
+featuredimg: 'https://prestaedit.github.io/head/2022-12-29-psssst-analyseur-de-modules.png'
 summary: Découverte d'un outil léger, en CLI, permettant l'analyse de modules.
 ---
 
