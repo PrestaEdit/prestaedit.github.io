@@ -3,3 +3,5 @@ node_modules
 dist
 yarn.lock
 *.afdesign
+.DS_Store
+.idea/*
