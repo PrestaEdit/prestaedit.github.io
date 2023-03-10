@@ -31,6 +31,9 @@ module.exports = {
       clientId: '43fe6e41a3fa438c8387',
       clientSecret: '61e5fbaa4e0c7bff568363dfa061cc35ee5c7a89',
     },
+    feed: {
+      canonical_base: 'https://prestaedit.github.io/',
+    },
   },
   plugins: [
     '@vuepress/last-updated',
