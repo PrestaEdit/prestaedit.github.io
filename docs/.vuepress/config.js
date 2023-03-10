@@ -39,5 +39,10 @@ module.exports = {
     '@vuepress/last-updated',
     '@vuepress/medium-zoom',
     "@kawarimidoll/tailwind",
+    ['vuepress-plugin-code-copy', {
+      align: 'top',
+      backgroundTransition: false,
+      staticIcon: true,
+    }]
   ],
 }
