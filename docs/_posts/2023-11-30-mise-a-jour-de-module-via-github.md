@@ -5,7 +5,7 @@ tags:
   - outils
   - prestashop-dev-conference
 author: PrestaEdit
-featuredimg: 'https://prestaedit.github.io/head/2023-11-30-mise-a-jour-de-module-via-github'
+featuredimg: 'https://prestaedit.github.io/head/2023-11-30-mise-a-jour-de-module-via-github.png'
 summary: Voyons comment publier un module open-source sous PrestaShop 8 avec détection de mise à jour intégrée.
 ---
 
