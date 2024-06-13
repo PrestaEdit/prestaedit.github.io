@@ -2,10 +2,10 @@
 title: "Interview contributeur : Jonathan Danse"
 date: 2022-06-01
 tags:
-  - annonce
+  - Annonce
 author: PrestaEdit
 featuredimg: 'https://prestaedit.github.io/head/2022-06-01-contributors-interview.png'
-summary: "Interview publiée sur le blog développeur de PrestaShop."
+summary: "Interview publiée sur le blog développeur de PrestaShop"
 ---
 
 ## Introduction

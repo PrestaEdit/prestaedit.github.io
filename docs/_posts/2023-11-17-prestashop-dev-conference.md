@@ -2,11 +2,11 @@
 title: PrestaShop Developer Conference
 date: 2023-11-17
 tags:
-  - events
-  - prestashop-dev-conference
+  - Events
+  - Prestashop Dev Conference
 author: PrestaEdit
 featuredimg: 'https://prestaedit.github.io/head/2023-11-17-prestashop-dev-conference.png'
-summary: La première PrestaShop Developer Conference se tiendra le 30 novembre 2023, à Paris.
+summary: La première PrestaShop Developer Conference se tiendra le 30 novembre 2023, à Paris
 ---
 
 ## Préambule

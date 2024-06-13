@@ -2,11 +2,11 @@
 title: Mise à jour de module via GitHub - Présentation
 date: 2023-12-05
 tags:
-  - outils
-  - prestashop-dev-conference
+  - Outils
+  - Prestashop Dev Conference
 author: PrestaEdit
 featuredimg: 'https://prestaedit.github.io/head/2023-11-30-mise-a-jour-de-module-via-github.png'
-summary: Slides de présentation.
+summary: Slides de présentation
 ---
 
 ## Préambule

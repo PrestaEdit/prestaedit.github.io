@@ -46,7 +46,7 @@
               }}</NavLink>
             </h2>
             <p itemprop="description">
-              {{ page.frontmatter.summary || page.summary }}
+              <em>{{ page.frontmatter.summary || page.summary }}</em>
             </p>
           </div>
           <div class="meta-bottom mt-auto">

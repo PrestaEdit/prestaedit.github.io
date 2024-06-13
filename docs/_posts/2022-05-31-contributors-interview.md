@@ -2,9 +2,9 @@
 title: PrestaShop s'envole sur GitHub
 date: 2022-05-31
 tags:
-  - annonce
+  - Annonce
 author: PrestaEdit
-summary: Billet de blog publié en 2013 sur PrestaShop.
+summary: Billet de blog publié en 2013 sur PrestaShop
 featuredimg: 'https://prestaedit.github.io/head/2022-05-31-contributors-interview.png'
 ---
 

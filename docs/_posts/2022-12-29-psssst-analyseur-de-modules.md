@@ -2,10 +2,10 @@
 title: psssst, analyseur de modules
 date: 2022-12-29
 tags:
-  - outils
+  - Outils
 author: PrestaEdit
 featuredimg: 'https://prestaedit.github.io/head/2022-12-29-psssst-analyseur-de-modules.png'
-summary: Découverte d'un outil léger, en CLI, permettant l'analyse de modules.
+summary: Découverte d'un outil léger, en CLI, permettant l'analyse de modules
 ---
 
 <Info title="Nécessite au minimum une version de PHP 7.1.3" />

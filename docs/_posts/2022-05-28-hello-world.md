@@ -2,7 +2,7 @@
 title: Hello, World
 date: 2022-05-28
 tags:
-  - annonce
+  - Annonce
 author: PrestaEdit
 featuredimg: 'https://prestaedit.github.io/head/2022-05-28-hello-world.png'
 summary: Lancement du blog.

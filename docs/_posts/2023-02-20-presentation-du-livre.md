@@ -2,9 +2,9 @@
 title: Présentation du livre "Développez avec PHP pour PrestaShop"
 date: 2023-02-20
 tags:
-  - annonce
+  - Annonce
 author: PrestaEdit
-summary: Ce 1er février 2023, le livre "Développez avec PHP pour PrestaShop" est sorti aux Editions Eni.
+summary: Ce 1er février 2023, le livre "Développez avec PHP pour PrestaShop" est sorti aux Editions Eni
 featuredimg: 'https://prestaedit.github.io/head/2023-02-20-presentation-du-livre.png'
 ---
 
