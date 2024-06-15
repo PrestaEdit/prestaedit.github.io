@@ -289,7 +289,7 @@ Le format de la colletion est au format **OpenAPI**.
 
 Vous pourrez trouver le module exemple sur [ce lien](https://github.com/PrestaShop/example-modules/tree/master/api_module) ainsi que le module de ressources sur [ce lien](https://github.com/PrestaShop/ps_apiresources).
 
-<Danger title="14 juin, 20:15 : au moment d'écrire cet article, il ne m'a pas été possible de vérifier ce point. Lorsqu'il m'aura été permis d'activer une nouvelle ressource, je ferais une mise à jour de l'article."/>
+<img :src="$withBase('/posts/2024-06-14-prestasho9-admin-api/13.png')" alt="Capture">
 
 ## Notes
 
