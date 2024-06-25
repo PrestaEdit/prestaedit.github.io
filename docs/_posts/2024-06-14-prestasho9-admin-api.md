@@ -21,7 +21,7 @@ La **nouvelle API** - *nommée Api d'administration (Admin API)* - est l'une d'e
 
 Cette version majeure voit sa dépendance principale obtenir une mise à jour de taille : Symfony passe de la version 4.4 à la version **6.4**.
 
-Dans la foulée, la version de API Platform utilisée passe de la version 2.7.6 à la version **3.2.13**.
+Dans la foulée, la version de API Platform utilisée passe de la version 2.7.6 à la version **3.3.6** (*3.2.12 au moment de la sortie de l'alpha.1*).
 
 Cette a été annoncée pour la première fois, durant un [Live Update](https://youtu.be/jzKBQM3fprY?t=1341), le **21 juin 2023** et une [présentation plus fonctionnelle](https://youtu.be/7CQ2Sg-v4XQ?t=1216) a été réalisée **fin décembre 2023**.
 
