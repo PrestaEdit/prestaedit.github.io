@@ -99,6 +99,8 @@ La question que beaucoup se pose, développeurs comme marchands, est de savoir �
 Toutefois, mes prédictions vont sur le mois de **novembre 2024**.
 Une mise à jour de cet article pourrait survenir en cas de changement.
 
+<Warning title="Edit du 22 octobre 2024 : une beta d'ici novembre pour une version de production en janvier 2025." />
+
 ## Liens
 
 Retrouvez l'annonce sur le Build ["PrestaShop 9 Alpha 1 Is Available!"](https://build.prestashop-project.org/news/2024/prestashop-9-alpha1-available/).
