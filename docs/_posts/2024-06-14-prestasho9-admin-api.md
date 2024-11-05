@@ -13,6 +13,8 @@ summary: "Tour d'horizon et tutoriel relatif à la nouvelle API de PrestaShop"
 
 Vous pourrez trouver l'article original sur [ce lien](https://build.prestashop-project.org/news/2024/meet-prestashop9-api/)
 
+<Warning title="Mis à jour le 06 novembre 2024." />
+
 ## Préambule
 
 A la suite de la [sortie de la version 9 (Alpha.1)](https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/) de PrestaShop, de nouvelles fonctionnalités font leur apparition.
@@ -298,3 +300,12 @@ Lorsque vous réaliserez vos tests sur l'API d'administration offerte dans les v
 Afin de vous rassurez, sachez qu'il ne sera **pas nécessaire de réaliser une mise à jour** de PrestaShop - *et donc d'attendre une mise à jour de version* - pour **bénéficier de nouveaux endpoints**.
 
 Ceux-ci sont définis par l'application du module `ps_apiresources`.
+
+<Warning title="Certains points de terminaison sont masqués car marqués comme expérimenteaux. Afin de les rendre disponible, vous devrez cocher l'option Admin API - Activer les points de terminaison expérimentaux dans le menu Fonctionnalités nouvelles et expérimentales." />
+
+## Liens
+
+Désormais, la documentation dédiée aux développeurs sous PrestaShop regorge d'un [chapitre entier](https://devdocs.prestashop-project.org/9/admin-api/) sur cette nouvelle fonctionnalité.
+
+Vous trouverez également une [liste des routes disponibles](https://devdocs.prestashop-project.org/9/admin-api/swagger-doc/) mise à jour automatiquement par le biais d'un export de la commande `./bin/console prestashop:generate:apidoc`.
+Toutes les nouvelles routes ajoutées au module seront automatiquement visibles dans la documentation.
