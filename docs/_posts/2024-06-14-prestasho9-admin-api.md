@@ -293,6 +293,8 @@ Vous pourrez trouver le module exemple sur [ce lien](https://github.com/PrestaSh
 
 <img :src="$withBase('/posts/2024-06-14-prestasho9-admin-api/13.png')" alt="Capture">
 
+Vous pourrez trouver le module présenté lors de la PrestaShop Developer Conference sur [ce lien](https://github.com/PrestaEdit/apiexample).
+
 ## Notes
 
 Lorsque vous réaliserez vos tests sur l'API d'administration offerte dans les versions 9 de PrestaShop, vous pourriez être déstabilisé par le nombre de ressources disponibles.
