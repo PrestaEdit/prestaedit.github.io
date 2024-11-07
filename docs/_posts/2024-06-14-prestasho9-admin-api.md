@@ -13,6 +13,8 @@ summary: "Tour d'horizon et tutoriel relatif à la nouvelle API de PrestaShop"
 
 Vous pourrez trouver l'article original sur [ce lien](https://build.prestashop-project.org/news/2024/meet-prestashop9-api/)
 
+<Warning title="Mis à jour le 06 novembre 2024." />
+
 ## Préambule
 
 A la suite de la [sortie de la version 9 (Alpha.1)](https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/) de PrestaShop, de nouvelles fonctionnalités font leur apparition.
@@ -69,7 +71,7 @@ Celui-ci vous est indiquer dans le message de confirmation.
 
 ## Octroi des informations d'identification du client
 
-Désormais, vous pouvez réaliser une connection à l'API.
+Désormais, vous pouvez réaliser une connexion à l'API.
 
 Afin de pouvoir utiliser les périmètres d'applications de notre API via les endpoints prévus à cet effet, nous devons tout d'abord obtenir le **jeton d'accès**.
 
@@ -95,7 +97,7 @@ En guise de réponse, vous obtiendrez un JSON mentionnant le jeton d'accès.
 
 <Warning title="Lorsque vous travaillez en local, dans un environnement non sécurisé, vous otbiendrez l'erreur suivante : Use HTTPS response." />
 
-Vous pouvez forcer la désactivation de cette sécurité en désactivation l'option **Forcer la sécurité en mode débogage**. Cette option est visible lorsque le mode debug est activé.
+Vous pouvez forcer la désactivation de cette sécurité en désactivation l'option **Forcer la sécurité en mode déboggage**. Cette option est visible lorsque le mode debug est activé.
 
 ### Bearer Token
 
@@ -111,7 +113,7 @@ Le jeton est de type **Json Web Token** (JWT) signé avec une clé secrète. Vou
 
 ## Serveur d'autorisation
 
-Le serveur d'autorisation est reponsable de l'adresse des jetons d'accès ainsi que de la validation des clients et des périmètres d'application qui leurs sont attribués.
+Le serveur d'autorisation est responsable de l'adresse des jetons d'accès ainsi que de la validation des clients et des périmètres d'application qui leurs sont attribués.
 
 Dans l'approche PrestaShop, le serveur d'autorisation est **construit dans l'API elle-même**.
 
@@ -275,7 +277,7 @@ Au niveau de la section "Liste des ressources disponibles", nous avons vu qu'il 
 
 Tandis que nous utilisons le format **HTML** pour visualiser aisément les différents types de ressources, nous pourrons utiliser le format **JSON** pour réaliser un i**mport de la collection** de ressources dans l'application utilisée pour effectuer les requêtes (*Postman*, *Insomnia*, ...).
 
-Le format de la colletion est au format **OpenAPI**.
+Le format de la collection est au format **OpenAPI**.
 
 <img :src="$withBase('/posts/2024-06-14-prestasho9-admin-api/10.png')" alt="Capture">
 
@@ -298,3 +300,12 @@ Lorsque vous réaliserez vos tests sur l'API d'administration offerte dans les v
 Afin de vous rassurez, sachez qu'il ne sera **pas nécessaire de réaliser une mise à jour** de PrestaShop - *et donc d'attendre une mise à jour de version* - pour **bénéficier de nouveaux endpoints**.
 
 Ceux-ci sont définis par l'application du module `ps_apiresources`.
+
+<Warning title="Certains points de terminaison sont masqués car marqués comme expérimenteaux. Afin de les rendre disponible, vous devrez cocher l'option Admin API - Activer les points de terminaison expérimentaux dans le menu Fonctionnalités nouvelles et expérimentales." />
+
+## Liens
+
+Désormais, la documentation dédiée aux développeurs sous PrestaShop regorge d'un [chapitre entier](https://devdocs.prestashop-project.org/9/admin-api/) sur cette nouvelle fonctionnalité.
+
+Vous trouverez également une [liste des routes disponibles](https://devdocs.prestashop-project.org/9/admin-api/swagger-doc/) mise à jour automatiquement par le biais d'un export de la commande `./bin/console prestashop:generate:apidoc`.
+Toutes les nouvelles routes ajoutées au module seront automatiquement visibles dans la documentation.
