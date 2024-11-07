@@ -218,7 +218,7 @@ Vous venez de relancer le job et l'erreur n'a pas disparue ?!
 
 *Oups, je vous ai menti.*
 
-En réalité, PhpStan - *bien qu'il connaissance la valeur de la constante _PS_VERSION_* - **n'est pas en mesure d'interpréter la conditionnelle** au même titre qu'il ne sait pas que vos méthodes ne sont jamais appelées.
+En réalité, PhpStan - *bien qu'il connaisse la valeur de la constante _PS_VERSION_* - **n'est pas en mesure d'interpréter la conditionnelle** au même titre qu'il ne sait pas que vos méthodes ne sont jamais appelées.
 
 De ce fait, l'analyse de code statique retournera toujours l'erreur rencontrée.
 
@@ -401,7 +401,7 @@ Lors de chaque pull request effectuée sur le dépôt ou via un lancement automa
 
 Lors du développement d'un module comme lors de tout développement, vous n'allez pas forcément pousser les modifications sur git à chaque fonction.
 
-Dès lors, le workflow GitHub n'étant activé que lors d'une poussée de code et sur le code disponible dans le dépôt au moment de son execution, vous ne pourriez pas visualiser les problématiques **en cours de développement**.
+Dès lors, le workflow GitHub n'étant activé que lors d'une poussée de code et sur le code disponible dans le dépôt au moment de son exécution, vous ne pourriez pas visualiser les problématiques **en cours de développement**.
 
 Pour ce faire, vous pouvez utiliser [nektos/act, "Run your GitHub Actions locally"](https://nektosact.com/) pour utiliser un runner localement.
 
