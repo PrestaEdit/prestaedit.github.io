@@ -1,0 +1,104 @@
+{
+    "version": "https://jsonfeed.org/version/1",
+    "title": "Blog",
+    "home_page_url": "https://prestaedit.github.io/",
+    "feed_url": "https://prestaedit.github.io/feed.json",
+    "description": "PrestaEdit | Blog",
+    "items": [
+        {
+            "id": "https://prestaedit.github.io/2022/05/28/hello-world/",
+            "url": "https://prestaedit.github.io/2022/05/28/hello-world/",
+            "title": "Hello, World",
+            "summary": "Lancement du blog.",
+            "date_modified": "2022-05-28T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2022/05/31/contributors-interview/",
+            "url": "https://prestaedit.github.io/2022/05/31/contributors-interview/",
+            "title": "PrestaShop s'envole sur GitHub",
+            "summary": "Billet de blog publié en 2013 sur PrestaShop",
+            "image": "https://prestaedit.github.io/$withBase(",
+            "date_modified": "2022-05-31T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2022/06/01/contributors-interview/",
+            "url": "https://prestaedit.github.io/2022/06/01/contributors-interview/",
+            "title": "Interview contributeur : Jonathan Danse",
+            "summary": "Interview publiée sur le blog développeur de PrestaShop",
+            "date_modified": "2022-06-01T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2023/02/20/presentation-du-livre/",
+            "url": "https://prestaedit.github.io/2023/02/20/presentation-du-livre/",
+            "title": "Présentation du livre \"Développez avec PHP pour PrestaShop\"",
+            "summary": "Ce 1er février 2023, le livre \"Développez avec PHP pour PrestaShop\" est sorti aux Editions Eni",
+            "date_modified": "2023-02-20T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2022/12/29/psssst-analyseur-de-modules/",
+            "url": "https://prestaedit.github.io/2022/12/29/psssst-analyseur-de-modules/",
+            "title": "psssst, analyseur de modules",
+            "summary": "Découverte d'un outil léger, en CLI, permettant l'analyse de modules",
+            "image": "https://prestaedit.github.io/$withBase(",
+            "date_modified": "2022-12-29T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2023/11/17/prestashop-dev-conference/",
+            "url": "https://prestaedit.github.io/2023/11/17/prestashop-dev-conference/",
+            "title": "PrestaShop Developer Conference",
+            "summary": "La première PrestaShop Developer Conference se tiendra le 30 novembre 2023, à Paris",
+            "date_modified": "2023-11-17T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2023/12/05/mise-a-jour-de-module-via-github-slides/",
+            "url": "https://prestaedit.github.io/2023/12/05/mise-a-jour-de-module-via-github-slides/",
+            "title": "Mise à jour de module via GitHub - Présentation",
+            "summary": "Slides de présentation",
+            "date_modified": "2023-12-05T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2023/11/30/mise-a-jour-de-module-via-github/",
+            "url": "https://prestaedit.github.io/2023/11/30/mise-a-jour-de-module-via-github/",
+            "title": "Mise à jour de module via GitHub",
+            "summary": "Voyons comment publier un module open-source sous PrestaShop 8 avec détection de mise à jour intégrée",
+            "date_modified": "2023-11-30T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/",
+            "url": "https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/",
+            "title": "PrestaShop 9 : alpha.1",
+            "summary": "Sortie de PrestaShop 9.0.0-alpha.1",
+            "date_modified": "2024-06-13T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2024/06/14/prestasho9-admin-api/",
+            "url": "https://prestaedit.github.io/2024/06/14/prestasho9-admin-api/",
+            "title": "PrestaShop 9 : Api d'administration (Admin API)",
+            "summary": "Tour d'horizon et tutoriel relatif à la nouvelle API de PrestaShop",
+            "image": "https://prestaedit.github.io/$withBase(",
+            "date_modified": "2024-06-14T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2024/11/06/tester-son-module-via-ci-cd/",
+            "url": "https://prestaedit.github.io/2024/11/06/tester-son-module-via-ci-cd/",
+            "title": "Tester et analyser ses modules automatiquement",
+            "summary": "Workflows GitHub",
+            "image": "https://prestaedit.github.io/$withBase(",
+            "date_modified": "2024-11-06T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2024/11/07/prestasho9-admin-api/",
+            "url": "https://prestaedit.github.io/2024/11/07/prestasho9-admin-api/",
+            "title": "PrestaShop 9 : Api d'administration (Admin API) - Présentation",
+            "summary": "Slides de présentation",
+            "date_modified": "2024-11-07T00:00:00.000Z"
+        },
+        {
+            "id": "https://prestaedit.github.io/2024/11/07/tester-son-module-via-ci-cd-slides/",
+            "url": "https://prestaedit.github.io/2024/11/07/tester-son-module-via-ci-cd-slides/",
+            "title": "Tester et analyser ses modules automatiquement - Présentation",
+            "summary": "Slides de présentation",
+            "date_modified": "2024-11-07T00:00:00.000Z"
+        }
+    ]
+}

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+        <title>Blog</title>
+        <link>https://prestaedit.github.io/</link>
+        <description>PrestaEdit | Blog</description>
+        <lastBuildDate>Thu, 07 Nov 2024 11:04:53 GMT</lastBuildDate>
+        <docs>http://blogs.law.harvard.edu/tech/rss</docs>
+        <generator>https://github.com/webmasterish/vuepress-plugin-feed</generator>
+        <atom:link href="https://prestaedit.github.io/feed.atom" rel="self" type="application/rss+xml"/>
+        <item>
+            <title><![CDATA[Hello, World]]></title>
+            <link>https://prestaedit.github.io/2022/05/28/hello-world/</link>
+            <guid>https://prestaedit.github.io/2022/05/28/hello-world/</guid>
+            <pubDate>Sat, 28 May 2022 00:00:00 GMT</pubDate>
+            <description><![CDATA[Lancement du blog.]]></description>
+        </item>
+        <item>
+            <title><![CDATA[PrestaShop s'envole sur GitHub]]></title>
+            <link>https://prestaedit.github.io/2022/05/31/contributors-interview/</link>
+            <guid>https://prestaedit.github.io/2022/05/31/contributors-interview/</guid>
+            <pubDate>Tue, 31 May 2022 00:00:00 GMT</pubDate>
+            <description><![CDATA[Billet de blog publié en 2013 sur PrestaShop]]></description>
+            <enclosure url="https://prestaedit.github.io/$withBase(">
+            </enclosure>
+        </item>
+        <item>
+            <title><![CDATA[Interview contributeur : Jonathan Danse]]></title>
+            <link>https://prestaedit.github.io/2022/06/01/contributors-interview/</link>
+            <guid>https://prestaedit.github.io/2022/06/01/contributors-interview/</guid>
+            <pubDate>Wed, 01 Jun 2022 00:00:00 GMT</pubDate>
+            <description><![CDATA[Interview publiée sur le blog développeur de PrestaShop]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Présentation du livre "Développez avec PHP pour PrestaShop"]]></title>
+            <link>https://prestaedit.github.io/2023/02/20/presentation-du-livre/</link>
+            <guid>https://prestaedit.github.io/2023/02/20/presentation-du-livre/</guid>
+            <pubDate>Mon, 20 Feb 2023 00:00:00 GMT</pubDate>
+            <description><![CDATA[Ce 1er février 2023, le livre "Développez avec PHP pour PrestaShop" est sorti aux Editions Eni]]></description>
+        </item>
+        <item>
+            <title><![CDATA[psssst, analyseur de modules]]></title>
+            <link>https://prestaedit.github.io/2022/12/29/psssst-analyseur-de-modules/</link>
+            <guid>https://prestaedit.github.io/2022/12/29/psssst-analyseur-de-modules/</guid>
+            <pubDate>Thu, 29 Dec 2022 00:00:00 GMT</pubDate>
+            <description><![CDATA[Découverte d'un outil léger, en CLI, permettant l'analyse de modules]]></description>
+            <enclosure url="https://prestaedit.github.io/$withBase(">
+            </enclosure>
+        </item>
+        <item>
+            <title><![CDATA[PrestaShop Developer Conference]]></title>
+            <link>https://prestaedit.github.io/2023/11/17/prestashop-dev-conference/</link>
+            <guid>https://prestaedit.github.io/2023/11/17/prestashop-dev-conference/</guid>
+            <pubDate>Fri, 17 Nov 2023 00:00:00 GMT</pubDate>
+            <description><![CDATA[La première PrestaShop Developer Conference se tiendra le 30 novembre 2023, à Paris]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Mise à jour de module via GitHub - Présentation]]></title>
+            <link>https://prestaedit.github.io/2023/12/05/mise-a-jour-de-module-via-github-slides/</link>
+            <guid>https://prestaedit.github.io/2023/12/05/mise-a-jour-de-module-via-github-slides/</guid>
+            <pubDate>Tue, 05 Dec 2023 00:00:00 GMT</pubDate>
+            <description><![CDATA[Slides de présentation]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Mise à jour de module via GitHub]]></title>
+            <link>https://prestaedit.github.io/2023/11/30/mise-a-jour-de-module-via-github/</link>
+            <guid>https://prestaedit.github.io/2023/11/30/mise-a-jour-de-module-via-github/</guid>
+            <pubDate>Thu, 30 Nov 2023 00:00:00 GMT</pubDate>
+            <description><![CDATA[Voyons comment publier un module open-source sous PrestaShop 8 avec détection de mise à jour intégrée]]></description>
+        </item>
+        <item>
+            <title><![CDATA[PrestaShop 9 : alpha.1]]></title>
+            <link>https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/</link>
+            <guid>https://prestaedit.github.io/2024/06/13/prestashop9-alpha-1/</guid>
+            <pubDate>Thu, 13 Jun 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[Sortie de PrestaShop 9.0.0-alpha.1]]></description>
+        </item>
+        <item>
+            <title><![CDATA[PrestaShop 9 : Api d'administration (Admin API)]]></title>
+            <link>https://prestaedit.github.io/2024/06/14/prestasho9-admin-api/</link>
+            <guid>https://prestaedit.github.io/2024/06/14/prestasho9-admin-api/</guid>
+            <pubDate>Fri, 14 Jun 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[Tour d'horizon et tutoriel relatif à la nouvelle API de PrestaShop]]></description>
+            <enclosure url="https://prestaedit.github.io/$withBase(">
+            </enclosure>
+        </item>
+        <item>
+            <title><![CDATA[Tester et analyser ses modules automatiquement]]></title>
+            <link>https://prestaedit.github.io/2024/11/06/tester-son-module-via-ci-cd/</link>
+            <guid>https://prestaedit.github.io/2024/11/06/tester-son-module-via-ci-cd/</guid>
+            <pubDate>Wed, 06 Nov 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[Workflows GitHub]]></description>
+            <enclosure url="https://prestaedit.github.io/$withBase(">
+            </enclosure>
+        </item>
+        <item>
+            <title><![CDATA[PrestaShop 9 : Api d'administration (Admin API) - Présentation]]></title>
+            <link>https://prestaedit.github.io/2024/11/07/prestasho9-admin-api/</link>
+            <guid>https://prestaedit.github.io/2024/11/07/prestasho9-admin-api/</guid>
+            <pubDate>Thu, 07 Nov 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[Slides de présentation]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Tester et analyser ses modules automatiquement - Présentation]]></title>
+            <link>https://prestaedit.github.io/2024/11/07/tester-son-module-via-ci-cd-slides/</link>
+            <guid>https://prestaedit.github.io/2024/11/07/tester-son-module-via-ci-cd-slides/</guid>
+            <pubDate>Thu, 07 Nov 2024 00:00:00 GMT</pubDate>
+            <description><![CDATA[Slides de présentation]]></description>
+        </item>
+    </channel>
+</rss>
