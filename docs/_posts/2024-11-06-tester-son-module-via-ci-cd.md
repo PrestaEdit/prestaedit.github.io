@@ -108,6 +108,43 @@ docker run --rm --volumes-from ps9-php8 \
        --configuration=/var/www/html/modules/modulenine/tests/phpstan/phpstan-$PS_VERSION.neon
 ```
 
+
+**/tests/phpstan-v9-classic.sh**
+
+<Info title="Mise à jour suite à la publication de PrestaShop 9, le mardi 10 juin 2025." />
+
+<Warning title="L'image Docker de PrestaShop 9 n'étant disponible que sous sa version packagée, l'édition 'Classic'." />
+
+Une explication sur la nomenclature de cette image est à retrouvée sur le [wiki de PrestaShop SA](https://github.com/PrestaShopCorp/prestashop-classic/wiki/Classic-version-numbers).
+
+```sh
+#!/bin/bashAdd commentMore actions
+PS_VERSION=$1
+
+set -e
+
+# Docker images prestashop/prestashop may be used, even if the shop remains uninstalled
+echo "Pull PrestaShop files (Tag ${PS_VERSION})"
+
+docker rm -f ps9-php8 || true
+docker volume rm -f ps9-php8 || true
+
+docker run -tid --rm -v ps9-php8:/var/www/html --name ps9-php8 prestashop/prestashop:$PS_VERSION
+
+docker exec -i ps9-php8 php -v
+
+# Run a container for PHPStan, having access to the module content and PrestaShop sources.
+# This tool is outside the composer.json because of the compatibility with PHP 5.6
+echo "Run PHPStan using phpstan-${PS_VERSION}.neon file"
+
+docker run --rm --volumes-from ps9-php8 \
+       -v $PWD:/var/www/html/modules/modulenine \
+       -e _PS_ROOT_DIR_=/var/www/html \
+       --workdir=/var/www/html/modules/modulenine ghcr.io/phpstan/phpstan:nightly-php8.1 \
+       analyse \
+       --configuration=/var/www/html/modules/modulenine/tests/phpstan/phpstan-$PS_VERSION.neon
+```
+
 Ensuite, nous allons ajouter l'ensemble des fichiers correspondant à une version de PrestaShop testée. Ceux-ci porteront l'extension *.neon*.
 
 Son contenu de base sera le suivant :
@@ -133,11 +170,14 @@ Ce premier fichier de configuration va se charger de définir des constantes uti
 
 Par la suite, nous mettrons en place un workflow testant le module à la fois sous PrestaShop 1.6.1.23, 1.7.8, 8.1.7 et 9.0.0-alpha.1.
 
-Nous aurons donc ces quatre fichiers :
+Nous aurons donc ces différents fichiers :
 - tests/phpstan/phpstan-1.6.1.23.neon
 - tests/phpstan/phpstan-1.7.8.neon
 - tests/phpstan/phpstan-8.1.7.neon
 - tests/phpstan/phpstan-9.0.0-alpha.1.neon
+
+<Info title="Mise à jour suite à la publication de PrestaShop 9, le mardi 10 juin 2025." />
+- tests/phpstan/phpstan-9.0.0-1.0-classic.neon
 
 Tout comme moi, vous auriez l'envie de modifier l'appel des fichiers de configuration de PhpStan que nous écrirons plus tard pour utiliser un seul et unique fichier, puisque le contenu est équivalent.
 
@@ -393,6 +433,62 @@ jobs:
         run: chmod +x ./tests/phpstan-v9.sh && ./tests/phpstan-v9.sh ${{ matrix.presta-versions }}
 ```
 
+<Info title="Mise à jour suite à la publication de PrestaShop 9, le mardi 10 juin 2025." />
+```yml
+name: PHP tests
+on: [workflow_dispatch, pull_request]
+jobs:
+  php-linter:
+    name: PHP Syntax check 7.1 => 8.4
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      [...]
+
+      - name: PHP syntax checker 8.4
+        uses: prestashop/github-action-php-lint/8.4@master
+
+  # Run PHPStan against the module and a PrestaShop release
+  [...]
+
+   phpstan-v9-classic:
+    name: PHPStan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        presta-versions: ["9.0.0-1.0-classic"]
+    steps:
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.1"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Add vendor folder in cache to make next builds faster
+      - name: Cache vendor folder
+        uses: actions/cache@v3
+        with:
+          path: vendor
+          key: php-${{ hashFiles('composer.lock') }}
+
+      # Add composer local folder in cache to make next builds faster
+      - name: Cache composer folder
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache
+          key: php-composer-cache
+
+      - run: composer install
+
+      # Docker images prestashop/prestashop may be used, even if the shop remains uninstalled
+      - name: Execute PHPStan on PrestaShop (Tag ${{ matrix.presta-versions }})
+        run: chmod +x ./tests/phpstan-v9.sh && ./tests/phpstan-v9-classic.sh ${{ matrix.presta-versions }}
+```
+
 Lors de chaque pull request effectuée sur le dépôt ou via un lancement automatique - grâce à l'évènement *workflow_dispatch* -, vous pourrez lancer l'ensemble des jobs définit précédemment.
 
 <Info title="En allant plus loin, vous pourrez remarquer que nous utilisons également une vérification syntaxique pour un ensemble de versions de PHP mais également de PHP CS Fixer.Ces étapes ne faisant pas partie de notre article, nous ne les évoquerons pas plus en détails." />
@@ -452,4 +548,9 @@ Vous pouvez dès lors optez pour modifier votre workflow afin de ne pas utiliser
 
 ```bash
 act -j 'phpstan' --matrix presta-versions:8.1.7
+```
+<Info title="Mise à jour suite à la publication de PrestaShop 9, le mardi 10 juin 2025." />
+
+```bash
+act -j 'phpstan-v9-classic' --matrix presta-versions:9.0.0-1.0-classic
 ```
