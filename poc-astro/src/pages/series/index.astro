@@ -1,8 +1,9 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getCollection } from 'astro:content';
+import { getCollection, render } from 'astro:content';
+import { getPublishedPosts } from '../../lib/posts';
 
-const posts = await getCollection('blog');
+const posts = await getPublishedPosts();
 const map = new Map<string, { count: number; latest: Date; cover?: string }>();
 for (const p of posts) {
   if (!p.data.series) continue;

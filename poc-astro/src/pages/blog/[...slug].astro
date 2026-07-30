@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection, render } from 'astro:content';
+import { getPublishedPosts } from '../../lib/posts';
 import Info from '../../components/Info.astro';
 import Warning from '../../components/Warning.astro';
 import Note from '../../components/Note.astro';
@@ -11,14 +12,14 @@ import TableOfContents from '../../components/TableOfContents.astro';
 const mdxComponents = { Info, Warning, Note, Tip, Danger };
 
 export async function getStaticPaths() {
-  const posts = await getCollection('blog');
+  const posts = await getPublishedPosts();
   return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
 }
 
 const { post } = Astro.props;
 const { Content, headings } = await render(post);
 
-const all = (await getCollection('blog')).sort(
+const all = (await getPublishedPosts()).sort(
   (a, b) => a.data.date.valueOf() - b.data.date.valueOf(),
 );
 const idx = all.findIndex((p) => p.id === post.id);

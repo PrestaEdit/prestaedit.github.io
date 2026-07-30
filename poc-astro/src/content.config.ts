@@ -14,6 +14,7 @@ const blog = defineCollection({
       .optional()
       .transform((v) => v?.replace(/^https:\/\/prestaedit\.github\.io/, '')),
     summary: z.string().optional(),
+    draft: z.boolean().default(false),
   }),
 });
 

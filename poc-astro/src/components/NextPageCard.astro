@@ -1,0 +1,25 @@
+---
+interface Props {
+  href: string;
+  currentPage: number;
+  lastPage: number;
+  remaining: number;
+}
+const { href, currentPage, lastPage, remaining } = Astro.props;
+---
+<a
+  href={href}
+  class="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 p-8 text-center transition hover:border-blue-500 hover:bg-blue-50"
+>
+  <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white transition group-hover:scale-110">
+    <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 5l7 7-7 7"/>
+    </svg>
+  </div>
+  <div>
+    <p class="text-sm font-semibold text-gray-900">Page suivante</p>
+    <p class="mt-1 text-xs text-gray-500">
+      {remaining} article{remaining > 1 ? 's' : ''} de plus · page {currentPage + 1} / {lastPage}
+    </p>
+  </div>
+</a>

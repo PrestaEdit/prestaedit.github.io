@@ -1,12 +1,14 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ArticleCard from '../components/ArticleCard.astro';
+import NextPageCard from '../components/NextPageCard.astro';
 import { getCollection } from 'astro:content';
+import { getPublishedPosts } from '../lib/posts';
 import type { GetStaticPathsOptions } from 'astro';
 
 export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
   const PAGE_SIZE = 12;
-  const all = (await getCollection('blog')).sort(
+  const all = (await getPublishedPosts()).sort(
     (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
   );
 
@@ -95,6 +97,14 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
           seriesTotal={p.seriesTotal}
         />
       ))}
+      {page.url.next && (
+        <NextPageCard
+          href={page.url.next}
+          currentPage={page.currentPage}
+          lastPage={page.lastPage}
+          remaining={page.total - page.end - 1}
+        />
+      )}
     </div>
 
     {page.lastPage > 1 && (
