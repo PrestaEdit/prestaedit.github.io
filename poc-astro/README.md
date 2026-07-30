@@ -38,26 +38,29 @@ npm run build      # génère dist/
 
 ## Déploiement Cloudflare Pages
 
-Le workflow GitHub Actions `.github/workflows/deploy-poc.yml` déploie
-automatiquement sur push `main` et crée des previews par PR.
+Cloudflare Pages est branché directement sur le repo GitHub — il détecte
+les push, build et publie sans intervention.
 
 ### Setup one-shot
 
-1. **Dashboard Cloudflare** → Workers & Pages → Create → Pages → Direct upload
-   Nom du projet : `prestaedit-poc`. Skip la config CI (on utilise notre workflow).
+Dashboard Cloudflare → Workers & Pages → Create → Pages → **Importer un
+référentiel Git existant** → autoriser le repo `PrestaEdit/prestaedit.github.io`.
 
-2. **API token** : My Profile → API Tokens → Create Token → template
-   "Edit Cloudflare Workers" (restreint au compte concerné).
+Config du projet :
 
-3. **Account ID** : sidebar droite du dashboard Workers & Pages.
+| Champ | Valeur |
+|---|---|
+| Nom du projet | `prestaedit-poc` |
+| Branche de production | `main` |
+| Preset de framework | Astro (auto-détecté) |
+| Commande de build | `npm run build` |
+| Répertoire de sortie | `dist` |
+| **Répertoire racine** (avancé) | `poc-astro` |
 
-4. **Secrets GitHub** (Settings → Secrets and variables → Actions) :
-   - `CLOUDFLARE_API_TOKEN` = le token
-   - `CLOUDFLARE_ACCOUNT_ID` = l'account ID
+Save & Deploy → `https://prestaedit-poc.pages.dev` en ~2 min.
 
-5. Push sur `main` → le workflow build + deploy.
-   - Production : `https://prestaedit-poc.pages.dev`
-   - Preview par PR : `https://<commit>.prestaedit-poc.pages.dev` (commentaire auto sur la PR)
+- **Push sur `main`** → build + deploy prod
+- **PR** → preview auto sur `https://<commit>.prestaedit-poc.pages.dev` (commentaire sur la PR)
 
 ## Écrire un article
 
