@@ -97,7 +97,7 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
           seriesTotal={p.seriesTotal}
         />
       ))}
-      {page.url.next && (
+      {isFirstPage && page.url.next && (
         <NextPageCard
           href={page.url.next}
           currentPage={page.currentPage}
