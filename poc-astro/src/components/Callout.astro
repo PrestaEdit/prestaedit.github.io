@@ -1,0 +1,33 @@
+---
+interface Props {
+  variant?: 'info' | 'warning' | 'note' | 'tip' | 'danger';
+  title?: string;
+}
+const { variant = 'info', title } = Astro.props;
+
+const styles = {
+  info:    { border: 'border-blue-200 bg-blue-50',       text: 'text-blue-900',    icon: 'text-blue-600',    label: 'Info' },
+  warning: { border: 'border-amber-200 bg-amber-50',     text: 'text-amber-900',   icon: 'text-amber-600',   label: 'Attention' },
+  note:    { border: 'border-slate-200 bg-slate-50',     text: 'text-slate-800',   icon: 'text-slate-500',   label: 'Note' },
+  tip:     { border: 'border-emerald-200 bg-emerald-50', text: 'text-emerald-900', icon: 'text-emerald-600', label: 'Astuce' },
+  danger:  { border: 'border-red-200 bg-red-50',         text: 'text-red-900',     icon: 'text-red-600',     label: 'Danger' },
+};
+const s = styles[variant];
+
+const icons = {
+  info:    'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z',
+  warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+  note:    'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z',
+  tip:     'M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z',
+  danger:  'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+};
+---
+<aside class={`not-prose my-6 flex gap-3 rounded-xl border ${s.border} px-4 py-3`}>
+  <svg class={`mt-0.5 h-5 w-5 flex-none ${s.icon}`} viewBox="0 0 24 24" fill="currentColor">
+    <path d={icons[variant]} />
+  </svg>
+  <div class={`min-w-0 text-sm leading-6 ${s.text}`}>
+    <span class="font-semibold">{title ?? s.label}</span>
+    <slot />
+  </div>
+</aside>

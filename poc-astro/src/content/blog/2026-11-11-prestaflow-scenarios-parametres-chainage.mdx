@@ -1,0 +1,225 @@
+---
+title: "PrestaFlow : scénarios paramétrés, chaînés, data-driven"
+date: 2026-11-11
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-11-11-prestaflow-scenarios-parametres-chainage.md.png'
+summary: "Trois mécanismes de la lib qu'on n'avait fait qu'effleurer : les Scenario réutilisables avec $params, l'enchaînement de scénarios via store()/retrieve(), et le data-driven testing via ->with()."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Trois mécaniques qu'on n'avait qu'effleurées
+
+L'article d'introduction a montré l'utilisation basique d'un `Scenario` fourni par la lib :
+
+```php
+$this
+->describe('Parcours d\'achat invité')
+->scenario(GuestCheckout::class);
+```
+
+Ce qu'on n'avait pas creusé, ce sont les trois mécaniques qui rendent ce pattern **réutilisable et paramétrable** :
+
+- Les **`$params`** sur un `Scenario`, qui permettent d'écrire ses propres scénarios réutilisables avec des valeurs par défaut surchargeables à l'appel.
+- Le **`store()` / `retrieve()`** sur `TestsSuite`, qui partage un état entre `it` et entre scénarios enchaînés dans la même suite.
+- Le **`->with([...])`**, qui exécute le même `it` (ou la même suite entière) contre plusieurs jeux de données. Data-driven testing sans effort.
+
+Cette annexe couvre les trois, avec des cas d'usage concrets sur `psflowdemo` et les modules qu'on a croisés en chemin.
+
+## Écrire un `Scenario` paramétrable
+
+Un `Scenario` PrestaFlow est une classe qui étend `PrestaFlow\Library\Scenarios\Scenario` et implémente `steps($testSuite)`. Ce que vous ajoutez : une propriété `$params` avec vos valeurs par défaut.
+
+Regardez le vrai code de `GuestCheckout` livré avec la lib :
+
+```php
+class GuestCheckout extends Scenario
+{
+    public $params = [
+        'locale' => 'fr',
+        'productUrl' => '1-1-hummingbird-printed-t-shirt.html',
+        'cartQuantity' => 1,
+        'guestEmail' => 'pf-guest@example.com',
+        'firstName' => 'PrestaFlow',
+        'lastName' => 'Guest',
+        // adresse, téléphone, etc.
+    ];
+
+    public function steps($testSuite)
+    {
+        // ... utilise $this->getParam('productUrl'), etc.
+    }
+}
+```
+
+À l'invocation, on peut passer un tableau qui **écrase** les défauts, sans avoir à toucher au Scenario :
+
+```php
+$this
+->describe('Achat invité anglais avec deux exemplaires')
+->scenario(GuestCheckout::class, [
+    'locale' => 'en',
+    'cartQuantity' => 2,
+    'guestEmail' => 'qa+' . time() . '@example.test',
+]);
+```
+
+Trois clefs surchargées, tout le reste reprend les défauts du Scenario. Aucun code dupliqué, l'intention métier tient en cinq lignes.
+
+## Un `Scenario` maison pour `psflowdemo`
+
+Reprenons le fil rouge. Créons un `Scenario` réutilisable qui met à jour le titre du bloc, avec le titre en paramètre :
+
+```php
+<?php
+
+namespace Tests\Scenarios;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Scenarios\Scenario;
+
+class UpdatePsflowdemoTitle extends Scenario
+{
+    public $params = [
+        'title' => 'Bienvenue par défaut',
+    ];
+
+    public function steps($testSuite)
+    {
+        $testSuite->importPage('BackOffice\Login');
+        $testSuite->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+        $testSuite->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
+
+        extract($testSuite->pages);
+
+        $testSuite
+        ->it('login BO', function () use ($backOfficeLoginPage) {
+            $backOfficeLoginPage->goToPage('login');
+            $backOfficeLoginPage->login();
+        })
+        ->it('met à jour le titre', function () use ($modulesPsflowdemoConfigurationPage) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+            $modulesPsflowdemoConfigurationPage->fillTitle($this->getParam('title'));
+            $modulesPsflowdemoConfigurationPage->save();
+        })
+        ->it('vérifie le rendu sur la home', function () use ($modulesPsflowdemoHomePage) {
+            $modulesPsflowdemoHomePage->goToPage('home');
+            Expect::that($modulesPsflowdemoHomePage->getBlockTitle())
+                ->contains($this->getParam('title'));
+        });
+
+        return $testSuite;
+    }
+}
+```
+
+À partir de ce Scenario, une seule ligne dans une suite suffit pour tester n'importe quel titre :
+
+```php
+$this->describe('Titre standard')
+     ->scenario(UpdatePsflowdemoTitle::class, ['title' => 'Bienvenue chez nous']);
+```
+
+## Enchaîner plusieurs `Scenario` dans une suite
+
+Une suite peut chaîner plusieurs `->scenario()`. C'est utile pour composer un test complexe à partir de briques :
+
+```php
+public function init()
+{
+    $this
+    ->describe('Setup + parcours + cleanup')
+    ->scenario(SeedBaseCatalog::class)
+    ->scenario(UpdatePsflowdemoTitle::class, ['title' => 'Promotion Halloween'])
+    ->scenario(GuestCheckout::class, [
+        'productUrl' => 'produit-halloween.html',
+    ])
+    ->scenario(CleanupTestOrders::class);
+}
+```
+
+Les scénarios s'exécutent **dans l'ordre**, et **partagent l'état de la page Chrome** — un login BO fait dans le premier scenario reste actif pour le second, à condition qu'aucun scénario intermédiaire ne redémarre le navigateur.
+
+Pour partager de la **donnée** entre scénarios (l'id d'une commande créée dans le premier, à réutiliser dans le troisième), on utilise `store()` / `retrieve()` sur la suite.
+
+## `store()` / `retrieve()` : partager l'état
+
+Le pattern est visible dans le vrai code du monorepo `lacitedesnuages.be` (annexe [module tiers](/2026/08/12/prestaflow-tester-un-module-tiers/)) :
+
+```php
+->it('navigue vers la commande de test', function () use ($ordersPage) {
+    $ordersPage->goToOrder($this->getParam('orderId'));
+    $this->store('productQuantity', $ordersPage->getQuantity());
+    // ...
+})
+->it('vérifie qu\'un split a bien changé la quantité', function () use ($ordersPage) {
+    Expect::that((int) $ordersPage->getQuantity())
+        ->isNotTheSameAs((int) $this->retrieve('productQuantity'));
+});
+```
+
+Trois choses à retenir :
+
+1. **`store()` et `retrieve()` vivent sur `TestsSuite`** (pas sur `Page`). Depuis un `it`, on les appelle via `$this` (le contexte du `it` est le suite).
+2. **La donnée persiste tant que la suite tourne**, entre `it` comme entre scénarios chaînés.
+3. **Un `retrieve()` d'une clef inexistante retourne `null`** (ou la valeur `$default` si passée). Utile pour un `it` optionnel qui vérifie si la clef a été posée avant.
+
+Cas d'usage typique : un scenario `CreateOrder` qui stocke l'orderId, puis un scenario `RefundOrder` qui le retrouve pour cibler la bonne commande.
+
+## Data-driven : `->with([...])`
+
+Voici la mécanique qui n'avait été mentionnée nulle part dans la série. La lib expose une méthode `->with()` qui accepte un tableau de datasets — chaque `it` défini après est **exécuté une fois par dataset** :
+
+```php
+$this
+->describe('Titre du bloc — jeux variés')
+->with([
+    ['title' => 'Court'],
+    ['title' => 'Un titre de longueur moyenne pour tester le wrap'],
+    ['title' => str_repeat('Très long ', 20)],
+    ['title' => 'Accents : éàü'],
+    ['title' => '&<>"\''],
+])
+->it('accepte et affiche', function () use ($modulesPsflowdemoHomePage) {
+    // Le dataset courant est accessible via getParam().
+    $expected = $this->getParam('title');
+
+    // ...on met à jour la config avec ce titre, puis vérifie sur la home.
+    Expect::that($modulesPsflowdemoHomePage->getBlockTitle())->contains($expected);
+});
+```
+
+Un seul `it` écrit, cinq exécutions à chaque run. Le rapport HTML les distingue en affichant le dataset actif à chaque itération.
+
+**Utile pour** : validation d'entrées limites (vide, très long, unicode, caractères réservés), matrice de combinaisons (locale × type de client × transporteur), tests de valeurs de bord d'un prix ou d'une quantité.
+
+<Info title="Data-driven vs matrice CI : le premier joue N variations dans un seul run de la CI (rapide, un seul démarrage Flashlight), la matrice CI joue le même run entier N fois sur des environnements différents (plus lent mais isolé). Les deux se combinent — 5 datasets × 3 versions PS = 15 exécutions dont on lit le résumé d'un coup d'œil." />
+
+## Ce que ces trois mécaniques changent en pratique
+
+Prises ensemble, elles vous permettent d'atteindre un pattern qui manquait à l'arsenal :
+
+- **Écrire un scénario métier une seule fois** (paramètres + `steps` génériques)
+- **L'invoquer avec dix jeux de données** (`->with([...])`) ou chaîné à d'autres (`->scenario(...)`)
+- **Partager l'état entre les étapes** (`store` / `retrieve`)
+
+En termes de lignes de test : un projet qui utilise ces trois mécaniques a typiquement 3 à 5× moins de code de test que le même projet écrit avec des `it` inline dupliqués.
+
+## Interaction avec les autres annexes
+
+- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — `store()` est le compagnon naturel des fixtures niveau 3 (override `before()`) : le `before()` crée une donnée, en stocke la clef via `store()`, les `it` la réutilisent via `retrieve()`.
+- **[Debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)** — un `it` qui itère sur 20 datasets et tombe au 12ème : la sortie CLI indique le dataset actif, la capture d'erreur porte le contexte. Le `skip()` peut cibler le `it` entier pendant le debug, l'`->with()` continue de fournir les datasets.
+- **[Multi-locales](/2026/09/02/prestaflow-scenarios-multi-locales/)** — un dataset peut porter une locale (`['locale' => 'en', 'title' => 'Welcome']`), et le `->scenario()` la relaie au Scenario invoqué qui la posera sur les globals. Testez cinq locales dans une seule suite, sans script shell.
+
+## Notes
+
+<Info title="Le retour de scenario() est chainable (retourne $this de la suite), on peut donc enchaîner autant de scénarios qu'on veut et intercaler des it directs entre eux. Un seul describe() en tête suffit pour toute la suite." />
+
+<Warning title="Attention à l'ordre : $this->getParam('foo') consulte d'abord les params du Scenario courant, puis le dataset actif. Si un même nom est utilisé aux deux endroits, le dataset gagne. C'est cohérent (dataset = surcharge locale), mais peut surprendre si vous mélangez params et datasets sans le savoir." />
+
+<Info title="Isolation : les scénarios chaînés partagent la page Chrome mais chacun a son propre $params. Pas de fuite silencieuse d'un param d'un scenario dans un autre — chacun voit ses défauts + son override d'appel, point." />

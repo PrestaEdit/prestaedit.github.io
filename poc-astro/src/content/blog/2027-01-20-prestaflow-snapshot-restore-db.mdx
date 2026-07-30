@@ -1,0 +1,158 @@
+---
+title: "PrestaFlow : snapshot et restore de la base entre suites"
+date: 2027-01-20
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2027-01-20-prestaflow-snapshot-restore-db.png'
+summary: "Sur une boutique de recette persistante (pas Flashlight), chaque suite laisse des traces. Un snapshot MySQL avant, restore après, garantit l'isolation sans polluer la base. Trois patterns pour l'orchestrer."
+---
+
+<Info title="Prérequis" />
+
+Annexe de la série PrestaFlow. Prérequis : avoir lu [« Fixtures et seed data reproductibles »](/2026/09/30/prestaflow-fixtures-seed-data/) (le complément côté seed) et [« Sans Flashlight — stack locale »](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) (contexte où le snapshot devient nécessaire).
+
+## Décor : pourquoi snapshot
+
+Dans un pipeline **Flashlight**, la base MySQL vit dans le conteneur. Le conteneur meurt à la fin du run, la base avec lui. Rien à nettoyer. L'annexe [fixtures niveau 1](/2026/09/30/prestaflow-fixtures-seed-data/) exploite ce modèle : on injecte via `init-scripts`, on ne retire jamais.
+
+Sur une boutique **persistante** — Valet, MAMP, préprod partagée, comme décrit dans [l'annexe stack locale](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) — la base survit aux runs. Un test qui crée un client crée un vrai client. Un test qui commande décrémente un vrai stock. Au bout de dix runs, la base est un dépotoir : commandes fantômes, produits épuisés, configurations pétées. **Le cleanup n'est plus optionnel, il est obligatoire.**
+
+Trois grains pour l'organiser, du plus grossier au plus fin :
+
+- Snapshot au niveau **run** — une fois avant, restore une fois après
+- Snapshot au niveau **suite** — chaque suite prend et rend son propre snapshot
+- Snapshot au niveau **it** — un snapshot par test, rarissime, prohibitif
+
+## Snapshot au niveau run
+
+Le plus simple, souvent suffisant. Un step CI avant `prestaflow run` qui `mysqldump`, un step après — dans un bloc `always` — qui restore.
+
+```yaml
+# .github/workflows/e2e.yml
+- name: Snapshot DB
+  run: mysqldump -u root prestashop > /tmp/snapshot.sql
+
+- name: Run PrestaFlow
+  run: ./vendor/bin/prestaflow run
+
+- name: Restore DB
+  if: always()
+  run: mysql -u root prestashop < /tmp/snapshot.sql
+```
+
+Toutes les suites tournent sur la même base et se marchent potentiellement sur les pieds pendant le run. Ce n'est un problème que si l'ordre des suites compte. En pratique, la plupart des scénarios PrestaFlow sont écrits pour être indépendants (fixtures posées en amont, données de test uniques), donc le partage tient. À la fin, un `mysql < snapshot.sql` remet la boutique dans son état initial. Une seule fois. Coût minimal.
+
+## Snapshot au niveau suite
+
+Quand deux suites se contredisent — l'une désactive un module que l'autre exige, l'une vide un panier que l'autre remplit — le snapshot run ne suffit plus. Chaque suite doit repartir d'un état propre.
+
+C'est là qu'on override `before()` et `after()` de `TestsSuite`. Un trait factorise proprement :
+
+```php
+<?php
+namespace Tests\Support;
+
+trait SnapshotsDatabase
+{
+    public function before($headless = null, bool $getBrowser = true)
+    {
+        parent::before($headless, $getBrowser);
+        $this->snapshotDatabase();
+    }
+
+    public function after()
+    {
+        $this->restoreDatabase();
+        parent::after();
+    }
+
+    private function snapshotDatabase(): void
+    {
+        shell_exec('mysqldump -u root prestashop > /tmp/suite_snapshot.sql');
+    }
+
+    private function restoreDatabase(): void
+    {
+        shell_exec('mysql -u root prestashop < /tmp/suite_snapshot.sql');
+    }
+}
+```
+
+Utilisation dans une suite qui pollue :
+
+```php
+class CheckoutSuite extends TestsSuite
+{
+    use \Tests\Support\SnapshotsDatabase;
+
+    // ...
+}
+```
+
+<Warning title="parent::before() doit être le PREMIER appel" />
+
+Le commentaire du code de la lib est explicite : si on override `before()` sans appeler `parent::before(...)` **en premier**, le browser n'est pas instancié, les cookies ne sont pas posés, la basic auth n'est pas appliquée. Tous les `it()` échoueront sans message clair. L'annexe fixtures [le rappelait déjà](/2026/09/30/prestaflow-fixtures-seed-data/) — c'est le piège numéro un des overrides.
+
+Symétrique pour `after()` : `parent::after()` en **dernier**, après le restore, pour laisser la lib fermer le browser sur un état DB propre.
+
+## Deux (ou trois) techniques MySQL
+
+Toutes les approches ne coûtent pas la même chose.
+
+**mysqldump + restore** — universel. Marche sur MAMP, Valet, préprod, Docker, peu importe. Lent : 10 à 30 secondes pour une base PrestaShop moyenne. Multiplié par le nombre de suites, ça chiffre.
+
+**Snapshot LVM / btrfs / ZFS** — instantané au sens FS (quelques millisecondes). Nécessite un filesystem spécifique et une machine dédiée. Pertinent pour un runner CI custom, hors sujet en local.
+
+**Transactions non-committées** — l'approche classique en unit test PHPUnit (`beginTransaction` / `rollback`). **Inapplicable en PrestaShop** : le code métier fait ses propres commits, les hooks committent, les modules committent. Aucun contrôle transactionnel end-to-end.
+
+**Snapshot Docker de la base seule** — via `docker commit` puis `docker restart`, très rapide (moins d'une seconde en général). Si la DB tourne dans un conteneur séparé, c'est le meilleur compromis en pratique. Combinable avec le trait : `snapshotDatabase()` fait un `docker commit`, `restoreDatabase()` fait un `docker restart` sur l'image snapshottée.
+
+## Ce qu'un snapshot doit — et ne doit pas — inclure
+
+**Inclure** : les tables métier qui bougent. `ps_orders`, `ps_customer`, `ps_cart`, `ps_product` si les tests créent des produits, `ps_configuration` si les tests modifient des options.
+
+**Exclure** : les tables de logs — `ps_log`, `ps_statssearch`, `ps_connections`, `ps_page_viewed`. Ces tables grossissent inutilement le dump, leur restoration n'a aucune valeur métier, et sur une base de préprod elles peuvent peser plusieurs centaines de méga.
+
+```sh
+mysqldump prestashop \
+  --ignore-table=prestashop.ps_log \
+  --ignore-table=prestashop.ps_statssearch \
+  --ignore-table=prestashop.ps_connections \
+  --ignore-table=prestashop.ps_page_viewed \
+  > snapshot.sql
+```
+
+<Warning title="AUTO_INCREMENT et triggers" />
+
+Un restore naïf réinitialise les compteurs `AUTO_INCREMENT` à leur valeur du snapshot. Si un run intermédiaire a créé des lignes qui référencent des IDs plus hauts (via une table exclue, un fichier, un cache), il y a collision au run suivant. `mysqldump` inclut par défaut les `AUTO_INCREMENT` — vérifier que c'est cohérent avec la stratégie d'exclusion. Idem pour les triggers : `--triggers` est actif par défaut, à laisser tel quel.
+
+## Interaction avec les scénarios chaînés
+
+L'annexe [scénarios paramétrés et chaînage](/2026/11/11/prestaflow-scenarios-parametres-chainage/) décrit comment un scénario `CreateOrder` peut poser un ID en `store()` qu'un scénario `RefundOrder` récupère via `retrieve()`. Ces deux scénarios partagent un état DB.
+
+Un snapshot au niveau **suite** casse cette chaîne : si `RefundOrder` s'exécute dans une suite qui restore avant, la commande créée par `CreateOrder` a disparu. Deux options :
+
+- **Rassembler les scénarios chaînés dans une même suite** — le partage intra-suite est garanti, le snapshot n'agit qu'aux bornes
+- **Rester au snapshot niveau run** — le chaînage inter-suites tient, le cleanup final nettoie tout
+
+Choisir en fonction du couplage. Si peu de chaînes, snapshot par suite. Si beaucoup, snapshot par run.
+
+## Ce que ce n'est PAS
+
+Un snapshot restore ne compense pas :
+
+- **Un test flaky** — le problème est ailleurs. Voir [l'annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/). Snapshotter un test qui timeout ne le stabilise pas, ça masque juste la pollution qu'il laisse derrière.
+- **Une fixture manquante** — l'état attendu doit être posé **avant** le snapshot, pas restauré depuis un run précédent. La [niveau 1 des fixtures](/2026/09/30/prestaflow-fixtures-seed-data/) reste la vérité de base.
+- **Un manque de partitionnement** — paralléliser deux workers sur la même base sans partition les fait s'écraser mutuellement. Le snapshot ne les isole pas.
+
+## Notes
+
+**Perf.** Un dump/restore de 20 secondes multiplié par 30 suites, c'est 10 minutes ajoutées au run. Peser le coût contre le gain. Souvent, snapshot au niveau run suffit : les suites cohabitent pendant l'exécution, la restoration finale suffit à préserver la base pour les runs suivants.
+
+**Concurrence.** Deux runs qui tournent en parallèle sur la même base persistante s'écrasent mutuellement, snapshot ou pas. Le pattern niveau run ne protège pas contre ça — il faut alors soit une base par branche (schéma dédié préfixé), soit un mutex CI (un runner à la fois sur la base). C'est un problème d'orchestration, pas de snapshot.
+
+**Sécurité.** Le dump SQL contient toutes les données de la boutique — clients, adresses, commandes, éventuellement des tokens API en configuration. Ne pas l'artifacter dans un CI public sans anonymisation préalable. `mysql_config_editor` pour les credentials, pas de `-p<password>` en clair dans les logs CI.

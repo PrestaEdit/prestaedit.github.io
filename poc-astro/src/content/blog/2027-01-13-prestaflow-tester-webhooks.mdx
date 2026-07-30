@@ -1,0 +1,194 @@
+---
+title: "PrestaFlow : tester un module qui reçoit des webhooks"
+date: 2027-01-13
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2027-01-13-prestaflow-tester-webhooks.png'
+summary: "Un module qui reçoit un webhook de Stripe, d'un transporteur ou d'une marketplace ne se teste pas comme un formulaire. Mock server HTTP en side-car qui simule le POST, vérifier que la boutique traite correctement le payload."
+---
+
+<Info title="Prérequis">
+Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Tester les emails envoyés » (le pattern de side-car HTTP y est déjà vu).
+</Info>
+
+## Décor
+
+Beaucoup de modules PS parlent à des tiers via HTTP hors du flux navigateur : Stripe pousse un `payment_intent.succeeded`, Chronopost notifie une livraison, Mirakl envoie une commande marketplace, un ERP interne reçoit chaque nouvelle facture. Ces échanges sont serveur-à-serveur. PrestaFlow pilote Chrome, Chrome ne voit rien de ce qui se passe entre votre boutique et un serveur externe.
+
+Pour tester ces flux, il faut un intermédiaire visible qui joue le rôle du tiers — soit en **simulant** l'appel qu'il ferait vers votre boutique, soit en **capturant** l'appel que votre boutique lui envoie. Ce composant tourne à côté de PrestaFlow et de la boutique : c'est un side-car, comme le container mailpit vu dans l'annexe [tester les emails envoyés](/2026/12/09/prestaflow-tester-emails-envoyes/).
+
+## Deux cas à distinguer
+
+Avant d'écrire quoi que ce soit, il faut trancher : dans quel sens va le webhook ?
+
+**Cas A — la boutique reçoit un webhook.** Stripe notifie un paiement encaissé, un transporteur notifie un tracking, une marketplace pousse une commande. Le mock server envoie le POST vers un contrôleur du module PS. On vérifie l'effet côté boutique : statut de commande modifié, ligne dans une table de log, email envoyé, stock décrémenté.
+
+**Cas B — la boutique envoie un webhook.** Le module notifie un ERP, poste un message Slack maison, ping l'endpoint d'un client. Le mock server reçoit le POST et l'enregistre. On vérifie côté mock que le POST est bien parti, avec le bon corps et les bons en-têtes.
+
+Les deux cas partagent le même outillage (Mockoon ou équivalent) mais donnent des Pages et des scénarios très différents. Ne pas les mélanger dans un même `it`.
+
+## Le mock server : Mockoon en side-car
+
+[Mockoon](https://mockoon.com/) est un mock HTTP open-source, avec une CLI (`mockoon-cli`) et une image Docker officielle. On lui donne un fichier JSON qui décrit les routes à servir et les réponses à renvoyer. Il expose aussi une API d'admin pour inspecter les requêtes reçues (les « transactions »), ce qui est le cœur de l'usage en test.
+
+Alternatives selon le besoin :
+
+- **WireMock** — plus riche (matchers avancés, scénarios stateful, JVM), plus lourd à faire tourner.
+- **Serveur PHP maison** — `php -S 0.0.0.0:9000 mock.php` avec un script d'une trentaine de lignes suffit quand on ne veut que capturer un POST unique et le relire depuis le disque.
+
+Extrait de step CI pour lancer Mockoon en side-car sur GitHub Actions :
+
+```yaml
+- name: Start Mockoon
+  run: |
+    docker run -d --rm --name mock \
+      -p 9000:9000 \
+      -v ${{ github.workspace }}/tests/mock:/data:ro \
+      mockoon/cli:latest --data /data/mock.json --port 9000
+```
+
+Le conteneur est joignable depuis la boutique sur `http://mock:9000` (nom du service dans le réseau Docker) et depuis PrestaFlow sur `http://localhost:9000` (port publié).
+
+## Cas A : la boutique reçoit un webhook Stripe
+
+Objectif : vérifier que `mymodule_stripe` traite un `payment_intent.succeeded` en passant la commande de « En attente » à « Paiement accepté ».
+
+Séquence :
+
+1. **Setup** — une commande fixture en statut « En attente de paiement », créée via l'annexe [fixtures et seed-data](/2026/09/30/prestaflow-fixtures-seed-data/).
+2. **Trigger** — le scénario POST manuellement l'événement Stripe simulé vers le contrôleur du module.
+3. **Assertion** — le scénario navigue vers la commande en BO et vérifie le nouveau statut.
+
+Le POST est déclenché depuis le contexte Chrome via `evaluate()`. Une petite Page utilitaire encapsule l'appel :
+
+```javascript
+// tests/pages/Support/Webhook.js
+class Webhook {
+  async postJson(page, url, payload, headers = {}) {
+    return page.evaluate(async (u, body, h) => {
+      const res = await fetch(u, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...h },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.text() };
+    }, url, payload, headers);
+  }
+}
+```
+
+Et le test :
+
+```javascript
+it('should mark order as paid after Stripe webhook', async function () {
+  const page = await this.browser.getPage();
+
+  // Setup : commande #12 en attente
+  await fixtures.loadOrder('order_pending_12');
+
+  // Trigger : payload Stripe simulé
+  const payload = require('./fixtures/stripe/payment_intent_succeeded.json');
+  const res = await webhook.postJson(
+    page,
+    'https://boutique.test/module/mymodule_stripe/webhook',
+    payload,
+    { 'Stripe-Signature': stripeSignature(payload) },
+  );
+  Expect.that(res.status).equals(200);
+
+  // Assertion : statut BO mis à jour
+  await boOrdersPage.goToOrder(page, 12);
+  const status = await boOrdersPage.getCurrentStatus(page);
+  Expect.that(status).equals('Paiement accepté');
+});
+```
+
+Le payload JSON est un dump anonymisé pris de la doc Stripe ou d'un événement réel. On le stocke dans `tests/fixtures/stripe/` et on le versionne.
+
+## Cas B : la boutique envoie un webhook
+
+Objectif : vérifier que `mymodule_notify` poste bien vers l'endpoint client configuré à chaque création de commande, avec les bons champs.
+
+Séquence :
+
+1. **Config** — le module est configuré pour pointer sur `http://mock:9000/received` (via une Page config BO, ou via un `INSERT` en base au setup de la suite).
+2. **Reset** — vider les transactions Mockoon capturées avant de commencer.
+3. **Trigger** — un checkout front, ou un `INSERT` de commande, qui doit générer le POST sortant.
+4. **Poll + assertion** — interroger l'API d'admin Mockoon pour récupérer les POST reçus, vérifier corps et en-têtes.
+
+Page utilitaire qui parle à Mockoon :
+
+```javascript
+// tests/pages/Support/Mock.js
+class Mock {
+  constructor(baseUrl = 'http://localhost:9000') {
+    this.baseUrl = baseUrl;
+  }
+
+  async reset(page) {
+    await page.evaluate(async (u) => {
+      await fetch(`${u}/api/reset`, { method: 'POST' });
+    }, this.baseUrl);
+  }
+
+  async transactions(page, path) {
+    return page.evaluate(async (u, p) => {
+      const res = await fetch(`${u}/api/transactions?path=${encodeURIComponent(p)}`);
+      return res.json();
+    }, this.baseUrl, path);
+  }
+}
+```
+
+L'endpoint `/api/transactions` est fourni par la CLI Mockoon quand on la lance avec `--admin-api`. Le format exact des transactions varie d'une version à l'autre — se reporter à la doc pour la version épinglée dans le CI.
+
+Le test :
+
+```javascript
+it('should notify ERP on new order', async function () {
+  const page = await this.browser.getPage();
+  await mock.reset(page);
+
+  // Trigger : checkout front complet
+  await checkoutFlow.placeOrder(page, { cart: 'cart_std' });
+
+  // Poll : le POST arrive en asynchrone (queue module)
+  const posts = await pollUntil(
+    () => mock.transactions(page, '/received'),
+    (list) => list.length >= 1,
+    { timeout: 5000, interval: 200 },
+  );
+
+  const body = JSON.parse(posts[0].request.body);
+  Expect.that(body.order_reference).matches(/^[A-Z]{9}$/);
+  Expect.that(body.amount_ttc).equals('42.00');
+  Expect.that(posts[0].request.headers['x-signature']).isNotEmpty();
+});
+```
+
+Le helper `pollUntil` vient de l'annexe [timeouts et attentes](/2026/12/16/prestaflow-timeouts-attentes/) — ne jamais remplacer par un `sleep()` fixe, la latence entre l'action UI et le POST sortant varie.
+
+## Cas particulier : la signature du webhook
+
+Stripe, GitHub, Slack, Shopify et beaucoup d'autres signent leurs webhooks avec un HMAC-SHA256 sur le corps, en utilisant un secret partagé. Un module correctement écrit rejette tout POST sans signature valide — vos tests aussi vont être rejetés si vous ne faites rien.
+
+Trois options selon le contexte :
+
+- **Désactiver la vérif signature en env de test** — le module lit une env var (`MYMODULE_STRIPE_VERIFY_SIG=0`) qui court-circuite la vérif. Simple, mais fragile : ça teste une code path qui n'existe pas en prod.
+- **Générer la signature côté scénario** — calcul HMAC dans la Page `Webhook`, avec le secret de test injecté au setup. Fidèle, un peu plus lourd, c'est l'option recommandée.
+- **Utiliser le secret de test du fournisseur** — Stripe fournit `whsec_test_...` pour ce genre d'usage. Bien pour les tests d'intégration bout-en-bout ; inutile en unitaire.
+
+<Warning title="Ne jamais bypass en prod">
+Un module qui accepte un webhook non-signé « pour faciliter les tests » est un bypass d'authentification. La désactivation doit être conditionnée à une variable d'environnement contrôlée uniquement dans les images de test, et audite explicitement dans les logs.
+</Warning>
+
+## Notes
+
+- **Timing** — entre l'action UI et l'arrivée du webhook (ou son traitement s'il passe par une queue), il y a toujours une latence. Un `sleep(N)` naïf est instable. Utilisez le pattern poll vu dans l'annexe [timeouts et attentes](/2026/12/16/prestaflow-timeouts-attentes/).
+- **Reset entre suites** — entre deux `describe`, vider les transactions capturées côté Mockoon (`POST /api/reset`) et purger les logs webhook côté module. Sans ça, la suite N voit les événements de la suite N-1 et donne des faux positifs.
+- **Payloads sensibles** — les dumps de vrais webhooks contiennent souvent des montants, des emails, des adresses. Vos JSON de fixture ne doivent jamais contenir de données réelles. Anonymisez systématiquement avant commit, et faites tourner un scanner de secrets sur le dossier `tests/fixtures/`.
+- **Un webhook = une intention** — ne mélangez pas dans un même `it` la vérif du parsing, la vérif de l'idempotence et la vérif de l'effet métier. Trois `it`, trois assertions ciblées : quand un test rouge sort, on sait tout de suite quelle brique casse.

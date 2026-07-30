@@ -1,0 +1,41 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const posts = await getCollection('blog');
+const map = new Map<string, { count: number; latest: Date; cover?: string }>();
+for (const p of posts) {
+  if (!p.data.series) continue;
+  const entry = map.get(p.data.series) ?? { count: 0, latest: new Date(0), cover: p.data.featuredimg };
+  entry.count += 1;
+  if (p.data.date > entry.latest) {
+    entry.latest = p.data.date;
+    entry.cover = p.data.featuredimg ?? entry.cover;
+  }
+  map.set(p.data.series, entry);
+}
+const series = [...map.entries()].sort((a, b) => b[1].latest.valueOf() - a[1].latest.valueOf());
+---
+<BaseLayout title="Séries">
+  <section class="mx-auto max-w-5xl px-4 py-16">
+    <h1 class="text-3xl font-bold text-gray-900">Séries</h1>
+    <p class="mt-2 text-gray-600">Suites d'articles autour d'un même thème.</p>
+    <div class="mt-10 grid gap-6 md:grid-cols-2">
+      {series.map(([slug, meta]) => (
+        <a href={`/series/${slug}`} class="group flex overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:border-blue-500/50 hover:shadow-lg">
+          <img
+            src={meta.cover ?? '/placeholder.svg'}
+            alt=""
+            class="hidden aspect-square w-40 flex-none object-cover sm:block"
+            onerror="this.onerror=null;this.src='/placeholder.svg';"
+          />
+          <div class="flex flex-1 flex-col justify-center p-6">
+            <p class="text-xs font-semibold uppercase tracking-wider text-blue-600">Série</p>
+            <h2 class="mt-1 text-lg font-semibold text-gray-900 group-hover:text-blue-600">{slug.charAt(0).toUpperCase() + slug.slice(1)}</h2>
+            <p class="mt-2 text-sm text-gray-500">{meta.count} article{meta.count > 1 ? 's' : ''} · dernier {meta.latest.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

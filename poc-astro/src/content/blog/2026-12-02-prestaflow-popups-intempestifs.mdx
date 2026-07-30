@@ -1,0 +1,155 @@
+---
+title: "PrestaFlow : neutraliser les popups intempestifs (chat, promo, push)"
+date: 2026-12-02
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-12-02-prestaflow-popups-intempestifs.png'
+summary: "L'annexe cookies neutralise un bandeau RGPD via un cookie de consentement. Reste ce qui n'a pas de mécanisme cookie : chat widget, modal promo, notification push. Trois stratégies pratiques."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Le cas résiduel
+
+L'[annexe cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/) a montré comment neutraliser un bandeau RGPD *quand il expose un cookie de consentement*. On pré-règle le cookie, le bandeau ne s'affiche plus, tous les scénarios sont peinards.
+
+Ça règle une catégorie de popups. Il en reste trois, chacune sans mécanisme cookie propre, qui empoisonnent les scénarios sur les boutiques un peu vécues :
+
+- **Le chat widget** (Zopim, Crisp, Tawk, Intercom) — s'ouvre en bas à droite, sur toutes les pages, et masque parfois un bouton ou un sélecteur du parcours checkout.
+- **Le modal promo saisonnier** — Halloween, Black Friday, Soldes d'été. S'ouvre au premier chargement de la home, réapparaît après suppression du localStorage.
+- **La notification push navigateur** — la modale native Chrome *« Autoriser les notifications ? »*, déclenchée par le site au premier scroll.
+
+Ces trois cas ne se règlent pas avec un cookie. Cette annexe donne les patterns qui marchent.
+
+## Stratégie 1 : masquer via CSS pré-run
+
+La plus rapide et la plus robuste. Vous connaissez le sélecteur du widget, vous cachez son container en injectant un `<style>` dans la page avant chaque `it`. Chrome le rend invisible, aucun clic accidentel, aucun scroll sur le sélecteur bloqué.
+
+Le pattern est un simple `evaluate()` à ajouter dans une méthode de Page (ou dans un trait `Tests\Support\HidesThirdPartyWidgets`) :
+
+```php
+public function hideThirdPartyWidgets(): void
+{
+    $this->getPage()->evaluate("
+        (function() {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                #crisp-chatbox,
+                .zopim,
+                .tawk-min-container,
+                #hs-messages-iframe-container,
+                .promo-halloween-overlay,
+                .newsletter-popup { display: none !important; }
+            `;
+            document.head.appendChild(style);
+        })();
+    ");
+}
+```
+
+Appliqué à la Page utilisée par vos scénarios (ou en fin de `before()` overridé, cf. [annexe fixtures](/2026/09/30/prestaflow-fixtures-seed-data/) niveau 3), le CSS s'injecte à chaque nouvelle page chargée.
+
+**Avantages** : simple, aucune interaction requise, ne consomme aucun temps par étape.
+**Limites** : suppose que vous connaissez tous les sélecteurs à masquer — un nouveau widget qui arrive n'est pas neutralisé automatiquement.
+
+<Info title="Astuce collection : gardez la liste des sélecteurs à masquer dans une constante de trait, mise à jour au fur et à mesure que vous croisez de nouveaux widgets. Elle grossit lentement, protège toutes vos suites en une ligne d'import." />
+
+## Stratégie 2 : fermer programmatiquement
+
+Utile quand vous voulez tester **l'interaction** avec le widget (le chat doit être ouvrable, la newsletter doit se fermer proprement) sans qu'il pollue les autres scénarios.
+
+Deux temps :
+
+**Une Page qui exercice le widget** — un `it` unique dans une suite dédiée qui l'ouvre, vérifie qu'il fonctionne, le ferme, vérifie qu'il est fermé. Le widget est ici un sujet de test à part entière.
+
+**Toutes les autres Pages** ferment le widget dans leur `goToPage()` overridé, sans le tester. Exemple pour un chat Crisp :
+
+```php
+public function goToPage($page = null, $params = null): void
+{
+    parent::goToPage($page, $params);
+
+    // Ferme la bulle du chat si elle s'est réouverte au chargement.
+    $this->getPage()->evaluate("
+        if (window.\$crisp) { window.\$crisp.push(['do', 'chat:hide']); }
+    ");
+}
+```
+
+**Avantages** : préserve la testabilité du widget, honore son rôle métier réel.
+**Limites** : nécessite de connaître l'API programmatique du widget (chaque outil a la sienne).
+
+## Stratégie 3 : notification push navigateur
+
+Cas particulier — c'est Chrome lui-même qui gère la modale *« Autoriser les notifications ? »*, pas la page. Le CSS n'y peut rien.
+
+La bonne approche est de **désactiver les notifications au niveau du browser** avant de démarrer, via une override chrome-php. Dans un trait ou en fin de `before()` de la suite :
+
+```php
+$this->getPage()->getSession()->sendMessageSync(
+    new \HeadlessChromium\Communication\Message('Browser.setPermission', [
+        'permission' => ['name' => 'notifications'],
+        'setting' => 'denied',
+    ])
+);
+```
+
+Chrome ne demandera plus la permission, la modale ne s'affichera jamais. Effet analogue pour `geolocation`, `camera`, `microphone` — les autres permissions qui peuvent surgir.
+
+<Warning title="La modale de notification est bloquante — tant qu'elle n'est pas fermée, le scénario ne peut plus rien cliquer en dessous. Un scénario qui tombe mystérieusement sur un clic qui ne prend pas est souvent piégé par une modale de permission passée inaperçue. Toujours désactiver les permissions à l'échelle du browser plutôt que d'essayer de gérer la modale après coup." />
+
+## Combiner les trois stratégies
+
+Les popups d'un vrai site en production se cumulent. Une même Page a intérêt à appliquer les trois en cascade :
+
+```php
+namespace Tests\Support;
+
+trait NeutralizesUiNoise
+{
+    public function neutralizeUiNoise(): void
+    {
+        // 1. Notifications navigateur (bloc en amont)
+        try {
+            $this->getPage()->getSession()->sendMessageSync(
+                new \HeadlessChromium\Communication\Message('Browser.setPermission', [
+                    'permission' => ['name' => 'notifications'],
+                    'setting' => 'denied',
+                ])
+            );
+        } catch (\Throwable $e) { /* best-effort */ }
+
+        // 2. CSS masquant les widgets
+        $this->getPage()->evaluate("
+            const style = document.createElement('style');
+            style.innerHTML = '#crisp-chatbox, .zopim, .newsletter-popup { display: none !important; }';
+            document.head.appendChild(style);
+        ");
+
+        // 3. Fermeture programmatique des widgets à API
+        $this->getPage()->evaluate("
+            if (window.\$crisp) { window.\$crisp.push(['do', 'chat:hide']); }
+        ");
+    }
+}
+```
+
+Appelé dans la méthode qui suit chaque navigation, ce trait rend la boutique testable sans avoir à gérer ces popups au cas par cas dans chaque scénario.
+
+## Interaction avec les autres annexes
+
+- **[Cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — pour tout popup qui expose un cookie de consentement, la solution cookie reste **la plus propre** (elle simule un utilisateur qui a déjà interagi, pas un utilisateur qui verrait un site cassé). Cette annexe est le complément pour tous les autres cas.
+- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — un widget masqué en CSS n'apparaît pas dans les baselines. Bien. Mais un widget qu'on n'a pas pensé à masquer produit un baseline qui *contient le widget* — la première fois qu'il change (nouvelle version du chat, promo Halloween → Noël), tous vos checkpoints tombent d'un coup. Toujours masquer avant de figer les baselines.
+- **[TDD](/2026/10/21/prestaflow-tdd-scenario-avant-fix/)** — un bug qui apparaît uniquement quand un popup se superpose à un sélecteur est un cas parfait de scénario TDD : reproduisez le popup + le clic bloqué, fixez le CSS de votre site pour que le popup respecte le z-index, le scénario passe et reste comme garde-fou.
+
+## Notes
+
+<Info title="Les widgets tiers évoluent souvent — un update Crisp qui renomme #crisp-chatbox en #crisp-chatbox-mounted casse silencieusement votre masquage CSS. Un test dédié qui vérifie explicitement que le widget est neutralisé (isVisible retourne false sur le sélecteur), à côté des tests métier, sert de canari." />
+
+<Info title="Sur une boutique en production, activez ces widgets en A/B test ou par géolocalisation. Votre PrestaFlow tourne sans géo, l'IP est celle du runner CI — vous pouvez ne jamais voir certains popups localement puis les découvrir seulement en production. Testez au moins une fois avec l'IP simulée d'un pays concerné (setExtraHttpHeaders X-Forwarded-For, si votre stack l'écoute)." />
+
+<Warning title="Ne jouez pas au chat et à la souris avec un popup dont vous ne maîtrisez pas le CSS. Un popup piloté par un module tiers dont l'auteur va publier une v2 dans deux mois va casser votre suite chaque fois qu'un sélecteur bouge. Meilleure stratégie : ouvrir un ticket chez le module tiers pour exposer un mode « désactivé par script », ou remplacer le module s'il ne joue pas le jeu." />

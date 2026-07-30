@@ -1,0 +1,51 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ArticleCard from '../../components/ArticleCard.astro';
+import { getCollection } from 'astro:content';
+import { slugify } from '../../lib/slug';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  const map = new Map<string, { label: string; posts: typeof posts }>();
+  const upper = (s: string) => [...s].filter((c) => c >= 'A' && c <= 'Z').length;
+  for (const p of posts) {
+    for (const t of p.data.tags) {
+      const key = slugify(t);
+      const entry = map.get(key);
+      if (entry) {
+        entry.posts.push(p);
+        if (upper(t) > upper(entry.label)) entry.label = t;
+      } else {
+        map.set(key, { label: t, posts: [p] });
+      }
+    }
+  }
+  return [...map.entries()].map(([tag, { label, posts }]) => ({
+    params: { tag },
+    props: { label, posts: posts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf()) },
+  }));
+}
+
+const { label, posts } = Astro.props;
+---
+<BaseLayout title={`Tag : ${label}`}>
+  <section class="mx-auto max-w-5xl px-4 py-16">
+    <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">Tag</p>
+    <h1 class="mt-2 text-3xl font-bold text-gray-900">{label}</h1>
+    <p class="mt-2 text-gray-600">{posts.length} article{posts.length > 1 ? 's' : ''}.</p>
+    <div class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {posts.map((p) => (
+        <ArticleCard
+          href={`/blog/${p.id}`}
+          title={p.data.title}
+          summary={p.data.summary}
+          date={p.data.date}
+          tags={p.data.tags}
+          author={p.data.author}
+          featuredimg={p.data.featuredimg}
+        />
+      ))}
+    </div>
+    <a href="/tags" class="mt-10 inline-block text-sm font-medium text-blue-600 hover:underline">← Tous les tags</a>
+  </section>
+</BaseLayout>

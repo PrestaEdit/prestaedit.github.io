@@ -1,0 +1,216 @@
+---
+title: "PrestaFlow : tester un module tiers"
+date: 2026-08-12
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-08-12-prestaflow-tester-un-module-tiers.png'
+summary: "Appliquer PrestaFlow à un module qu'on n'a pas écrit, dont on ne contrôle ni le code ni les sélecteurs — depuis un projet de test extérieur au module."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Décor
+
+Jusqu'ici, la série a supposé que **vous êtes l'auteur du module** que vous testez. Les scénarios vivaient dans `tests/prestaflow/` à la racine du module, la Page connaissait les sélecteurs parce que vous les aviez choisis.
+
+Il y a un autre cas — potentiellement plus fréquent en pratique : **vous êtes intégrateur, agence ou marchand, et vous installez un module que quelqu'un d'autre a écrit** sur votre boutique. Vous voulez vous assurer qu'il fonctionne sur votre thème, votre version PS, votre config. Vous ne pouvez ni le modifier (les upgrades l'écraseraient), ni changer ses sélecteurs.
+
+C'est ce cas qu'on couvre ici, avec un module fil rouge que tout le monde a sous la main : **`ps_emailsubscription`**, le bloc newsletter livré nativement avec PrestaShop.
+
+## Où vivent les tests d'un module tiers ?
+
+Trois emplacements possibles, dont un seul est raisonnable :
+
+- **Dans le module** — non. Un `composer update` ou un upgrade de module écrase vos tests.
+- **Dans un module PS séparé qu'on écrit pour ça** — trop de cérémonie pour un dossier de tests.
+- **Dans un repo dédié**, à côté de votre projet PrestaShop.
+
+C'est la troisième option qu'on retient. Concrètement, un repo `qa-boutique` (ou n'importe quel nom parlant) avec une structure minimale :
+
+```
+qa-boutique/
+├─ composer.json         ← require prestaflow/php-library
+├─ .env                  ← URLs et credentials de votre boutique de recette
+└─ tests/
+   └─ prestaflow/
+      ├─ Pages/v8/Modules/
+      └─ Suites/
+```
+
+Le `composer.json` :
+
+```json
+{
+    "require-dev": {
+        "prestaflow/php-library": "^1.0"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/prestaflow/"
+        }
+    }
+}
+```
+
+Rien de neuf par rapport à l'article 1 — on déplace juste le point d'ancrage : le repo qui héberge PrestaFlow n'est plus le module testé, c'est votre projet de QA.
+
+<Warning title="Le .env doit pointer sur une boutique de recette, pas sur votre boutique de production. Un test qui souscrit à la newsletter avec un email jetable, c'est OK sur la recette ; en prod, c'est du spam à votre propre base." />
+
+## Une Page pour un module qu'on ne contrôle pas
+
+Créez `tests/prestaflow/Pages/v8/Modules/PsEmailsubscription/NewsletterBlock/Page.php` :
+
+```php
+<?php
+
+namespace Tests\Pages\v8\Modules\PsEmailsubscription\NewsletterBlock;
+
+use PrestaFlow\Library\Pages\v8\FrontOffice\Page as BasePage;
+
+class Page extends BasePage
+{
+    public function defineSelectors(): array
+    {
+        // Classes du thème Classic. Un thème custom peut renommer .block_newsletter :
+        // à valider sur votre thème avant de vous fier à ce sélecteur.
+        return [
+            'block' => '.block_newsletter',
+            'emailInput' => '.block_newsletter input[name="email"]',
+            'submitButton' => '.block_newsletter button[type="submit"]',
+            'message' => '.block_newsletter .alert, .block_newsletter p.alert-success, .block_newsletter p.alert-danger',
+        ];
+    }
+
+    public function isBlockVisible(): bool
+    {
+        return $this->isVisible($this->getSelector('block'), 5000);
+    }
+
+    public function subscribe(string $email): void
+    {
+        $this->setValue($this->getSelector('emailInput'), $email);
+        $this->click($this->getSelector('submitButton'));
+        $this->waitForPageReload();
+    }
+
+    public function getResultMessage(): string
+    {
+        return trim($this->getTextContent($this->getSelector('message')));
+    }
+}
+```
+
+Deux règles de survie s'appliquent quand vous testez un module que vous ne contrôlez pas :
+
+**Sélecteurs les plus stables possibles.** L'auteur peut refactorer son template sans prévenir. Un `id` ou une classe manifestement conçue par lui (`.block_newsletter`, `#psflowdemo-block`) survivra mieux qu'une position DOM (`div > form > input:nth-child(2)`). Le sélecteur `message` ci-dessus liste explicitement les variantes possibles (`alert-success`, `alert-danger`) plutôt que de parier sur une seule.
+
+**API sémantique large, pas granulaire.** N'exposez pas `fillEmail()` + `clickSubmit()` + `readMessage()` séparément. Exposez l'*intention* : `subscribe($email)`, `getResultMessage()`. Le jour où l'auteur remplace le formulaire par un modal ou passe en AJAX sans reload, seul le corps de `subscribe()` change — les scénarios qui en dépendent tiennent.
+
+## Un scénario
+
+Créez `tests/prestaflow/Suites/NewsletterSubscribe.php` :
+
+```php
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class NewsletterSubscribe extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('FrontOffice\Home');
+        $this->importPage('Modules\PsEmailsubscription\NewsletterBlock', domain: 'Tests');
+
+        extract($this->pages);
+
+        // Suffixe timestamp pour ne pas créer deux fois le même abonnement.
+        $email = 'qa+' . time() . '@example.test';
+
+        $this
+        ->describe('Bloc newsletter ps_emailsubscription')
+        ->it('affiche le bloc sur la home', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage) {
+            $modulesPsEmailsubscriptionNewsletterBlockPage->goToPage('home');
+            Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->isBlockVisible())
+                ->isTheSameAs(true);
+        })
+        ->it('accepte une nouvelle adresse', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage) use ($email) {
+            $modulesPsEmailsubscriptionNewsletterBlockPage->subscribe($email);
+            // Assertion volontairement large : le texte exact du message dépend de la locale
+            // de la boutique (« subscription » en EN, « inscription » en FR). On se contente
+            // de vérifier qu'un message est bien retourné — l'i18n des assertions fera l'objet
+            // d'une autre annexe.
+            Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->getResultMessage())
+                ->isNotEmpty();
+        });
+    }
+}
+```
+
+Vous n'avez touché à aucun fichier de `ps_emailsubscription`. Le module reste à sa place, ses upgrades futurs ne casseront rien de votre côté — ils casseront peut-être les tests, ce qui est précisément ce que vous voulez savoir.
+
+## Isolation des données
+
+Un test qui pollue la base est un test qui devient flaky. Deux stratégies suivant les cas :
+
+**Suffixe unique par run.** L'exemple ci-dessus utilise `qa+' . time() . '@example.test`. Chaque exécution crée un abonnement différent, aucun conflit d'unicité, la base grossit lentement mais sans jamais faire échouer un test à cause d'un doublon.
+
+**Cleanup en fin de suite.** Quand le module expose une manière propre de retirer ce qu'on a créé (désabonnement via un lien, suppression via BO), on ajoute un dernier `it` qui remet à zéro :
+
+```php
+->it('désabonne l\'adresse de test', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage) use ($email) {
+    $modulesPsEmailsubscriptionNewsletterBlockPage->subscribe($email);
+    Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->getResultMessage())
+        ->contains('unsubscription');
+})
+```
+
+Attention : si l'étape principale échoue, l'étape de cleanup peut ne pas s'exécuter — d'où l'intérêt de doubler avec la stratégie « suffixe unique ». Les deux se complètent, elles ne s'opposent pas.
+
+<Warning title="Ne réutilisez jamais une adresse email de vraie personne, y compris la vôtre, dans un scénario qui souscrit ou envoie. Un email jetable clairement suffixé (qa+..., prestaflow+..., @example.test) évite tout accident." />
+
+## Pinner la version du module
+
+Dimension nouvelle par rapport à un module dont vous êtes l'auteur : **le module tiers évolue indépendamment de vos tests**. Si votre Page repose sur `.block_newsletter` en version 3.5.1 et que la 3.6 renomme la classe, vos tests tombent sans que vous ayez touché à quoi que ce soit.
+
+Deux garde-fous à mettre en place :
+
+- **Documenter la version testée** dans le `README` du repo de QA. La version du module + la version de PrestaShop + la version du thème. Trois lignes.
+- **Figer la version installée sur la boutique de recette**. Si le module est distribué via Composer, `composer require vendor/module-name:x.y.z` dans le repo de la boutique. Si c'est un ZIP téléchargé depuis l'Addons ou l'éditeur, garder ce ZIP dans un stockage interne et documenter sa provenance — les distributeurs remplacent silencieusement les téléchargements par de nouvelles versions.
+
+Quand la mise à jour du module arrive, vous relancez la suite de tests sur la nouvelle version *avant* de la déployer en prod. C'est très exactement le rôle que l'article 2 (l'Action GitHub) automatisait — l'idée s'applique à l'identique ici.
+
+## Plusieurs modules dans le même projet de QA
+
+Quand vous couvrez cinq à dix modules d'une même boutique, l'organisation qui tient est celle vue dans le monorepo [lacitedesnuages/lacitedesnuages.be](https://github.com/lacitedesnuages/lacitedesnuages.be) : un dossier par module sous `tests/prestaflow/Modules/`, avec Pages et Suites côte à côte :
+
+```
+tests/prestaflow/
+├─ Pages/v8/Modules/
+│  ├─ PsEmailsubscription/NewsletterBlock/Page.php
+│  ├─ Contactform/ContactPage/Page.php
+│  └─ Blockreassurance/ReassuranceBlock/Page.php
+└─ Suites/
+   ├─ NewsletterSubscribe.php
+   ├─ ContactSend.php
+   └─ ReassuranceBlockVisible.php
+```
+
+Chaque module vit dans sa bulle, les suites s'exécutent indépendamment, un module qui casse ne fait tomber que ses propres suites.
+
+## Notes
+
+<Warning title="Modules commerciaux payants : partager un compte d'achat pour installer le module dans un pipeline CI ouvert n'est pas autorisé par la plupart des vendeurs. Ces modules restent testables en local ou en CI privée, mais rarement en open-source." />
+
+<Info title="Modules qui exigent une API key (paiement, transporteur, marketplace) : réservez un jeu de credentials dédié à la boutique de recette, distinct de la prod, et stockez-le en secret CI comme n'importe quel token." />
+
+<Info title="Modules qui altèrent la home ou une page transverse : leur activation peut casser d'autres scénarios sans lien apparent. Une bonne pratique est d'exécuter chaque suite de module sur une boutique de recette dans un état contrôlé — quitte à recréer l'état via Flashlight à chaque run (voir l'article 2)." />
+
+<Info title="Prochaine annexe : exploiter les régressions visuelles de PrestaFlow — screenshots de référence, diffs pixel-à-pixel, revue humaine des changements attendus." />

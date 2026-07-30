@@ -1,0 +1,126 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ArticleCard from '../components/ArticleCard.astro';
+import { getCollection } from 'astro:content';
+import type { GetStaticPathsOptions } from 'astro';
+
+export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+  const PAGE_SIZE = 12;
+  const all = (await getCollection('blog')).sort(
+    (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+  );
+
+  const seriesTotals = new Map<string, number>();
+  const seriesRank = new Map<string, number>();
+  for (const p of all) {
+    if (p.data.series) seriesTotals.set(p.data.series, (seriesTotals.get(p.data.series) ?? 0) + 1);
+  }
+  const chronoAsc = [...all].reverse();
+  for (const p of chronoAsc) {
+    if (!p.data.series) continue;
+    const nextRank = (Array.from(seriesRank.entries()).filter(([k]) => k.startsWith(`${p.data.series}::`)).length) + 1;
+    seriesRank.set(`${p.data.series}::${p.id}`, nextRank);
+  }
+
+  const enriched = all.map((p) => ({
+    ...p,
+    seriesTotal: p.data.series ? seriesTotals.get(p.data.series) : undefined,
+    seriesIndex: p.data.series ? seriesRank.get(`${p.data.series}::${p.id}`) : undefined,
+  }));
+
+  return paginate(enriched, { pageSize: PAGE_SIZE });
+}
+
+const { page } = Astro.props;
+const isFirstPage = page.currentPage === 1;
+const featured = isFirstPage ? page.data[0] : null;
+const cards = isFirstPage ? page.data.slice(1) : page.data;
+---
+<BaseLayout title={isFirstPage ? 'PrestaShop, sous le capot' : `Page ${page.currentPage}`}>
+  {featured && (
+    <section class="mx-auto max-w-5xl px-4 pt-16 pb-10">
+      <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">Dernier article</p>
+      <a href={`/blog/${featured.id}`} class="group mt-4 grid gap-8 md:grid-cols-2">
+        <div class="relative aspect-[16/10] overflow-hidden rounded-2xl bg-gray-100">
+          <img
+            src={featured.data.featuredimg ?? '/placeholder.svg'}
+            alt={featured.data.title}
+            transition:name={`hero-${featured.id}`}
+            class="h-full w-full object-cover transition group-hover:scale-105"
+            onerror="this.onerror=null;this.src='/placeholder.svg';"
+          />
+          {featured.data.series && (
+            <span class="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/>
+              </svg>
+              Série {featured.data.series.charAt(0).toUpperCase() + featured.data.series.slice(1)}
+              {featured.seriesIndex && featured.seriesTotal && <span class="opacity-80"> · {featured.seriesIndex}/{featured.seriesTotal}</span>}
+            </span>
+          )}
+        </div>
+        <div class="flex flex-col justify-center">
+          <div class="mb-3 flex flex-wrap gap-2">
+            {featured.data.tags.slice(0, 3).map((t) => (
+              <span class="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{t}</span>
+            ))}
+          </div>
+          <h1 transition:name={`title-${featured.id}`} class="text-3xl font-bold text-gray-900 group-hover:text-blue-600 md:text-4xl">{featured.data.title}</h1>
+          {featured.data.summary && <p class="mt-4 text-lg text-gray-600">{featured.data.summary}</p>}
+          <div transition:name={`meta-${featured.id}`} class="mt-6 text-sm text-gray-500">{featured.data.author} • {featured.data.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+        </div>
+      </a>
+    </section>
+  )}
+
+  <section class="mx-auto max-w-5xl px-4 pb-24">
+    <div class="mb-8 flex items-end justify-between border-b border-gray-200 pb-4">
+      <h2 class="text-2xl font-bold text-gray-900">
+        {isFirstPage ? 'Tous les articles' : `Articles — page ${page.currentPage}`}
+      </h2>
+      <a href="/tags" class="text-sm font-medium text-blue-600 hover:underline">Parcourir par tag →</a>
+    </div>
+    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {cards.map((p) => (
+        <ArticleCard
+          href={`/blog/${p.id}`}
+          title={p.data.title}
+          summary={p.data.summary}
+          date={p.data.date}
+          tags={p.data.tags}
+          author={p.data.author}
+          featuredimg={p.data.featuredimg}
+          series={p.data.series}
+          seriesIndex={p.seriesIndex}
+          seriesTotal={p.seriesTotal}
+        />
+      ))}
+    </div>
+
+    {page.lastPage > 1 && (
+      <nav class="mt-12 flex items-center justify-between border-t border-gray-200 pt-6" aria-label="Pagination">
+        <a
+          href={page.url.prev ?? '#'}
+          class:list={[
+            'inline-flex items-center gap-1 text-sm font-medium',
+            page.url.prev ? 'text-blue-600 hover:underline' : 'pointer-events-none text-gray-300',
+          ]}
+          aria-disabled={!page.url.prev}
+        >
+          ← Plus récents
+        </a>
+        <span class="text-sm text-gray-500">Page {page.currentPage} / {page.lastPage}</span>
+        <a
+          href={page.url.next ?? '#'}
+          class:list={[
+            'inline-flex items-center gap-1 text-sm font-medium',
+            page.url.next ? 'text-blue-600 hover:underline' : 'pointer-events-none text-gray-300',
+          ]}
+          aria-disabled={!page.url.next}
+        >
+          Plus anciens →
+        </a>
+      </nav>
+    )}
+  </section>
+</BaseLayout>

@@ -1,0 +1,176 @@
+---
+title: "PrestaFlow : fixtures et seed data reproductibles"
+date: 2026-09-30
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-09-30-prestaflow-fixtures-seed-data.png'
+summary: "Garantir que la boutique de test a toujours le même état avant chaque suite — trois niveaux : init-scripts Flashlight, step pré-run en CI, ou override de before() dans la suite."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et l'annexe « Automatiser ses scénarios en CI » pour la partie Flashlight." />
+
+## Décor
+
+Plusieurs annexes précédentes ont contourné le sujet. L'annexe [*Tester un module tiers*](/2026/08/12/prestaflow-tester-un-module-tiers/) a couvert l'isolation des données au ras des pâquerettes : suffixe timestamp pour éviter les doublons, cleanup optionnel en fin de suite. Ça marche tant qu'on présuppose que la boutique a **déjà** ce qu'il faut — au moins un produit vendable, un mode de livraison configuré, une TVA active, un compte client valide.
+
+Sur une boutique de démo Flashlight fraîche, ces prérequis existent par défaut. Sur un projet un peu plus mûr — module qui teste un cas métier précis, boutique dont on veut contrôler chaque objet — il faut souvent semer plus. C'est le sujet de cette annexe.
+
+**Trois niveaux de fixtures**, choisis selon la question qui compte : *à quelle fréquence l'état doit-il être rechargé ?*
+
+- **Container-level** — au boot du conteneur PS. Persiste tant que le conteneur vit.
+- **Run-level** — avant l'exécution de PrestaFlow, une fois par run CI.
+- **Suite-level** — avant chaque suite (ou groupe de suites).
+
+Chacun a sa mécanique, son coût, et son bon cas d'usage.
+
+## Niveau 1 : Flashlight init-scripts
+
+Le plus propre pour du seed **statique** : module à installer, config globale à poser, données de démo à charger. Vous versionnez le seed avec le code, il est appliqué automatiquement à chaque démarrage de conteneur.
+
+L'[Action officielle](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) expose l'input `flashlight-init-scripts` :
+
+```yaml
+- uses: PrestaFlow/github-action@v2
+  with:
+    token: ${{ secrets.PRESTAFLOW_TOKEN }}
+    projectId: 'pk_01ABCDEFGHIJKLMNOP'
+    flashlight: true
+    ps-version: '8.1.7'
+    flashlight-init-scripts: ./tests/flashlight-init
+```
+
+Sous le capot, le dossier `./tests/flashlight-init` est monté en `/tmp/init-scripts` (read-only) dans le conteneur. Tous les scripts qui s'y trouvent sont exécutés **alphabétiquement au boot**.
+
+Exemple pour `psflowdemo`, deux scripts :
+
+**`tests/flashlight-init/10-install-module.sh`**
+
+```sh
+#!/usr/bin/env bash
+set -e
+
+cd /var/www/html
+
+# Le module vit à /var/www/html/modules/psflowdemo grâce à flashlight-mount: auto
+php bin/console prestashop:module install psflowdemo
+```
+
+**`tests/flashlight-init/20-seed-config.sh`**
+
+```sh
+#!/usr/bin/env bash
+set -e
+
+cd /var/www/html
+
+# Config par défaut connue et stable, sur laquelle les scénarios peuvent s'appuyer.
+php bin/console prestashop:config:set PSFLOWDEMO_TITLE "Bienvenue sur notre boutique"
+```
+
+<Info title="Naming numérique par convention (10-, 20-, 30-) : l'ordre alphabétique est garanti, l'espace de manœuvre à l'insertion est confortable, et on lit l'ordre d'exécution d'un coup d'œil." />
+
+<Warning title="Les init-scripts doivent être exécutables (chmod +x) et démarrer par un shebang (#!/usr/bin/env bash). Sans quoi Flashlight les ignore silencieusement — vos scénarios tombent sur une boutique sans votre seed et vous cherchez pourquoi une heure." />
+
+## Niveau 2 : step pré-run en CI
+
+Pour du seed **dynamique** — quantité variable, dépendance à un input externe, contenu qui change entre runs. On ajoute un step de workflow entre *"Start PrestaShop"* et *"Run PrestaFlow"*, qui utilise l'API PS ou un appel HTTP direct pour créer ce qu'il faut.
+
+```yaml
+- name: Seed 5 products for pagination test
+  env:
+    BO_URL: http://localhost/admin-dev/
+    BO_TOKEN: ${{ secrets.BO_ADMIN_TOKEN }}
+  run: |
+    for i in $(seq 1 5); do
+      curl -sf -X POST "$BO_URL/api/products" \
+        -H "Authorization: Bearer $BO_TOKEN" \
+        -H 'Content-Type: application/json' \
+        -d '{"name":"Produit pagination '"$i"'","price":9.99,"active":true}'
+    done
+
+- name: Run PrestaFlow
+  uses: PrestaFlow/github-action@v2
+  # ...
+```
+
+Utile pour les fixtures qui varient (nombre de produits, jeu de données extrait d'un système externe, fixtures alignées sur la date du run). Coût : un step de plus, une dépendance de plus au format API PS.
+
+## Niveau 3 : override de `before()` dans une TestsSuite
+
+Pour du seed **spécifique à une suite** — un code promo qui n'existe que le temps du scénario, un utilisateur avec un panier abandonné qu'on veut relancer. On étend `TestsSuite::before()` dans la suite concernée, on appelle `parent::before()` **d'abord**, puis notre setup.
+
+```php
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class CartWithPromoCode extends TestsSuite
+{
+    public function before($headless = null, bool $getBrowser = true)
+    {
+        // 1. Toujours d'abord — sinon on perd browser, cookies, versions résolues.
+        parent::before($headless, $getBrowser);
+
+        // 2. Notre seed spécifique à cette suite.
+        $this->createPromoCodeIfMissing('PRESTAFLOW10');
+    }
+
+    private function createPromoCodeIfMissing(string $code): void
+    {
+        // Appel API BO, insertion SQL, docker exec… selon votre pipeline.
+        $boUrl = rtrim($_ENV['PRESTAFLOW_BO_URL'], '/');
+        // ...
+    }
+
+    public function init()
+    {
+        // suite normale
+    }
+}
+```
+
+<Warning title="Le parent::before() est OBLIGATOIRE en premier. Le before() de TestsSuite fait trois choses non-négociables : instancie le browser, nettoie les cookies héritées de la suite précédente, applique PRESTAFLOW_COOKIES. Sauter cet appel casse tout ce qui suit sans message clair — vos assertions tombent avec des erreurs qui n'ont rien à voir avec le vrai problème." />
+
+## Cleanup : ce que Flashlight change
+
+L'annexe *module tiers* insistait sur le cleanup end-of-suite parce qu'elle décrivait une boutique de recette **persistante** — chaque run laisse des traces, il faut nettoyer derrière soi.
+
+Dans un pipeline **Flashlight**, la logique s'inverse : chaque run démarre un conteneur neuf, la base MySQL vit dans le conteneur, tout est jeté à la fin. **Le cleanup est gratuit, il se fait tout seul.**
+
+Deux mondes :
+
+- **Boutique de recette permanente** (un serveur qui tourne, sur lequel plusieurs runs tapent) → cleanup obligatoire, fixtures side-effect sur la vraie base.
+- **Flashlight en CI** (conteneur jetable) → cleanup inutile, fixtures peuvent être aussi lourdes qu'on veut, on ne pollue rien.
+
+Le choix de niveau de fixtures dépend beaucoup de ce facteur. Sur Flashlight, on peut se permettre le niveau 1 avec des données conséquentes. Sur boutique persistante, on préfère les niveaux 2 et 3 avec un cleanup soigné.
+
+## Mapping usages → niveau
+
+Pour se repérer :
+
+| Fixture | Bon niveau |
+|---|---|
+| Module installé et configuré | 1 (init-scripts) |
+| Devise, langue, transporteur, méthode de paiement | 1 |
+| Produits catalogue de base | 1 |
+| Compte client de test standard | 1 |
+| Jeu de N produits dont N varie entre runs | 2 (step CI) |
+| Fixtures extraites d'un système externe (import quotidien) | 2 |
+| Code promo unique à un scénario | 3 (`before()`) |
+| Panier abandonné à un état précis | 3 |
+
+## Notes
+
+<Info title="Compat multi-versions : un init-script qui fait des INSERT SQL directs sur ps_configuration peut casser entre versions PS si le schéma change. Préférer les commandes CLI (bin/console prestashop:module install, prestashop:config:set) qui s'adaptent — ou versionner votre init-scripts par version PS majeure (dossiers ./tests/flashlight-init/v8, ./tests/flashlight-init/v9)." />
+
+<Warning title="Credentials embarqués dans les init-scripts : ces fichiers finissent dans votre repo Git. Traitez tout secret (API key, mot de passe admin d'un service tiers appelé au boot) comme un cookie — secret GitHub référencé dans le workflow, jamais en dur dans le script versionné." />
+
+<Info title="Interaction avec l'annexe cookies : les fixtures de niveau 1 posent l'ÉTAT, les cookies pré-injectés (voir annexe précédente) posent la SESSION. Les deux se combinent — vous démarrez avec un module installé, une config connue, ET une session admin déjà ouverte. Le premier it de vos suites BO peut alors aller directement à l'action métier." />
+
+<Info title="Prochaine annexe (potentielle) : tester un thème PrestaShop — l'angle spécifique aux intégrateurs de thèmes, où l'assertion visuelle prend le pas sur l'assertion fonctionnelle." />

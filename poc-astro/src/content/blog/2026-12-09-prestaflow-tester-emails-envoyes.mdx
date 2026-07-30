@@ -1,0 +1,234 @@
+---
+title: "PrestaFlow : tester les emails envoyés par un module"
+date: 2026-12-09
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-12-09-prestaflow-tester-emails-envoyes.png'
+summary: "Un module qui déclenche un email de confirmation, une notification à l'admin, un mail de renvoi de mot de passe. Comment vérifier depuis PrestaFlow que l'email est bien parti, avec le bon contenu, sans polluer une vraie boîte."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et l'article 2 pour le contexte CI + Docker." />
+
+## Décor
+
+Beaucoup de modules PS déclenchent l'envoi d'un email : confirmation de commande, notification admin, alerte stock, renvoi de mot de passe, formulaire de contact. C'est un pan métier entier qui vit à côté du HTML rendu — et que les assertions front classiques de PrestaFlow ne voient pas.
+
+Vérifier ces envois demande de **capturer** ce que PS envoie sans que ça finisse dans une vraie boîte mail. C'est le rôle d'un **MTA de capture** — MailHog, Mailpit, MailCatcher — qu'on branche à côté de la boutique de test. PrestaShop envoie ses emails vers ce MTA, PrestaFlow les récupère via son API HTTP, et vos scénarios vérifient le contenu.
+
+Cette annexe montre le pattern de bout en bout avec **Mailpit** (le fork actif de MailHog) — un binaire Go de 20 Mo qui expose une UI web et une API REST, packagé en image Docker officielle.
+
+## Le montage : Flashlight + Mailpit + config SMTP
+
+En CI (adapter les patterns pour local Valet/MAMP est trivial), on ajoute un side-car Mailpit à côté de Flashlight :
+
+```yaml
+- name: Start Mailpit
+  run: |
+    docker run -d --rm --name mailpit \
+      -p 1025:1025 \
+      -p 8025:8025 \
+      axllent/mailpit:latest
+
+- name: Start PrestaShop (Flashlight)
+  run: |
+    docker run -d --rm --name ps \
+      -p 80:80 \
+      --link mailpit \
+      prestashop/prestashop-flashlight:8.1.7
+```
+
+Deux ports Mailpit exposés :
+
+- **1025** : port SMTP standard, celui vers lequel PrestaShop enverra
+- **8025** : UI web + **API REST** — c'est celle qu'on consomme depuis PrestaFlow
+
+Il faut ensuite dire à PrestaShop d'utiliser ce SMTP. Le plus propre : un init-script Flashlight (cf. [annexe fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)) qui configure les paramètres SMTP au boot :
+
+**`tests/flashlight-init/30-configure-smtp.sh`**
+
+```sh
+#!/usr/bin/env bash
+set -e
+
+cd /var/www/html
+
+php bin/console prestashop:config:set PS_MAIL_METHOD 2
+php bin/console prestashop:config:set PS_MAIL_SERVER mailpit
+php bin/console prestashop:config:set PS_MAIL_SMTP_PORT 1025
+php bin/console prestashop:config:set PS_MAIL_SMTP_ENCRYPTION off
+php bin/console prestashop:config:set PS_MAIL_USER ""
+php bin/console prestashop:config:set PS_MAIL_PASSWD ""
+```
+
+Chaque email que PS envoie part vers `mailpit:1025` et se retrouve consultable via `http://localhost:8025/api/v1/messages`.
+
+## Une Page qui interroge l'API Mailpit
+
+Créez `tests/prestaflow/Pages/v8/Support/Mailbox/Page.php` — une Page utilitaire (pas liée à une URL du site) qui expose les vérifications sur les emails capturés :
+
+```php
+<?php
+
+namespace Tests\Pages\v8\Support\Mailbox;
+
+use PrestaFlow\Library\Pages\v8\FrontOffice\Page as BasePage;
+
+class Page extends BasePage
+{
+    private string $mailpitUrl = 'http://localhost:8025';
+
+    public function reset(): void
+    {
+        // DELETE /api/v1/messages vide la boîte capturée.
+        $this->httpDelete($this->mailpitUrl . '/api/v1/messages');
+    }
+
+    public function listMessages(): array
+    {
+        $body = $this->httpGet($this->mailpitUrl . '/api/v1/messages');
+        return json_decode($body, true)['messages'] ?? [];
+    }
+
+    public function findByRecipient(string $email): ?array
+    {
+        foreach ($this->listMessages() as $m) {
+            foreach ($m['To'] ?? [] as $to) {
+                if (($to['Address'] ?? '') === $email) {
+                    return $m;
+                }
+            }
+        }
+        return null;
+    }
+
+    public function getMessageBody(string $messageId): string
+    {
+        return $this->httpGet($this->mailpitUrl . '/api/v1/message/' . $messageId);
+    }
+
+    private function httpGet(string $url): string
+    {
+        return (string) file_get_contents($url);
+    }
+
+    private function httpDelete(string $url): void
+    {
+        $ctx = stream_context_create(['http' => ['method' => 'DELETE', 'ignore_errors' => true]]);
+        @file_get_contents($url, false, $ctx);
+    }
+}
+```
+
+Volontairement simple — pas d'HTTP client tiers, `file_get_contents` suffit pour l'API JSON de Mailpit.
+
+## Un scénario : vérifier l'email envoyé par le formulaire contact
+
+Objectif : simuler un client qui envoie une demande via le formulaire de contact `ps_contactform`. Vérifier que l'email atterrit bien chez l'admin.
+
+```php
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class ContactFormEmail extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('FrontOffice\Home');
+        $this->importPage('Support\Mailbox', domain: 'Tests');
+
+        extract($this->pages);
+
+        $customerMessage = 'Test PrestaFlow #' . time();
+        $adminEmail = 'admin@prestashop.com';
+
+        $this
+        ->describe('Le formulaire contact envoie un email')
+        ->it('nettoie la boîte capturée', function () use ($supportMailboxPage) {
+            $supportMailboxPage->reset();
+            Expect::that(count($supportMailboxPage->listMessages()))->isTheSameAs(0);
+        })
+        ->it('soumet le formulaire contact', function () use ($frontOfficeHomePage) use ($customerMessage) {
+            $frontOfficeHomePage->goToUrl($_ENV['PRESTAFLOW_FO_URL'] . 'nous-contacter');
+            $frontOfficeHomePage->setValue('input[name="from"]', 'client@example.test');
+            $frontOfficeHomePage->setValue('textarea[name="message"]', $customerMessage);
+            $frontOfficeHomePage->click('input[name="submitMessage"]');
+            $frontOfficeHomePage->waitForPageReload();
+        })
+        ->it('capture un email chez l\'admin', function () use ($supportMailboxPage) use ($adminEmail) {
+            // Petit délai — l'envoi SMTP est asynchrone dans PS.
+            sleep(2);
+
+            $message = $supportMailboxPage->findByRecipient($adminEmail);
+            Expect::that($message)->isNotNull();
+        })
+        ->it('l\'email contient le message client', function () use ($supportMailboxPage) use ($adminEmail, $customerMessage) {
+            $message = $supportMailboxPage->findByRecipient($adminEmail);
+            $body = $supportMailboxPage->getMessageBody($message['ID']);
+
+            Expect::that($body)->contains($customerMessage);
+            Expect::that($body)->contains('client@example.test');
+        });
+    }
+}
+```
+
+Quatre `it`, qui répondent aux quatre questions qu'on se pose sur un envoi d'email :
+
+- La boîte de départ est bien vide (pas de pollution d'un précédent test)
+- L'action UI déclenche bien un envoi SMTP
+- L'email arrive au bon destinataire
+- Le contenu de l'email est celui attendu
+
+## Vérifier les pièces jointes
+
+Mailpit expose aussi les attachments d'un message via `GET /api/v1/message/{ID}/part/{PartID}`. Utile quand un module génère un PDF de facture attaché à l'email de confirmation.
+
+```php
+public function getAttachments(string $messageId): array
+{
+    $body = $this->httpGet($this->mailpitUrl . '/api/v1/message/' . $messageId);
+    $data = json_decode($body, true);
+    return $data['Attachments'] ?? [];
+}
+```
+
+Un `it` qui vérifie la présence d'un PDF :
+
+```php
+->it('l\'email contient une facture PDF', function () use ($supportMailboxPage) use ($orderReference) {
+    $message = $supportMailboxPage->findByRecipient('client@example.test');
+    $attachments = $supportMailboxPage->getAttachments($message['ID']);
+
+    $pdf = array_filter($attachments, fn($a) => str_ends_with($a['FileName'] ?? '', '.pdf'));
+
+    Expect::that(count($pdf))->isTheSameAs(1);
+});
+```
+
+## Localement, sans Docker
+
+Si vous testez sur la [stack locale](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) (Valet, MAMP), Mailpit tourne aussi en binaire natif : `brew install mailpit` sur macOS, puis `mailpit` lance le SMTP sur `1025` et l'UI sur `8025`. Config PS pareille (`PS_MAIL_SERVER=127.0.0.1`, `PS_MAIL_SMTP_PORT=1025`), la Page `Support\Mailbox` fonctionne à l'identique.
+
+## Interaction avec les autres annexes
+
+- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — la config SMTP fait partie de l'état initial de la boutique, donc niveau 1 (init-script Flashlight) est le bon endroit pour la poser. Cette annexe applique exactement le pattern.
+- **[Auth cookies](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — si votre scénario email nécessite un login client (email de suivi de commande), le cookie pré-injecté fait sauter l'étape login. Combiné : boutique SMTP-configurée + session client déjà ouverte + captation Mailpit = suite d'email test en 3 `it`.
+- **[TDD](/2026/10/21/prestaflow-tdd-scenario-avant-fix/)** — bug remonté *"le mail admin n'est plus envoyé après update du module"* → scénario de reproduction (soumet formulaire + attend email) → rouge → fix → vert. Le scénario reste comme garde-fou.
+
+## Notes
+
+<Warning title="L'envoi SMTP en PS est asynchrone. Le sleep(2) dans le troisième it est artisanal — sur une boutique lente ou un CI chargé, il peut ne pas suffire. Mieux : une méthode waitForMessage($recipient, $timeoutSec = 10) dans la Page Mailbox qui poll l'API Mailpit toutes les 500ms jusqu'à trouver ou timeout." />
+
+<Info title="Mailpit vs MailHog : le second est en fin de vie (dernier release 2020), le premier est le fork actif maintenu. Nouvelles installations : Mailpit. Vous croisez encore MailHog sur des projets anciens — l'API est très proche mais quelques endpoints diffèrent (/api/v2 chez MailHog vs /api/v1 chez Mailpit)." />
+
+<Info title="En prod, ne laissez surtout pas la config SMTP pointer sur un Mailpit — vous ne recevriez pas vos vrais emails. La config Mailpit doit vivre uniquement dans la boutique de recette (côté init-script Flashlight ou dans un .env dédié qui n'est pas déployé en prod)." />
+
+<Info title="Pour les modules qui utilisent l'API SendGrid, Mailgun ou Postmark directement (au lieu de SMTP), Mailpit ne capte rien. Il faut alors soit basculer temporairement la lib d'envoi vers SMTP pour les tests, soit mocker l'API tierce avec un outil comme WireMock. Sujet d'annexe dédiée le jour où le besoin se présente." />

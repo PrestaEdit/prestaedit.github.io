@@ -1,0 +1,201 @@
+---
+title: "PrestaFlow : consommer le results.json"
+date: 2026-11-25
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-11-25-prestaflow-consommer-results-json.png'
+summary: "Le fichier JSON produit par PrestaFlow n'est pas qu'un artefact CI — c'est une source structurée. Quatre usages concrets : notification Slack riche, badge README, dashboard maison, création automatique de ticket."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario » et « Automatiser ses scénarios en CI »." />
+
+## Le fichier oublié de la boucle CI
+
+L'[article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) mentionne que l'Action officielle lance `composer run prestaflow:json:file` puis pousse le résultat à la plateforme. L'annexe [historique cloud](/2026/09/16/prestaflow-consulter-historique-cloud/) explique qu'on peut télécharger ce même fichier via une URL S3 pré-signée depuis l'app.
+
+Mais on n'a jamais dit **ce qu'il y a dedans**, ni ce qu'on peut faire avec en dehors de le regarder.
+
+Ce fichier `results.json` est la sortie machine de PrestaFlow. Il contient tout ce qu'un humain voit dans le rapport HTML, dans un format que n'importe quel script sait consommer. Cette annexe montre son schéma et quatre usages pratiques pour brancher PrestaFlow au reste de votre outillage.
+
+## Comment le générer
+
+Une seule commande :
+
+```sh
+./vendor/bin/prestaflow run --output=JSON --file tests/prestaflow
+```
+
+- **`--output=JSON`** — remplace le rapport CLI par du JSON structuré.
+- **`--file`** — écrit sur le disque plutôt que sur `stdout`. Le fichier atterrit à un chemin standard sous `tests/prestaflow/reports/`.
+
+C'est très exactement ce que fait le script Composer `prestaflow:json:file` (visible dans le smoke workflow de l'Action officielle) :
+
+```json
+"scripts": {
+    "prestaflow:json:file": "./vendor/prestaflow/php-library/bin/prestaflow run --output=JSON ./tests --file"
+}
+```
+
+Rien ne vous empêche de l'appeler à la main pour explorer.
+
+## Le schéma
+
+Un tableau JSON, une entrée par suite exécutée dans le run. Chaque entrée contient :
+
+```json
+{
+  "suite": "Tests\\Suites\\DisplayHome",
+  "title": "Bloc psflowdemo sur la home",
+  "stats": {
+    "passes": 2,
+    "failures": 0,
+    "skips": 0,
+    "skippeds": 0,
+    "todos": 0,
+    "assertions": 2,
+    "time": 4213
+  },
+  "tests": [
+    {
+      "title": "affiche le bloc",
+      "state": "pass",
+      "time": 2104,
+      "code": "... source du closure via Reflection ..."
+    },
+    {
+      "title": "affiche le titre par défaut",
+      "state": "pass",
+      "time": 1108,
+      "expect": null,
+      "screen": null
+    }
+  ],
+  "warnings": [],
+  "screens": []
+}
+```
+
+Les champs qui comptent en pratique :
+
+- **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
+- **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/).
+- **`tests[].expect`** — le message d'assertion en cas d'échec, du style *"Expected 'inscription' to be contained in 'You have successfully subscribed'"*. Non-null uniquement si `state:fail`.
+- **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`.
+- **`tests[].time`** — durée en millisecondes.
+- **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/2026/11/11/prestaflow-scenarios-parametres-chainage/)).
+- **`tests[].visual`** — bloc de résultats de régressions visuelles pour ce `it`, si `visualCheckpoint` a été appelé.
+
+Le reste (`code`, `attachments`, `warnings`, `screens`) est du bonus utile en debug mais rarement consommé par un script.
+
+## Cas d'usage 1 : notification Slack riche
+
+Le mail *"Job PrestaFlow failed"* de GitHub Actions ne dit rien du **pourquoi**. Un message Slack riche, généré depuis le `results.json`, dit précisément quelles suites ont cassé et sur quelle assertion.
+
+Step à ajouter après `Run PrestaFlow` dans le workflow (GitHub Actions, adaptable ailleurs) :
+
+```yaml
+- name: Notify Slack on failure
+  if: failure()
+  run: |
+    FAILED=$(jq -r '[.[] | select(.stats.failures > 0)] | length' \
+      tests/prestaflow/reports/results.json)
+
+    SUMMARY=$(jq -r '[.[] |
+      select(.stats.failures > 0) |
+      .title as $suite |
+      .tests[] |
+      select(.state == "fail") |
+      "• *\($suite)* — \(.title)\n  ↳ `\(.expect // "no message")`"
+    ] | join("\n")' tests/prestaflow/reports/results.json)
+
+    curl -X POST -H 'Content-Type: application/json' \
+      -d "{\"text\": \"❌ *${FAILED} suite(s) PrestaFlow en échec*\n\n${SUMMARY}\"}" \
+      ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+Rendu Slack :
+
+```
+❌ 2 suite(s) PrestaFlow en échec
+
+• Bloc newsletter ps_emailsubscription — accepte une nouvelle adresse
+  ↳ Expected empty string to not be empty
+• Modification du titre depuis le BO — affiche le nouveau titre sur la home
+  ↳ Expected 'Bienvenue par défaut' to contain 'Titre mis à jour'
+```
+
+Bien plus utile que le lien vers l'onglet Actions. On sait quoi débugger avant même d'ouvrir le job.
+
+## Cas d'usage 2 : badge README dynamique
+
+[Shields.io](https://shields.io) sait générer un badge à partir d'un endpoint JSON qu'on héberge soi-même — un gist, un fichier statique sur S3, un endpoint de projet. On peut publier après chaque run CI un mini-JSON avec le résumé.
+
+Extraction du résumé :
+
+```sh
+jq '{
+  schemaVersion: 1,
+  label: "prestaflow",
+  message: "\([.[].stats.passes] | add) passing / \([.[].stats.failures] | add) failing",
+  color: (if ([.[].stats.failures] | add) == 0 then "brightgreen" else "red" end)
+}' tests/prestaflow/reports/results.json > badge.json
+```
+
+Publiez `badge.json` où vous voulez (un gist GitHub public suffit), puis dans votre README :
+
+```markdown
+![PrestaFlow](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/vous/xxx/raw/badge.json)
+```
+
+Le badge se met à jour tout seul à chaque run vert / rouge. Utile pour un module open-source qui veut signaler visuellement sa couverture E2E.
+
+## Cas d'usage 3 : dashboard multi-projets
+
+Quand vous maintenez 10 modules ou plus, un tableau agrégé qui montre l'état de chacun vaut mieux que des GitHub Actions individuels à surveiller un par un.
+
+Pattern :
+
+- Chaque projet CI, après son run, `POST` son `results.json` (ou juste le `stats` extrait) vers un endpoint interne
+- Un backend léger (Node/PHP/Python, une table SQL) stocke l'entrée avec `project_id + timestamp + stats`
+- Un frontend HTML minimal affiche la table avec un statut vert / rouge par projet, dernière date de run, taux de succès sur 7 jours
+
+C'est ce que la plateforme prestaflow.io fait déjà pour vous, mais un dashboard maison a l'avantage de la personnalisation (filtres, groupements, KPI custom, intégration avec vos autres outils internes).
+
+## Cas d'usage 4 : auto-création d'issue GitHub
+
+Sur la branche `main`, une régression PrestaFlow devrait automatiquement créer une issue GitHub avec le contexte du bug. Step CI :
+
+```yaml
+- name: Create issue on regression
+  if: failure() && github.ref == 'refs/heads/main'
+  run: |
+    TITLE=$(jq -r '[.[] |
+      select(.stats.failures > 0) |
+      "PrestaFlow : \(.title)"
+    ] | .[0]' tests/prestaflow/reports/results.json)
+
+    BODY=$(jq -r '[.[] |
+      select(.stats.failures > 0) |
+      .title as $suite |
+      .tests[] | select(.state == "fail") |
+      "### \($suite) — \(.title)\n\n**Assertion:** `\(.expect // "n/a")`\n"
+    ] | join("\n---\n")' tests/prestaflow/reports/results.json)
+
+    gh issue create --title "$TITLE" --body "$BODY" --label "regression,e2e"
+```
+
+À réserver au CI de `main` (via le `github.ref` check) — sinon toutes vos feature branches génèrent des issues à chaque `it` qui n'a pas fini d'être stabilisé.
+
+## Notes
+
+<Warning title="Le fichier peut grossir vite. Le champ code inclut le source des closures via Reflection, ce qui gonfle results.json quand vous avez beaucoup de suites. Pour la consommation CI, jq 'map(del(.tests[].code))' produit une version allégée qui fait 5 à 10× moins de poids, avec toutes les infos utiles conservées." />
+
+<Info title="Les captures référencées par tests[].screen vivent dans prestaflow/screens/errors/. Elles ne sont PAS embarquées dans le JSON — c'est un chemin relatif. Si vous consommez le JSON hors du contexte du run (upload vers un dashboard distant, par exemple), pensez à uploader aussi le dossier des captures." />
+
+<Info title="Ne parsez pas le JSON avec des regex bash. L'ordre des clés n'est pas garanti entre versions de la lib, et un champ optionnel qui apparaît/disparaît casse tout. Utilisez jq (dans un workflow CI) ou json_decode (dans un script PHP)." />
+
+<Info title="Champs qui apparaissent sous condition : dataset et datasets uniquement si le it était dans un ->with(), visual uniquement si visualCheckpoint appelé, expect et screen uniquement si state:fail. Vos scripts doivent gérer l'absence de ces champs sans lever d'exception (// null en jq, ?? [] en PHP)." />

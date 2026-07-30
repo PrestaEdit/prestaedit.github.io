@@ -1,0 +1,168 @@
+---
+title: "PrestaFlow : écrire le scénario avant le fix, en faire le garde-fou"
+date: 2026-10-21
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-10-21-prestaflow-tdd-scenario-avant-fix.png'
+summary: "Un bug est remonté → au lieu de plonger dans le code, on écrit d'abord le scénario PrestaFlow qui le reproduit. Il tombe rouge. On fixe. Il passe vert. Le scénario reste, gratuit."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Le workflow habituel, et son défaut
+
+Un bug remonte dans le tracker. Le workflow classique ressemble à ça :
+
+1. Lire le rapport, identifier ce que le user voulait faire.
+2. Ouvrir le code, chercher l'endroit fautif.
+3. Écrire le fix.
+4. Tester **manuellement** une fois pour vérifier — souvent en refaisant à la main les étapes décrites dans le bug.
+5. Merger.
+
+Ça marche. Et pourtant, six mois plus tard, la même régression revient. Personne dans l'équipe ne se souvient du bug d'origine, personne n'a formalisé sa reproduction, un refactoring innocent le fait ressurgir. Le CI est vert parce qu'il ne teste pas ce cas précis — comment le pourrait-il, il n'existe pas de scénario qui le couvre.
+
+## Le renversement TDD
+
+Le pattern TDD, appliqué à PrestaFlow, ré-ordonne :
+
+1. **Bug reçu** dans le tracker.
+2. **Écrire le scénario** PrestaFlow qui reproduit le bug — avant tout code de fix.
+3. **Run local rouge** — confirmation qu'on a bien compris le bug (si le scénario passe vert du premier coup, le bug n'est pas là où on croit).
+4. **Écrire le fix**.
+5. **Run local vert** — confirmation que le fix fait vraiment ce qu'on croit (si le scénario reste rouge, le fix ne couvre pas le cas décrit).
+6. **Committer le fix ET le scénario** — le scénario reste dans la suite, il pesera trois secondes à chaque run futur, et il rattrape la régression le jour où elle reviendra.
+
+L'étape 3 est celle qu'on saute habituellement. Elle est cruciale — un scénario qui passe vert sans le fix indique qu'on regarde la mauvaise partie du code. Autant s'en rendre compte avant d'écrire 40 lignes de patch qui ne servent à rien.
+
+## Cas concret avec `psflowdemo`
+
+Bug fictif mais représentatif : *"le titre du bloc n'est pas échappé côté template. Si un admin saisit un titre contenant du HTML (`<script>alert(1)</script>Bienvenue`), le navigateur exécute le script au lieu d'afficher le texte."*
+
+### Étape 1 — Écrire le scénario qui reproduit
+
+Créez `tests/prestaflow/Suites/Regression/NoXssInBlockTitle.php` :
+
+```php
+<?php
+
+namespace Tests\Suites\Regression;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+// Régression : issue #142. Le titre du bloc était rendu non échappé,
+// permettant une injection HTML/JS depuis la page de config BO.
+class NoXssInBlockTitle extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('BackOffice\Login');
+        $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+        $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
+
+        extract($this->pages);
+
+        $payload = '<script>window.__xssFired=true</script>Bienvenue';
+
+        $this
+        ->describe('Regression #142 — pas de XSS via le titre du bloc')
+        ->it('se connecte au BO', function () use ($backOfficeLoginPage) {
+            $backOfficeLoginPage->goToPage('login');
+            $backOfficeLoginPage->login();
+        })
+        ->it('accepte un titre contenant du HTML/JS depuis la config', function () use ($modulesPsflowdemoConfigurationPage) use ($payload) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+            $modulesPsflowdemoConfigurationPage->fillTitle($payload);
+            $modulesPsflowdemoConfigurationPage->save();
+        })
+        ->it('n\'exécute pas le script sur la home', function () use ($modulesPsflowdemoHomePage) {
+            $modulesPsflowdemoHomePage->goToPage('home');
+
+            // Le titre doit apparaître littéralement, pas être interprété.
+            Expect::that($modulesPsflowdemoHomePage->getBlockTitle())
+                ->contains('<script>');
+
+            // Le script ne doit pas avoir été exécuté.
+            $xssFired = $modulesPsflowdemoHomePage->getPage()
+                ->evaluate('window.__xssFired === true')
+                ->getReturnValue();
+
+            Expect::that($xssFired)->isTheSameAs(false);
+        });
+    }
+}
+```
+
+### Étape 2 — Confirmer le rouge
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow
+```
+
+Le troisième `it` tombe : `getBlockTitle()` retourne `"Bienvenue"` seul (le `<script>` a été *interprété* et n'apparaît pas dans le texte visible), et `window.__xssFired` vaut `true`. Deux assertions échouées, mais qui pointent vers **le même bug** de fond.
+
+Preuve documentée que vous avez bien compris le problème. La capture d'erreur (voir [annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)) montre l'état exact de la home avec le script exécuté — attachable au ticket si besoin.
+
+### Étape 3 — Fix
+
+Dans le template Smarty du module : `{$title|escape:'html'}` à la place de `{$title}`. Une ligne.
+
+### Étape 4 — Confirmer le vert
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow
+```
+
+`getBlockTitle()` contient désormais `<script>window.__xssFired=true</script>Bienvenue` littéralement (avec entities HTML), et `window.__xssFired` reste `undefined`. Le scénario passe vert.
+
+### Étape 5 — Commit
+
+```sh
+git add tests/prestaflow/Suites/Regression/NoXssInBlockTitle.php
+git add modules/psflowdemo/views/templates/hook/displayHome.tpl
+git commit -m "fix(#142): escape title in home block template + regression test"
+```
+
+Le scénario vit désormais avec le code. Chaque futur push le rejoue. Le jour où quelqu'un touche à ce template et oublie le `escape`, le CI passe rouge avec un message qui pointe directement sur le fichier de régression et le numéro d'issue.
+
+## L'effet cumulé sur le CI
+
+Un `it` de régression ajouté prend 3 à 10 secondes par run. Négligeable individuellement. Après six mois d'usage TDD, votre suite `Suites/Regression/` contient vingt à quarante scénarios qui couvrent tous les cas limites que votre projet a rencontrés en production.
+
+C'est votre **mémoire institutionnelle** — encodée en tests exécutables, pas dans des tickets fermés que personne ne relit. Le nouveau contributeur qui casse par accident un cas oublié voit son CI rouge, et la classe de la suite lui donne le contexte : *"Regression #142 — pas de XSS via le titre du bloc"*.
+
+## Quand ça marche vraiment bien
+
+Les scénarios end-to-end sont excellents pour les bugs qui touchent :
+
+- **Le rendu front** — un CSS qui casse un alignement, un JS qui n'exécute pas, un template qui échappe mal
+- **Un enchaînement d'écrans** — un tunnel de commande qui se bloque à une étape précise
+- **Un état persisté** — un panier qui se vide sous certaines conditions, une config qui n'est pas sauvée
+
+Ce sont **les bugs qui exigent qu'on parcoure l'app comme un utilisateur** pour être reproduits. C'est exactement le terrain de PrestaFlow.
+
+## Quand un autre outil est plus pertinent
+
+- **Bug de logique pure** (calcul, format de sortie) — PHPUnit reste plus rapide, plus focus, plus lisible.
+- **Bug de performance** — un scénario E2E ne mesure pas la perf, il ne fait que passer/échouer. Autres outils (`ab`, `k6`, profiling PHP).
+- **Bug de sécurité complexe** — un scénario TDD **aide** à documenter et régresser une vulnérabilité connue (comme l'XSS ci-dessus), mais ne remplace pas un audit sécurité complet.
+
+## Interaction avec les autres annexes
+
+- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — le bug affecte le rendu ? Ajoutez un `visualCheckpoint` en plus du `Expect::that` fonctionnel. La capture rouge devient une preuve visuelle du bug.
+- **[Multi-versions PS](/2026/08/26/prestaflow-multi-versions-prestashop/)** — bug reproductible sur v8 mais pas v9 ? Le scénario tourne sur les deux en matrice CI. Vous voyez immédiatement le périmètre du problème et pouvez fixer conditionnellement.
+- **[Debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)** — quand votre scénario tombe rouge la première fois, la capture d'erreur montre l'état exact. C'est la meilleure documentation de bug qui existe : le lecteur du ticket voit précisément la page problématique.
+
+## Notes
+
+<Info title="Nommez explicitement l'intention. Regression\NoXssInBlockTitle est plus lisible que UpdateTitleWithHtml. Un lecteur qui tombe sur le nom de la suite dans un CI rouge comprend immédiatement pourquoi elle existe." />
+
+<Info title="Référencez l'issue GitHub dans un commentaire de tête de suite (issue #142). Six mois plus tard, quand quelqu'un se demande pourquoi ce scénario existe, l'historique complet est à un clic." />
+
+<Warning title="Ne retirez jamais un scénario de régression une fois le bug fixé. C'est là, précisément, qu'il gagne sa valeur — il coûte 3 secondes au run pour vous éviter un jour de dette technique." />
+
+<Info title="Assumez qu'un scénario TDD peut avoir l'air artificiel. Il rejoue exactement le contexte du bug, pas un cas d'usage général. Ce n'est pas un défaut, c'est le but — un cas d'usage général est déjà couvert par les suites métier, un cas de régression cible précisément la faille rebouchée." />

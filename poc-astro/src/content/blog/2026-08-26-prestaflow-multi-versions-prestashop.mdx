@@ -1,0 +1,244 @@
+---
+title: "PrestaFlow : un scénario qui tient de PrestaShop 1.7 à 9"
+date: 2026-08-26
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-08-26-prestaflow-multi-versions-prestashop.png'
+summary: "Structurer ses Pages custom pour survivre à plusieurs versions majeures de PrestaShop, exécuter la même suite contre chacune, gérer les pièges classiques d'un passage 1.7 à 9."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites »." />
+
+## Décor
+
+Deux facettes du multi-versions PS ont déjà été effleurées dans la série :
+
+- l'[annexe *Factoriser ses Pages*](/2026/08/05/prestaflow-factoriser-ses-pages/) a introduit la mécanique `Pages/v7/v8/v9/` en cinq lignes ;
+- l'[article 2 sur la CI](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) a montré la matrice `strategy.matrix.ps-version` qui lance la même suite contre plusieurs images Flashlight.
+
+Cette annexe va au bout : comment **structurer concrètement** ses Pages pour qu'un même scénario passe sur PS 1.7, 8 et 9 sans dupliquer sa logique métier, et comment vérifier ça en local *avant* de pousser sur la CI.
+
+## Ce qui casse typiquement entre versions
+
+Avant d'écrire du code, un inventaire rapide de ce qui varie et fait tomber un scénario d'un passage à l'autre :
+
+- **Layout BO refactoré**. Les pages BO ont migré progressivement de Smarty vers Twig au fil des versions majeures. Le même écran a des sélecteurs différents avant/après.
+- **Templates front**. Le thème Classic évolue entre versions majeures — c'est particulièrement visible sur le tunnel de commande entre 1.7 et 8.
+- **URLs friendly**. Les slugs par défaut d'un même contenu peuvent changer (ordre, majuscules, présence d'un préfixe langue).
+- **Features supprimées**. Certaines pages BO disparaissent (traduction legacy en 9, par exemple) — un scénario qui les visite doit être marqué skip ou repensé sur la version cible.
+- **CSRF et sessions**. Le nom du token d'authentification BO évolue ; `login()` gère mais un code custom qui pilote un formulaire à la main peut se coincer.
+
+Dit autrement : **ce qui bouge, ce sont les sélecteurs et parfois le flow — pas l'intention métier**. C'est précisément ce que la séparation Page / Suite de l'article 1 est faite pour absorber.
+
+## Refactor : `psflowdemo` en version-portable
+
+Repartons de la Page `Modules\Psflowdemo\Configuration` de l'annexe 1 (une seule version, `v8`). On veut qu'elle tourne sur v7, v8, v9.
+
+<Warning title="Il n'y a pas de fallback automatique. La lib construit le nom de classe strictement à partir de la version courante : Tests\Pages\v9\Modules\Psflowdemo\Configuration\Page. Si ce fichier n'existe pas, l'import lève une exception class-not-found — pas de « je prends v8 à la place ». Chaque version supportée doit avoir sa classe, même vide." />
+
+### Le parent commun
+
+Créez `tests/prestaflow/Pages/Common/Modules/Psflowdemo/Configuration/Page.php` — il porte la logique métier et les sélecteurs qui ne changent pas :
+
+```php
+<?php
+
+namespace Tests\Pages\Common\Modules\Psflowdemo\Configuration;
+
+use PrestaFlow\Library\Pages\BackOfficePage;
+
+class Page extends BackOfficePage
+{
+    public function defineSelectors(): array
+    {
+        return [
+            'titleInput' => 'input[name="PSFLOWDEMO_TITLE"]',
+            'submitButton' => 'button[name="submitPsflowdemo"]',
+        ];
+    }
+
+    public function openConfiguration(string $boUrl): void
+    {
+        $this->goToUrl(rtrim($boUrl, '/') . '/index.php?controller=AdminModules&configure=psflowdemo');
+    }
+
+    public function fillTitle(string $title): void
+    {
+        $this->setValue($this->getSelector('titleInput'), $title);
+    }
+
+    public function save(): void
+    {
+        $this->click($this->getSelector('submitButton'));
+        $this->waitForPageReload();
+    }
+}
+```
+
+### Les trois sous-classes de version
+
+Créez ensuite les trois fichiers `v7`, `v8`, `v9`. Chacun étend le parent commun et n'override que ce qui diverge :
+
+**`tests/prestaflow/Pages/v8/Modules/Psflowdemo/Configuration/Page.php`** :
+
+```php
+<?php
+
+namespace Tests\Pages\v8\Modules\Psflowdemo\Configuration;
+
+use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
+
+class Page extends BasePage
+{
+    // Le formulaire de module en v8 utilise les mêmes sélecteurs que Common.
+    // Rien à surcharger.
+}
+```
+
+**`tests/prestaflow/Pages/v9/Modules/Psflowdemo/Configuration/Page.php`** — identique dans notre cas :
+
+```php
+<?php
+
+namespace Tests\Pages\v9\Modules\Psflowdemo\Configuration;
+
+use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
+
+class Page extends BasePage
+{
+}
+```
+
+**`tests/prestaflow/Pages/v7/Modules/Psflowdemo/Configuration/Page.php`** — imaginons ici que le bouton legacy porte un nom différent, pour illustrer un override :
+
+```php
+<?php
+
+namespace Tests\Pages\v7\Modules\Psflowdemo\Configuration;
+
+use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
+
+class Page extends BasePage
+{
+    public function defineSelectors(): array
+    {
+        return array_merge(parent::defineSelectors(), [
+            // Exemple hypothétique : sélecteur qui diverge dans un template legacy.
+            'submitButton' => 'button[name="submitpsflowdemo"]',
+        ]);
+    }
+}
+```
+
+Trois fichiers dont deux quasi-vides — c'est le coût d'entrée pour la portabilité. Toute la logique reste dans le parent, un seul endroit à modifier quand le comportement métier évolue.
+
+## La mécanique de routage
+
+Quand une suite fait :
+
+```php
+$this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+```
+
+La lib exécute (schématiquement) :
+
+```php
+$pageClass = 'Tests\\Pages\\v' . $this->getMajorVersion(namespace: true)
+           . '\\Modules\\Psflowdemo\\Configuration\\Page';
+new $pageClass(...);
+```
+
+`getMajorVersion()` lit `PRESTAFLOW_PS_VERSION` (`8.1.7` → `8`), le namespace est construit, la classe est instanciée. **Il n'y a pas de tentative avec une autre version si le fichier n'existe pas** — c'est pour ça que chaque `v7/`, `v8/`, `v9/` doit exister.
+
+Le paramètre `domain` change le préfixe du namespace : par défaut il pointe sur `\PrestaFlow\Library` (les Pages fournies par la lib), passer `'Tests'` route vers votre propre namespace `Tests\Pages\...`.
+
+## Exécuter la même suite contre les trois versions, en local
+
+La matrice CI de l'article 2 fait tourner les trois versions en parallèle sur GitHub Actions. Pratique pour la vérification finale, mais long à la boucle courte du développement.
+
+Un petit script shell fait le même travail localement, en série, avec Flashlight :
+
+```sh
+#!/usr/bin/env bash
+set -e
+
+for version in 1.7.8 8.1.7 9.0.0; do
+    echo "=== PrestaShop $version ==="
+
+    docker rm -f ps 2>/dev/null || true
+    docker run -d --rm --name ps -p 80:80 \
+        prestashop/prestashop-flashlight:$version
+
+    # Attente du boot Flashlight
+    for i in $(seq 1 60); do
+        curl -sf http://localhost/ > /dev/null && break
+        sleep 2
+    done
+
+    PRESTAFLOW_PS_VERSION=$version ./vendor/bin/prestaflow run tests/prestaflow
+done
+```
+
+Le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
+
+<Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans attendre les 5-10 minutes de la matrice complète. Vous re-jouez uniquement la version fautive avec PRESTAFLOW_HEADLESS=false pour voir Chrome faire son travail." />
+
+## Cas rare : conditionnelle par version dans une Page
+
+Il arrive qu'un comportement UI diverge sans qu'on veuille dupliquer toute la Page — par exemple, un modal de confirmation qui n'existe qu'à partir de PS 9.
+
+Deux approches, dans l'ordre à privilégier :
+
+**1. Extraire dans une sous-méthode overridable.** La méthode publique reste identique, la logique divergente est isolée dans une méthode protégée que la version concernée override.
+
+```php
+// Dans Common
+public function save(): void
+{
+    $this->click($this->getSelector('submitButton'));
+    $this->confirmIfNeeded();
+    $this->waitForPageReload();
+}
+
+protected function confirmIfNeeded(): void
+{
+    // Comportement par défaut : ne rien faire.
+}
+```
+
+```php
+// Dans v9 uniquement
+protected function confirmIfNeeded(): void
+{
+    $this->click('.modal-footer button.confirm');
+}
+```
+
+**2. Tester la version dans le corps de méthode.** Pragmatique mais dilue la promesse "un dossier par version", à réserver aux cas très locaux ou temporaires.
+
+```php
+public function save(): void
+{
+    $this->click($this->getSelector('submitButton'));
+    if ($this->getMajorVersion() >= 9) {
+        $this->click('.modal-footer button.confirm');
+    }
+    $this->waitForPageReload();
+}
+```
+
+Reco : privilégier l'override, ne recourir à `getMajorVersion()` que quand la divergence est vraiment marginale et qu'un fichier v9 dédié serait de la sur-ingénierie.
+
+## Notes
+
+<Warning title="Sessions Flashlight : chaque restart de l'image remet l'état à zéro. Si vous testez plusieurs versions en série avec le script ci-dessus, aucun résidu ne subsiste. En revanche, si vous re-lancez PrestaFlow plusieurs fois sur la MÊME image sans restart, l'état du run précédent (produit ajouté au panier, session BO ouverte) peut fausser le suivant." />
+
+<Info title="Assertions sur du texte traduit : contains('inscription') marche en fr mais pas en en. Multi-versions rime souvent avec multi-locale — préférer des assertions structurelles (isNotEmpty, isTheSameAs) quand c'est possible, ou paramétrer le texte attendu selon la locale du run." />
+
+<Info title="Combiné avec le tag automatique des régressions visuelles (voir l'annexe précédente), un même visualCheckpoint('home-block') produit un baseline distinct par version : visual-baseline/home-block--auto-v8-1280x800-fr.png et visual-baseline/home-block--auto-v9-1280x800-fr.png. Zéro configuration à ajouter." />
+
+<Info title="Prochaine annexe : gérer les scénarios sur plusieurs locales — traductions BO, contenus front localisés, assertions robustes à la langue de la boutique." />

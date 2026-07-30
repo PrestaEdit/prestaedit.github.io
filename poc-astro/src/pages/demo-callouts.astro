@@ -1,0 +1,31 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Info from '../components/Info.astro';
+import Warning from '../components/Warning.astro';
+import Note from '../components/Note.astro';
+import Tip from '../components/Tip.astro';
+---
+<BaseLayout title="Callouts demo">
+  <section class="mx-auto max-w-3xl px-4 py-16">
+    <h1 class="text-3xl font-bold text-gray-900">Callouts MDX</h1>
+    <p class="mt-2 text-gray-600">Aperçu des 4 variantes disponibles dans les articles.</p>
+
+    <div class="mt-10 space-y-4">
+      <Info title="Vous trouverez les sources sur PrestaEdit/psflowdemo">
+        Un dépôt minimal — un seul hook, un seul champ BO.
+      </Info>
+
+      <Warning title="L'URL BO doit correspondre à celle de votre instance">
+        Le dossier <code>/admin-dev/</code> n'est valable que sur une installation de développement.
+      </Warning>
+
+      <Note title="Le sous-dossier v8 correspond à la version majeure de PrestaShop">
+        Pour PS9, il faudra utiliser <code>v9/</code>.
+      </Note>
+
+      <Tip title="La méthode login() lit par défaut les identifiants dans les variables d'environnement">
+        Aucune configuration supplémentaire nécessaire si votre <code>.env</code> est bien renseigné.
+      </Tip>
+    </div>
+  </section>
+</BaseLayout>

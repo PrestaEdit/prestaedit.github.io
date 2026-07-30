@@ -1,0 +1,157 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection, render } from 'astro:content';
+import Info from '../../components/Info.astro';
+import Warning from '../../components/Warning.astro';
+import Note from '../../components/Note.astro';
+import Tip from '../../components/Tip.astro';
+import Danger from '../../components/Danger.astro';
+import TableOfContents from '../../components/TableOfContents.astro';
+
+const mdxComponents = { Info, Warning, Note, Tip, Danger };
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+const all = (await getCollection('blog')).sort(
+  (a, b) => a.data.date.valueOf() - b.data.date.valueOf(),
+);
+const idx = all.findIndex((p) => p.id === post.id);
+const prev = idx > 0 ? all[idx - 1] : null;
+const next = idx < all.length - 1 ? all[idx + 1] : null;
+
+const seriesPosts = post.data.series
+  ? all.filter((p) => p.data.series === post.data.series)
+  : [];
+const seriesIndex = post.data.series
+  ? seriesPosts.findIndex((p) => p.id === post.id) + 1
+  : 0;
+const seriesTotal = seriesPosts.length;
+const seriesLabel = post.data.series
+  ? post.data.series.charAt(0).toUpperCase() + post.data.series.slice(1)
+  : '';
+
+const related = all
+  .filter((p) => p.id !== post.id && post.data.series && p.data.series === post.data.series)
+  .slice(0, 3);
+
+const formatted = post.data.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+<BaseLayout title={post.data.title} description={post.data.summary}>
+  <article class="mx-auto max-w-6xl px-4 py-16">
+    <a href="/" class="mb-8 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-800">
+      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z"/></svg>
+      Retour au blog
+    </a>
+
+    <div class="grid gap-12 lg:grid-cols-[1fr_280px]">
+      <div class="min-w-0">
+        <div class="mb-4 flex flex-wrap gap-2">
+          {post.data.tags.map((t) => (
+            <span class="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{t}</span>
+          ))}
+        </div>
+        <h1 transition:name={`title-${post.id}`} class="text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">{post.data.title}</h1>
+        <div transition:name={`meta-${post.id}`} class="mt-4 flex items-center gap-3 text-sm text-gray-500">
+          <span class="font-medium text-gray-700">{post.data.author}</span>
+          <span>•</span>
+          <time datetime={post.data.date.toISOString()}>{formatted}</time>
+        </div>
+        <img
+          src={post.data.featuredimg ?? '/placeholder.svg'}
+          alt={post.data.title}
+          transition:name={`hero-${post.id}`}
+          class="mt-8 aspect-[16/9] w-full rounded-2xl object-cover"
+          onerror="this.onerror=null;this.src='/placeholder.svg';"
+        />
+
+        <div class="prose prose-lg prose-blue mt-10 max-w-none prose-pre:rounded-xl prose-pre:border prose-pre:border-gray-200 prose-code:before:content-none prose-code:after:content-none">
+          <Content components={mdxComponents} />
+        </div>
+
+        {post.data.series && seriesTotal > 1 && (
+          <p class="mt-12 text-center text-sm text-gray-500">
+            Dans la <a href={`/series/${post.data.series}`} class="font-medium text-emerald-700 hover:underline">Série {seriesLabel}</a>
+            — article {seriesIndex} sur {seriesTotal}
+          </p>
+        )}
+
+        {(prev || next) && (
+          <nav class="mt-8 grid gap-4 border-t border-gray-200 pt-8 sm:grid-cols-2" aria-label="Navigation entre articles">
+            {prev ? (
+              <a href={`/blog/${prev.id}`} class="group flex flex-col rounded-2xl border border-gray-200 p-5 transition hover:border-blue-500/50 hover:shadow-md">
+                <span class="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z"/></svg>
+                  Précédent
+                </span>
+                <span class="mt-2 line-clamp-2 text-sm font-semibold text-gray-900 group-hover:text-blue-600">{prev.data.title}</span>
+              </a>
+            ) : <span />}
+            {next ? (
+              <a href={`/blog/${next.id}`} class="group flex flex-col rounded-2xl border border-gray-200 p-5 text-right transition hover:border-blue-500/50 hover:shadow-md">
+                <span class="inline-flex items-center justify-end gap-1 text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Suivant
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.94 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.25 4.24a.75.75 0 0 1 0 1.06l-4.25 4.24a.75.75 0 0 1-1.06 0Z"/></svg>
+                </span>
+                <span class="mt-2 line-clamp-2 text-sm font-semibold text-gray-900 group-hover:text-blue-600">{next.data.title}</span>
+              </a>
+            ) : <span />}
+          </nav>
+        )}
+      </div>
+
+      <aside class="lg:sticky lg:top-24 lg:self-start">
+        <div class="rounded-2xl border border-gray-200 p-6">
+          <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">
+              {post.data.author.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-900">{post.data.author}</p>
+              <p class="text-xs text-gray-500">Auteur</p>
+            </div>
+          </div>
+          <a
+            href="/rss.xml"
+            class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M4 11a9 9 0 0 1 9 9h-3a6 6 0 0 0-6-6v-3zm0-7a16 16 0 0 1 16 16h-3A13 13 0 0 0 4 7V4zm2.5 13a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
+            </svg>
+            S'abonner (RSS)
+          </a>
+        </div>
+
+        <div class="mt-6">
+          <TableOfContents headings={headings} />
+        </div>
+
+        {related.length > 0 && (
+          <div class="mt-6 rounded-2xl border border-gray-200 p-6">
+            <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Dans la même série</p>
+            <ul class="mt-4 space-y-4">
+              {related.map((p) => (
+                <li>
+                  <a href={`/blog/${p.id}`} class="flex gap-3 group">
+                    <img
+                      src={p.data.featuredimg ?? '/placeholder.svg'}
+                      alt=""
+                      class="h-14 w-14 flex-none rounded-md object-cover"
+                      onerror="this.onerror=null;this.src='/placeholder.svg';"
+                    />
+                    <span class="text-sm font-medium text-gray-800 group-hover:text-blue-600">{p.data.title}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </aside>
+    </div>
+  </article>
+</BaseLayout>

@@ -1,0 +1,18 @@
+---
+const nav = [
+  { href: '/', label: 'Accueil' },
+  { href: '/series', label: 'Séries' },
+  { href: '/tags', label: 'Tags' },
+  { href: '/about', label: 'À propos' },
+];
+---
+<header transition:persist="site-header" class="sticky top-0 z-40 border-b border-gray-200 bg-white/80 backdrop-blur">
+  <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
+    <a href="/" class="text-lg font-bold tracking-tight text-gray-900">PrestaEdit</a>
+    <ul class="flex gap-6 text-sm font-medium text-gray-600">
+      {nav.map((item) => (
+        <li><a href={item.href} class="hover:text-blue-600">{item.label}</a></li>
+      ))}
+    </ul>
+  </nav>
+</header>

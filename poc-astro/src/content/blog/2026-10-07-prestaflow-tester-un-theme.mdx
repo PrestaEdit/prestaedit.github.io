@@ -1,0 +1,213 @@
+---
+title: "PrestaFlow : tester un thème PrestaShop"
+date: 2026-10-07
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-10-07-prestaflow-tester-un-theme.png'
+summary: "L'angle spécifique aux intégrateurs de thèmes : quels gabarits couvrir systématiquement, comment structurer une suite par écran, gérer le responsive et les locales dans les mêmes captures."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow », l'annexe « Régressions visuelles » et l'annexe « Scénarios multi-locales »." />
+
+## Décor
+
+La série jusqu'ici s'est adressée à des développeurs de **modules** — quelqu'un qui touche à deux ou trois écrans précis et veut s'assurer qu'ils tiennent. L'intégrateur de **thème** a un jeu de contraintes complètement différent : il doit garantir que **tous** les gabarits front rendent correctement, sur **plusieurs** résolutions, dans **plusieurs** locales. Un thème qui plante sur la page catégorie en mobile portugais est cassé, même si les cinq autres pages passent.
+
+Cette annexe traite ce cas — quels écrans systématiquement couvrir, comment structurer les suites, et comment tirer parti des tags automatiques de PrestaFlow pour multiplier les combinaisons sans multiplier le code.
+
+## Le carré des gabarits
+
+Un thème PrestaShop doit rendre correctement **au minimum** les templates suivants — la check-list à laquelle tout thème publié doit se plier :
+
+- **Home** — bloc images, carrousel, mise en avant, footer
+- **Catégorie** — grille produits, filtres à facettes, pagination
+- **Produit** — galerie, ajout au panier, variantes, description, avis
+- **Panier** — vide, avec produit, avec code promo
+- **Checkout** — adresse, transporteur, paiement, confirmation
+- **Compte client** — login, register, mes commandes, mes adresses
+- **CMS** — page à propos, mentions légales
+- **Contact** — formulaire, avec/sans fichier joint
+- **Recherche** — résultats, vide
+- **404** — page introuvable
+- **Maintenance** — la page publique quand PS est en mode maintenance
+
+C'est **la base**. Un thème complet ajoute ses templates spécifiques (page catalogue custom, page marque, wishlist si intégrée). Mais si un des templates ci-dessus casse, le thème n'est pas livrable.
+
+## Structure : une suite par gabarit
+
+Contrairement aux modules où on organise les suites par cas métier (`GuestCheckout`, `UpdateTitle`), pour un thème on organise **par écran testé**. Ça donne une arborescence lisible qui reflète la check-list :
+
+```
+tests/prestaflow/
+├─ Pages/v8/
+│  └─ Theme/
+│     ├─ Home/Page.php
+│     ├─ Category/Page.php
+│     ├─ Product/Page.php
+│     ├─ CartEmpty/Page.php
+│     ├─ Checkout/Page.php
+│     └─ Cms/Page.php
+└─ Suites/Theme/
+   ├─ HomePage.php
+   ├─ CategoryPage.php
+   ├─ ProductPage.php
+   ├─ CartEmpty.php
+   ├─ CheckoutTunnel.php
+   └─ CmsPage.php
+```
+
+Chaque suite fait typiquement 2 à 3 `it` :
+
+```php
+namespace Tests\Suites\Theme;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class ProductPage extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('Theme\Product', domain: 'Tests');
+
+        extract($this->pages);
+
+        $this
+        ->describe('Gabarit produit')
+        ->it('la page charge sans erreur', function () use ($themeProductPage) {
+            $themeProductPage->goToProductPath('1-1-hummingbird-printed-t-shirt.html');
+            Expect::that($themeProductPage->isBroken())->isTheSameAs(false);
+        })
+        ->it('la structure DOM attendue est présente', function () use ($themeProductPage) {
+            Expect::that($themeProductPage->hasCanonicalStructure())->isTheSameAs(true);
+        })
+        ->it('correspond visuellement au baseline', function () use ($themeProductPage) {
+            $themeProductPage->visualCheckpoint('product-page');
+        });
+    }
+}
+```
+
+Trois `it`, trois questions : *ça charge ?*, *la structure est là ?*, *ça rend comme prévu ?*. La première rattrape les erreurs serveur, la deuxième rattrape les régressions structurelles (un `<main>` disparu), la troisième rattrape les régressions purement visuelles (une couleur qui change).
+
+## Factoriser via un trait de sanity checks
+
+Les deux premières assertions (`isBroken`, `hasCanonicalStructure`) reviennent identiquement sur tous les gabarits. C'est le cas d'école pour un trait sous `Tests\Support\`, comme vu dans l'[annexe *factoriser ses Pages*](/2026/08/05/prestaflow-factoriser-ses-pages/).
+
+```php
+<?php
+
+namespace Tests\Support;
+
+trait ThemeSanityChecks
+{
+    public function isBroken(): bool
+    {
+        // Une page cassée renvoie un 500, un titre "Fatal error", ou vide.
+        $title = trim((string) $this->getPage()->evaluate('document.title')->getReturnValue());
+        if ($title === '' || stripos($title, 'error') !== false) {
+            return true;
+        }
+
+        return !$this->isVisible('body', 3000);
+    }
+
+    public function hasCanonicalStructure(): bool
+    {
+        // Header + main content + footer — le squelette qu'aucun thème PS ne peut zapper.
+        return $this->isVisible('header, #header', 3000)
+            && $this->isVisible('main, #main, [role="main"]', 3000)
+            && $this->isVisible('footer, #footer', 3000);
+    }
+}
+```
+
+Chaque Page de gabarit le `use`, et les deux premiers `it` deviennent triviaux et identiques d'une suite à l'autre.
+
+## Responsive : trois breakpoints, un tag automatique
+
+Le thème doit tenir sur mobile, tablette, desktop. PrestaFlow expose la taille de viewport via `setViewport()`. Pattern d'itération dans une suite :
+
+```php
+public function init()
+{
+    $this->importPage('Theme\Home', domain: 'Tests');
+    extract($this->pages);
+
+    $viewports = [
+        ['w' => 375,  'h' => 812,  'label' => 'mobile'],
+        ['w' => 768,  'h' => 1024, 'label' => 'tablet'],
+        ['w' => 1280, 'h' => 800,  'label' => 'desktop'],
+    ];
+
+    $this->describe('Home responsive');
+
+    foreach ($viewports as $vp) {
+        $this->it("rend proprement en {$vp['label']}", function () use ($themeHomePage, $vp) {
+            $themeHomePage->getPage()->setViewport($vp['w'], $vp['h']);
+            $themeHomePage->goToPage('home');
+            $themeHomePage->visualCheckpoint('home');
+        });
+    }
+}
+```
+
+Le tag `'auto'` par défaut de `visualCheckpoint` intègre la taille de viewport dans le nom du fichier baseline : `home--auto-v8-375x812-fr.png`, `home--auto-v8-1280x800-fr.png`. **Aucune duplication du nom `'home'` dans le code**, PrestaFlow route sur le bon fichier selon le viewport courant.
+
+## Multi-locales en parallèle
+
+Le thème doit aussi tenir dans les langues qu'il annonce supporter. Rien à changer côté suites — on boucle sur `PRESTAFLOW_LOCALE` avec le pattern shell de l'[annexe *scénarios multi-locales*](/2026/09/02/prestaflow-scenarios-multi-locales/) :
+
+```sh
+for locale in fr en de it es; do
+    PRESTAFLOW_LOCALE=$locale ./vendor/bin/prestaflow run tests/prestaflow
+done
+```
+
+Le tag automatique combine `width × height × locale`, donc un même `visualCheckpoint('product-page')` produit :
+
+```
+visual-baseline/
+├─ product-page--auto-v8-1280x800-fr.png
+├─ product-page--auto-v8-1280x800-en.png
+├─ product-page--auto-v8-1280x800-de.png
+├─ product-page--auto-v8-375x812-fr.png
+├─ product-page--auto-v8-375x812-en.png
+└─ ...
+```
+
+Pour 5 gabarits × 3 breakpoints × 4 locales = **60 baselines** à approuver la première fois. Beaucoup, mais une fois figés, ces 60 fichiers gardent votre thème sous cloche.
+
+## Pièges spécifiques au thème
+
+**Contenus dynamiques qui cassent le rendu.** Un thème doit gérer proprement une image produit manquante (fallback), une description vide (pas de bloc orphelin), un prix à 0 (affichage cohérent), un produit en rupture (bouton grisé au bon endroit). Chaque cas mérite au moins une suite dédiée avec fixture.
+
+**Hooks vides.** Un thème rend souvent des zones prévues pour recevoir des modules (`displayHome`, `displayReassurance`, `displayFooterBefore`). Ces zones doivent rester **propres même quand aucun module n'y branche rien** — pas de div vide qui casse la mise en page, pas d'espace blanc bizarre. Test : boutique fraîche Flashlight sans modules ajoutés → tous les gabarits doivent rendre correctement.
+
+**Modules tiers déjà installés.** À l'inverse, votre thème doit survivre à un `blockreassurance`, un `ps_emailsubscription`, un `contactform` — qui vont injecter leur markup dans vos hooks. Suite dédiée avec le module installé (voir [annexe fixtures](/2026/09/30/prestaflow-fixtures-seed-data/) niveau 1 pour l'installation via init-script).
+
+## Iteration dev : la boucle courte
+
+Le pattern qui marche en pratique pour un intégrateur qui itère sur son thème :
+
+1. L'[app PrestaFlow](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/) ouverte en second écran.
+2. `PRESTAFLOW_HEADLESS=false` — on voit Chrome.
+3. La suite de l'écran sur lequel on bosse (ex : `Theme\HomePage`) prête à cliquer.
+4. On retouche un `.scss` du thème, on rebuild, on relance la suite depuis l'app.
+5. On voit la nouvelle capture, on la compare au baseline, on approuve (nouveau baseline) ou on corrige (retour au thème).
+
+Cette boucle prend 10 à 30 secondes selon l'écran. C'est plus rapide que de recharger manuellement dans un navigateur et vérifier à l'œil, parce que le diff avec le baseline **rattrape** les régressions que l'œil manque.
+
+## Notes
+
+<Warning title="Un baseline de thème est intrinsèquement fragile. La moindre update PS mineure peut faire bouger un pixel dans le layout global sans que le thème en soit responsable. Ajustez le threshold (voir annexe régressions visuelles, valeur par défaut 0.98) sur les captures full-page, gardez le pixel-parfait pour les checkpoints d'éléments isolés (logo, icônes)." />
+
+<Info title="Fonts custom : Chrome headless peut prendre le screenshot avant que les web fonts soient totalement chargées, ce qui produit des baselines qui « clignotent » entre les runs. Waitez sur un élément que la font finale a rendu (title, headline) plutôt que sur DOMContentLoaded seul." />
+
+<Info title="Ordre de grandeur pour un thème publié : comptez 60 à 200 baselines selon la combinatoire (gabarits × breakpoints × locales × états). C'est un investissement de setup, pas un coût récurrent — une fois figés, les baselines vieillissent lentement." />
+
+<Info title="Prochaines annexes potentielles : migration depuis un autre framework E2E (Playwright, Cypress), déclenchement cloud-native (quand la feature existera côté plateforme)." />

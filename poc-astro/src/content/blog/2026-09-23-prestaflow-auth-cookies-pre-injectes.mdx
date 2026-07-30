@@ -1,0 +1,145 @@
+---
+title: "PrestaFlow : sauter le login BO grâce aux cookies pré-injectés"
+date: 2026-09-23
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-09-23-prestaflow-auth-cookies-pre-injectes.png'
+summary: "Injecter des cookies avant le lancement du scénario pour bypasser un bandeau RGPD, ouvrir une session BO déjà connectée, ou forcer une variante — sans écrire un login à chaque suite."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Le coût invisible du `login()`
+
+Les suites BO de la série commencent presque toutes par le même préambule :
+
+```php
+->it('se connecte au BO', function () use ($backOfficeLoginPage) {
+    $backOfficeLoginPage->goToPage('login');
+    $backOfficeLoginPage->login();
+})
+```
+
+Cinq à quinze secondes par suite selon l'état de la boutique. Sur un projet actif avec 15 suites BO, c'est jusqu'à quatre minutes cumulées **par run**, dépensées à re-jouer le même formulaire. En CI multi-versions × multi-locales, on multiplie ce chiffre par le nombre de cellules de la matrice.
+
+PrestaFlow expose un mécanisme pour supprimer ce coût : **`PRESTAFLOW_COOKIES`**, une variable d'environnement qui injecte un jeu de cookies dans Chrome **avant toute navigation**. Vous arrivez sur la page cible avec la session déjà ouverte, comme si l'utilisateur venait de se connecter.
+
+## `PRESTAFLOW_COOKIES` en un paragraphe
+
+C'est un **tableau JSON** d'objets cookie, avec tous les champs standards de l'API Chrome :
+
+```
+PRESTAFLOW_COOKIES=[{"name":"...","value":"...","domain":"...","path":"/","secure":true,"httpOnly":true,"sameSite":"Strict","expires":1770000000}]
+```
+
+- **`name`** et **`value`** — obligatoires.
+- **`domain`** — obligatoire en pratique pour un cookie de session.
+- **`path`** — défaut `/`.
+- **`secure`, `httpOnly`, `sameSite`, `expires`, `url`** — optionnels, mappés directement sur l'API Chrome.
+
+L'injection se fait en **best-effort** : si l'API cookies échoue (cookie mal formé, domaine incohérent), le run continue sans erreur. C'est confortable, mais ça oblige à valider au moins une fois à la main que le cookie est bien pris — sinon on croit sauter le login alors qu'on l'exécute silencieusement.
+
+Le code de référence vit dans [`TestsSuite.php:604-653`](https://github.com/PrestaFlow/php-library/blob/main/src/Tests/TestsSuite.php).
+
+## Cas 1 : neutraliser un bandeau RGPD
+
+Le plus simple. Un bandeau cookie Knowband (ou équivalent) masque le sélecteur de votre `it` et fait échouer l'assertion. Vous pré-réglez le cookie de consentement, le bandeau ne s'affiche jamais.
+
+```env
+PRESTAFLOW_COOKIES=[{"name":"___kbgdcc","value":"eyIxIjp0cnVlfQ==","domain":"preprod.example.com"}]
+```
+
+Aucun changement dans les scénarios. Le bandeau disparaît de tous les runs qui utilisent ce `.env`.
+
+## Cas 2 : login BO déjà fait
+
+Le vrai gain. Reprenons la suite `UpdateTitle` de l'[article d'introduction](/2026/07/29/ecrire-son-premier-scenario-prestaflow/), qui a trois étapes :
+
+1. se connecte au BO ← 10s
+2. met à jour le titre du bloc ← 3s
+3. affiche le nouveau titre sur la home ← 3s
+
+Avec un cookie de session admin pré-injecté :
+
+```env
+PRESTAFLOW_BO_URL=https://preprod.example.com/admin-dev/
+PRESTAFLOW_COOKIES=[{"name":"PrestaShop-a1b2c3d4e5f6","value":"def50200a1b2...","domain":"preprod.example.com","path":"/admin-dev","httpOnly":true}]
+```
+
+La suite peut alors s'écrire sans le premier `it` :
+
+```php
+public function init()
+{
+    $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+    $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
+
+    extract($this->pages);
+
+    // Plus de goToPage('login') / login() — le cookie de session est déjà là.
+    $this
+    ->describe('Modification du titre depuis le BO (auth pré-injectée)')
+    ->it('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage) {
+        $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+        // ...
+    })
+    ->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage) {
+        // ...
+    });
+}
+```
+
+De 3 `it` à 2, et surtout le `it` le plus lent supprimé. Sur 15 suites BO qui bénéficient du même traitement, c'est trois à quatre minutes économisées par run.
+
+## Comment récupérer un cookie de session BO
+
+Trois méthodes, dans l'ordre de facilité :
+
+**Chrome DevTools (le plus rapide, pour un one-shot local).** Connectez-vous manuellement à votre BO, ouvrez DevTools → Application → Cookies → votre domaine. Copiez `name`, `value`, `domain`, `path`. Les cookies de session PS commencent typiquement par `PrestaShop-` suivi d'un hash.
+
+**Dump depuis un run PrestaFlow headed (utile pour capter un flow spécifique).** Lancez le scénario avec `PRESTAFLOW_HEADLESS=false`, ajoutez temporairement dans un `it` juste après `login()` :
+
+```php
+var_dump($modulesPsflowdemoHomePage->getPage()->getCookies()->getCookies());
+```
+
+Vous récupérez la liste complète (session, XSRF, préférences BO). Sélectionnez celui qui vous intéresse.
+
+**API PS (le plus propre pour la CI).** Un script pré-run qui appelle l'endpoint d'authentification programmatique de votre PS (ou simule le formulaire) et extrait le cookie de session de la réponse. Le résultat est écrit dans `PRESTAFLOW_COOKIES` avant l'exécution des suites. C'est la seule méthode qui tient dans le temps sans rotation manuelle.
+
+## En CI : passer le cookie comme secret
+
+Ajoutez `PRESTAFLOW_COOKIES` en secret du dépôt (Settings → Secrets and variables → Actions), puis dans votre workflow :
+
+```yaml
+- name: Run PrestaFlow
+  env:
+    PRESTAFLOW_COOKIES: ${{ secrets.PRESTAFLOW_COOKIES }}
+  run: ./vendor/bin/prestaflow run tests/prestaflow
+```
+
+<Warning title="Les cookies de session PrestaShop ont une durée de vie limitée (typiquement 24h à quelques jours selon la config). Un cookie expiré passé à PrestaFlow ne fait pas échouer le run explicitement — la boutique renvoie le login form, PrestaFlow tape dedans en pensant être sur la page cible, et vos assertions cassent avec des messages qui n'ont rien à voir avec le vrai problème. Prévoyez une rotation programmatique (méthode 3 ci-dessus) ou un renouvellement manuel régulier avec une date d'expiration documentée." />
+
+## Cas 3 : forcer une variante ou bypass une whitelist
+
+Le mécanisme s'applique à n'importe quel cookie, pas seulement d'auth.
+
+- **Variante A/B** — votre boutique lit `ab_variant=B` pour servir la version B, sinon la A. Injectez le cookie, testez la variante isolément.
+- **IP whitelist** — votre boutique redirige les IP inconnues vers une page maintenance sauf si un cookie `bypass_maintenance=<token>` est présent. Injectez le token, PrestaFlow entre.
+- **Locale forcée** — un cookie qui court-circuite la détection de langue par header.
+
+Rien de spécifique à PrestaShop dans ces trois cas — c'est l'API Chrome standard.
+
+## Notes
+
+<Warning title="Ne commit jamais un cookie de session en clair. Passez toujours par un secret GitHub / un vault d'organisation. Un cookie exposé dans un repo public équivaut à un mot de passe admin BO donné à la nature." />
+
+<Info title="Best-effort silencieux : si votre cookie est mal formé ou son domaine ne matche pas exactement l'URL cible, l'injection échoue sans erreur et vos scénarios exécutent quand même le login (ou tombent sur le login form). Après un premier setup, vérifiez avec PRESTAFLOW_HEADLESS=false que Chrome démarre bien sur la page BO logguée, pas sur /login." />
+
+<Info title="Multi-versions PrestaShop : le format du cookie de session (nom, structure interne) peut évoluer entre versions majeures. Si vous testez 1.7 / 8 / 9 en matrice (voir l'annexe multi-versions), prévoyez un cookie distinct par cellule, ou générez-le programmatiquement à l'exécution." />
+
+<Info title="Prochaine annexe (potentielle) : fixtures et seed data reproductibles — au-delà de la session, comment garantir que votre boutique de test a toujours les mêmes produits, catégories et clients avant chaque suite." />

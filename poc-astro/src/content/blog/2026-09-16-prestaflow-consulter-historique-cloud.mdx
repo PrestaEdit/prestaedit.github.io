@@ -1,0 +1,100 @@
+---
+title: "PrestaFlow : consulter l'historique cloud de son projet depuis l'app"
+date: 2026-09-16
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-09-16-prestaflow-consulter-historique-cloud.png'
+summary: "Après avoir sync ses runs vers prestaflow.io, l'app desktop permet de consulter l'historique complet du projet — croiser les sources CI/desktop/API, monitorer une PR en auto-refresh, télécharger un results.json ou une capture."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Piloter ses tests depuis l'application PrestaFlow » et activé le sync cloud pour votre projet." />
+
+## Décor
+
+L'[article 3](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/) s'est arrêté à *« Sync now → le run apparaît côté plateforme »*. On s'y arrête ici pour aller à l'étape suivante : **consulter l'historique complet du projet depuis l'app**, en agrégeant tout ce qui arrive sur prestaflow.io — quelle que soit la source.
+
+Sur un projet actif, la plateforme reçoit des runs de plusieurs endroits :
+
+- **Depuis la CI** — chaque push déclenche l'[Action GitHub](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) qui pousse son résultat.
+- **Depuis d'autres desktops** — vos collègues qui utilisent l'app et cliquent `Sync now` sur leurs runs locaux.
+- **Depuis l'API** — n'importe quel script tiers qui envoie un `POST /api/projects/{id}/runs` avec un token valide.
+
+Tout cela vit au même endroit sur la plateforme. La vue **Cloud runs** de l'app est la fenêtre par laquelle on regarde cette timeline unifiée, sans quitter le contexte de son projet local.
+
+## Où c'est
+
+Depuis la sidebar de votre projet local (par exemple `psflowdemo`, si vous suivez le fil rouge de la série) :
+
+1. **Settings** du projet.
+2. Carte **Cloud link** — visible uniquement quand le projet est lié à un projet cloud (voir article 3 pour l'étape de liaison).
+3. Bouton **Cloud runs**.
+
+<img src="/posts/2026-09-16-prestaflow-consulter-historique-cloud/screen-cloud-link-card.png" alt="Carte Cloud link avec le bouton Cloud runs" />
+
+## Ce que la liste affiche
+
+Une liste paginée, une ligne par run, avec les colonnes qui comptent en pratique :
+
+- **Status pill** — vert/rouge/gris selon `success` / `failure` / `skipped`.
+- **Branch + short commit** — pour situer le run dans l'historique Git du projet.
+- **Uploaded via badge** — `ci` (Action GitHub), `desktop` (Sync now depuis une machine locale) ou `api` (POST direct). C'est cette colonne qui rend la vue vraiment utile : d'un coup d'œil, vous savez si le run vert que vous regardez vient de votre CI ou du desktop d'un collègue qui teste dans son coin.
+- **Date** — format humain, aligné sur la locale de l'app.
+
+En tête de liste, deux filtres qui se combinent :
+
+- **Branch** — restreindre à `main`, `preprod`, une PR nommée…
+- **Status** — ne voir que les échecs, par exemple, pour un rapide check santé.
+
+Empty state explicite quand le projet vient d'être créé : *« No cloud runs yet — set up your CI to push results »*.
+
+<img src="/posts/2026-09-16-prestaflow-consulter-historique-cloud/screen-cloud-runs-list.png" alt="Liste des cloud runs avec filtres et badges uploaded_via" />
+
+## Refresh et auto-refresh
+
+Deux boutons à droite des filtres :
+
+- **Refresh** — rejoue la requête avec les filtres actuels. Un clic manuel, immédiat.
+- **Auto-refresh 60s** — un toggle qui, quand activé, rappelle la vue toutes les 60 secondes. Un compteur en direct vous montre le temps restant avant le prochain hit. La préférence est **persistée dans `localStorage`**, donc elle survit à un reload de l'app.
+
+Cas d'usage typique de l'auto-refresh : vous avez ouvert une PR il y a deux minutes, la CI tourne, vous continuez à coder — vous laissez l'onglet Cloud runs en second écran, il passe au vert (ou au rouge) tout seul quand le run finit.
+
+<Info title="Pas de push temps réel côté v1. L'auto-refresh est un polling client, pas un WebSocket. C'est simple, ça marche, et pour un run qui prend 5 à 15 minutes en CI le décalage de 60s est négligeable." />
+
+## Vue détail d'un run
+
+Un clic sur une ligne ouvre la page dédiée au run, qui contient tout ce dont vous avez besoin pour comprendre ce qui s'est passé :
+
+- **Bannière de stats** — passes / failures / skipped / durée totale, alignée sur ce que produit la CLI.
+- **Meta** — branch, commit court **et** ref complète, éventuel `ci_run_id` (lien vers le job GitHub Actions correspondant), badge `uploaded_via`, date d'upload.
+- **Galerie de captures** — toutes les captures produites par le run, avec une lightbox Alpine.js qui ouvre l'image en grand au clic. C'est là qu'on voit vraiment ce qu'un `it` échoué a rendu à l'écran.
+- **Bouton Download results.json** — récupère le fichier de résultats complet via une **URL S3 pré-signée** (calculée par l'API à la demande). Utile pour analyser les runs en local, faire des scripts d'agrégation, ou attacher le fichier à un ticket de bug.
+- **Bouton Open on prestaflow.io** — bascule vers l'interface web de la plateforme si vous voulez sortir de l'app.
+
+<img src="/posts/2026-09-16-prestaflow-consulter-historique-cloud/screen-cloud-run-detail.png" alt="Vue détail d'un cloud run avec stats, meta et galerie" />
+
+## Trois usages pratiques
+
+**Monitor de PR en second écran.** Vous ouvrez la vue avec filtre `branch = feat/nouveau-checkout`, auto-refresh à 60s, dans une fenêtre latérale. Vous restez concentré sur votre éditeur, l'app vous dit passivement quand la CI a fini.
+
+**Debug d'un échec CI depuis son desktop.** Un run rouge apparaît sur la branche `main`. Vous cliquez, vous ouvrez la galerie de captures, vous téléchargez `results.json`. Vous n'ouvrez GitHub que si vous avez besoin de relancer manuellement le job — pour tout le reste, l'app suffit.
+
+**Vue d'équipe distribuée.** Trois développeurs contribuent à un module. Chacun a l'app installée, chacun voit dans la liste les runs des autres (badge `desktop`) et ceux du CI (badge `ci`). Vous savez qui a testé quoi, sans avoir à demander sur Slack.
+
+## Sous le capot
+
+Deux points d'attention utiles à connaître :
+
+- **Pas de cache local en v1.** Chaque render de la liste appelle `PrestaFlowApiClient::runs()` sur la plateforme. Idem pour la vue détail avec `run($id)`. Pratique : les données sont toujours fraîches. Contrepartie : sans connexion, l'onglet n'affiche rien (une bannière d'erreur claire, jamais un crash).
+- **Erreurs API traitées comme des états UI.** Un `403` (token expiré), un `404` (projet plus lié côté cloud), ou une erreur réseau produisent une bannière neutre, pas une page 500. C'est pensé pour un usage desktop où on peut perdre le réseau à tout moment.
+
+## Notes
+
+<Info title="La liaison locale ↔ cloud project (cf. article 3) stocke l'ID du projet cloud dans le local en base de données (colonne cloud_project_id). Les liaisons créées avant cette migration sont backfillées à la première visite, via lookup du Product Key sur /api/orgs/{slug}/projects." />
+
+<Warning title="Le bouton Download results.json récupère un fichier qui peut contenir vos données de test (adresses fictives, emails jetables, éventuels tokens en clair si votre scénario en manipule). Le fichier téléchargé vit sur votre disque — traitez-le avec le même soin que n'importe quel export de données." />
+
+<Info title="Prochaine annexe (à venir) : déclencher des runs cloud-native — quand la fonctionnalité sera disponible côté plateforme, sans Docker local ni CI. En attendant, l'app reste le consommateur, pas le déclencheur." />

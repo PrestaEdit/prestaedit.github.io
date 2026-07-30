@@ -1,0 +1,168 @@
+---
+title: "PrestaFlow au service de la documentation"
+date: 2026-10-28
+tags:
+  - Outils
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-10-28-prestaflow-screenshots-pour-la-doc.png'
+summary: "Le même outil, une autre intention : utiliser PrestaFlow pour générer les captures d'un manuel utilisateur ou d'une release note, régénérables à volonté, toujours à jour."
+---
+
+<Info title="Annexe de la série PrestaFlow. Angle décalé : usage de PrestaFlow hors du contexte des tests. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Une doc qui décroche du produit
+
+Un manuel utilisateur ou une release note contient presque toujours des captures d'écran. Le BO PrestaShop qui montre l'onglet Modules, la page de configuration d'un module tiers avec un champ à remplir, le résultat côté front pour valider ce que le lecteur doit voir.
+
+Ces captures vieillissent vite. Une refonte du BO entre versions PS, un renommage d'onglet, un changement de thème classic, et vos captures sont obsolètes. En pratique, elles sont refaites **à la main** à chaque nouvelle release — quand elles sont refaites. Le plus souvent, elles ne le sont pas, et la doc décroche silencieusement du produit.
+
+Cette annexe propose un détournement d'usage : PrestaFlow sait déjà naviguer de manière déterministe et prendre des captures. Rien n'oblige à en faire un outil de test. On peut l'utiliser pour **générer** les captures de la doc, avec l'avantage de pouvoir les régénérer à volonté quand le produit évolue.
+
+## Le même outil, une autre intention
+
+Aux tests, PrestaFlow répond à *« la page rend-elle comme prévu ? »*. Aux docs, il répond à *« mets-toi précisément dans cet état, et sauve la capture pour que je l'affiche dans mon manuel »*.
+
+La mécanique est déjà là. `$page->getPage()->screenshot([...])->saveToFile($path)` produit un PNG au chemin de votre choix — c'est l'API chrome-php sous-jacente, distincte de `visualCheckpoint` qui, elle, est orientée baseline/comparaison. Pour la doc on veut la première, pas la seconde.
+
+## Un mini-guide pour `psflowdemo`
+
+Objectif : produire trois captures pour un mini-guide *"comment configurer psflowdemo"*.
+
+- `01-module-list.png` — le module dans la liste BO
+- `02-config-with-highlight.png` — la page de config avec le champ titre mis en avant
+- `03-home-result.png` — le résultat sur la home
+
+Créez `tests/prestaflow/Suites/Documentation/PsflowdemoQuickstart.php` :
+
+```php
+<?php
+
+namespace Tests\Suites\Documentation;
+
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class PsflowdemoQuickstart extends TestsSuite
+{
+    private string $outDir = __DIR__ . '/../../../../docs-screenshots';
+
+    public function init()
+    {
+        $this->importPage('BackOffice\Login');
+        $this->importPage('BackOffice\Modules');
+        $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+        $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
+
+        extract($this->pages);
+
+        @mkdir($this->outDir, 0777, true);
+
+        $this
+        ->describe('Doc — Quickstart psflowdemo')
+        ->it('se connecte au BO', function () use ($backOfficeLoginPage) {
+            $backOfficeLoginPage->goToPage('login');
+            $backOfficeLoginPage->login();
+        })
+        ->it('capture la liste des modules', function () use ($backOfficeModulesPage) {
+            $backOfficeModulesPage->goTo();
+            $backOfficeModulesPage->waitForPageLoaded();
+            $this->capture($backOfficeModulesPage, '01-module-list.png');
+        })
+        ->it('capture la page config avec highlight', function () use ($modulesPsflowdemoConfigurationPage) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+
+            // Mise en avant visuelle du champ à documenter, avant la capture.
+            $modulesPsflowdemoConfigurationPage->getPage()->evaluate("
+                document.querySelector('input[name=\"PSFLOWDEMO_TITLE\"]').style.outline =
+                    '3px solid #ff6600';
+            ");
+
+            $this->capture($modulesPsflowdemoConfigurationPage, '02-config-with-highlight.png');
+        })
+        ->it('capture le résultat sur la home', function () use ($modulesPsflowdemoHomePage) {
+            $modulesPsflowdemoHomePage->goToPage('home');
+            $modulesPsflowdemoHomePage->waitForPageLoaded();
+            $this->capture($modulesPsflowdemoHomePage, '03-home-result.png');
+        });
+    }
+
+    private function capture($page, string $filename): void
+    {
+        $page->getPage()->screenshot([
+            'captureBeyondViewport' => true,
+            'clip' => $page->getPage()->getFullPageClip(),
+            'format' => 'png',
+        ])->saveToFile($this->outDir . '/' . $filename);
+    }
+}
+```
+
+Un run génère les trois PNG dans `docs-screenshots/`. Vous les référencez ensuite depuis votre Markdown de doc :
+
+```markdown
+## Configurer psflowdemo
+
+![Liste des modules](docs-screenshots/01-module-list.png)
+1. Ouvrez le menu Modules...
+
+![Page de configuration](docs-screenshots/02-config-with-highlight.png)
+2. Remplissez le champ **Titre** (surligné en orange)...
+```
+
+## Résolution retina
+
+Pour un site de doc qui sert des assets 2× (retina, écrans haute densité), une capture standard 1440×900 pixels rendra floue une fois affichée en display CSS. On peut demander à Chrome de rendre en 2× :
+
+```php
+// Avant les captures, dans before() ou en tête de init().
+$this->getPage()->setViewport(new \HeadlessChromium\Page\Viewport(1440, 900, 2));
+```
+
+Le troisième argument `deviceScaleFactor: 2` produit des captures 2880×1800 nettes qui restent affichables en 1440×900 CSS.
+
+## Highlight visuel programmatique
+
+Le pattern utilisé dans le second `it` (injecter du CSS via `evaluate()`) est un couteau suisse. Trois variantes utiles :
+
+```javascript
+// Border colorée sur un élément à documenter
+document.querySelector('...').style.outline = '3px solid #ff6600';
+
+// Overlay avec un numéro d'étape
+const el = document.querySelector('...');
+const badge = document.createElement('div');
+badge.textContent = '1';
+badge.style.cssText = 'position:absolute;background:#ff6600;color:#fff;padding:8px 12px;border-radius:50%;font-weight:bold';
+el.style.position = 'relative';
+el.appendChild(badge);
+
+// Masquer un élément (bandeau cookies qui pollue la capture)
+document.querySelector('.cookie-banner').style.display = 'none';
+```
+
+Toujours moins fragile qu'une retouche manuelle post-capture, et rejouable identique à chaque régénération.
+
+## Combiner avec les annexes existantes
+
+- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — vos captures montrent un produit à 9,99€ ? Fixez-le en seed pour qu'il soit toujours à 9,99€, pas au dernier prix modifié à la main.
+- **[Cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — sautez le `it` de login pour aller directement à l'écran à documenter. Trois secondes gagnées par capture.
+- **[Multi-locales](/2026/09/02/prestaflow-scenarios-multi-locales/)** — bouclez sur `PRESTAFLOW_LOCALE` pour générer `guide-fr/*.png` + `guide-en/*.png` en une commande. Votre doc multilingue reste alignée.
+
+## Réutilisation
+
+Deux patterns qui marchent bien en pratique :
+
+**Dossier versionné.** `docs-screenshots/` committé dans le repo à côté du Markdown de doc, régénéré au besoin via `composer run docs:regenerate-screenshots` (script npm/composer qui appelle PrestaFlow avec le dossier `Documentation/`). Simple, tout est reproductible.
+
+**Upload CI vers un CMS.** Un job GitHub Actions qui, sur `push main`, régénère les captures et les pousse vers votre CMS de doc (S3, Contentful, Payload, WordPress via API). La doc en ligne suit toujours le produit sans intervention humaine.
+
+## Notes
+
+<Info title="Séparez Suites/Documentation/ de Suites/ classique. Deux raisons : ne pas exécuter les scénarios de doc à chaque run de tests (ils sont plus lents et pas critiques), et éviter que le rapport HTML des tests soit pollué de tonnes de captures orientées documentation." />
+
+<Warning title="N'utilisez PAS visualCheckpoint pour ces scénarios. Il génère des baselines dans visual-baseline/ à comparer aux runs suivants, ce qui n'a aucun sens pour une capture destinée à être utilisée directement. Restez sur $page->getPage()->screenshot()->saveToFile() avec un chemin custom." />
+
+<Info title="Pas d'Expect::that obligatoire dans les scénarios de doc — vous ne testez rien, vous captez. Mais un waitForPageLoaded() ou un isVisible() sur un élément final reste crucial pour éviter les captures inachevées (contenu injecté par JS pas encore rendu, spinner en cours, animation d'entrée)." />
+
+<Info title="Anti-pattern à éviter : générer les captures directement depuis un job CI sur la branche main sans review humaine. Une capture qui embarque une info sensible (email test qui ressemble à un vrai email, IBAN, token dans l'URL) ne se rattrape pas une fois publiée. Prévoyez un step de review manuelle avant push doc, ou masquez systématiquement les zones à risque via evaluate()." />

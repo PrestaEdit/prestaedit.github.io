@@ -1,0 +1,145 @@
+---
+title: "PrestaFlow : debug d'un scénario qui casse"
+date: 2026-09-09
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-09-09-prestaflow-debug-un-scenario-qui-casse.png'
+summary: "Boîte à outils pour localiser rapidement la cause d'un scénario qui échoue : capture d'erreur, mode headed, isolation par skip et todo, mode debug, et le cas particulier des flakes."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Décor
+
+Un test qui passe s'écrit facilement. Un test qui casse à un moment imprévisible, ou qui échoue sur un message obscur, consomme dix fois plus de temps qu'il n'en faut si on l'aborde sans méthode.
+
+Cette annexe est la **boîte à outils** pour ces moments-là : les cinq leviers que PrestaFlow met à votre disposition pour localiser la cause d'un échec rapidement, dans l'ordre où on les mobilise en pratique.
+
+## Le triangle d'or : trois artefacts, systématiquement
+
+À chaque run, PrestaFlow produit trois choses. Consultez-les toujours dans cet ordre :
+
+- **Le stack trace** dans la sortie CLI (ou dans la vue résultat de l'app, cf. [article 3](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/)). Nom de la classe, ligne, message d'exception.
+- **La capture d'erreur** — `prestaflow/screens/errors/error_<id>-<timestamp>.png`. Prise automatiquement par `Expect::that()` au moment exact de l'assertion qui tombe.
+- **Les captures d'étape** du rapport HTML — celles qu'on lit d'habitude en fin de run réussi.
+
+Le stack trace vous dit *où*. La capture d'erreur vous dit *quoi*. Les captures d'étape vous disent *comment on en est arrivé là*.
+
+## Étape 1 : commencer par la capture d'erreur, pas les logs
+
+Réflexe naturel de développeur : lire le stack trace, chercher la ligne, tenter de reproduire. Sur du E2E, c'est souvent une perte de temps.
+
+Le stack trace vous dira que `getTextContent('.newsletter-message')` a renvoyé une chaîne vide. Il ne vous dira pas *pourquoi*. La capture, elle, le montre en une seconde :
+
+- un bandeau cookies qui n'a pas été fermé et qui masque le formulaire ;
+- un modal RGPD qui s'ouvre au-dessus du bloc newsletter ;
+- une redirection inattendue vers la page maintenance ;
+- un message d'erreur PrestaShop en rouge en haut de page ;
+- une page 404 parce qu'un slug friendly a changé.
+
+Ces cinq cas de figure représentent, à la louche, la majorité des échecs qu'on voit sur un scénario mûr.
+
+```sh
+# Ouvre tout le dossier des captures d'erreur du dernier run
+open prestaflow/screens/errors/          # macOS
+xdg-open prestaflow/screens/errors/      # Linux
+explorer.exe prestaflow/screens/errors/  # Windows / WSL
+```
+
+<Info title="Le fichier est nommé error_<targetId>-<timestamp>.png. Le targetId identifie la session Chrome, le timestamp permet de retrouver la capture correspondant au dernier échec en date d'un seul coup d'œil (tri par date descendante)." />
+
+## Étape 2 : voir Chrome à l'œuvre
+
+Quand la capture ne suffit pas — parce que la scène qui a mené à l'erreur est plus intéressante que l'instantané final — on regarde Chrome exécuter le scénario en direct.
+
+Dans votre `.env` local (pas celui de la CI), passez :
+
+```env
+PRESTAFLOW_HEADLESS=false
+PRESTAFLOW_SCREENSHOT_DELAY=5
+```
+
+`HEADLESS=false` ouvre une fenêtre Chrome visible. `SCREENSHOT_DELAY=5` ajoute 5 secondes d'attente avant chaque capture — c'est-à-dire, en pratique, du temps pour vous laisser voir la page dans son état capturé.
+
+<Warning title="Ne commit jamais ces deux valeurs dans le .env qui part en CI. Un run headed sur GitHub Actions crashe (pas de display), et un delay de 5s appliqué à chaque capture d'un run de 20 étapes ajoute 100 secondes gratuites au temps CI." />
+
+## Étape 3 : isoler l'étape fautive avec `skip()` et `todo()`
+
+Un scénario de 10 étapes qui casse à la 9ème vous fait attendre les 8 premières à chaque tentative. À raison de 5 à 30 secondes par étape, c'est une éternité.
+
+PrestaFlow expose `skip()` et `todo()` en méthodes sœurs de `it()` sur `describe()` :
+
+```php
+$this
+->describe('Modification du titre depuis le BO')
+->skip('se connecte au BO', function () use ($backOfficeLoginPage) {
+    // ne s'exécute pas
+})
+->skip('met à jour le titre du bloc', function () use (...) {
+    // ne s'exécute pas non plus
+})
+->it('affiche le nouveau titre sur la home', function () use (...) {
+    // seule cette étape s'exécute
+});
+```
+
+Le pattern est visible dans le code de test de la lib elle-même — [`FirstTest.php`](https://github.com/PrestaFlow/php-library/blob/main/src/Tests/Suites/FrontOffice/FirstTest.php) mélange `it`, `skip`, `todo` pour illustrer les trois statuts possibles.
+
+<Warning title="skip() n'exécute pas les étapes précédentes non plus. L'état de la page au moment du it restant ne correspond donc pas à celui d'un run complet — vous êtes en train d'exécuter le it à froid, sans les prérequis. Utile pour reproduire un échec technique (mauvais sélecteur, mauvaise API), à ne pas utiliser pour reproduire un échec dépendant de l'état." />
+
+Corollaire : ce jeu de `skip()` est un outil de debug local, pas quelque chose à committer. Une fois la cause identifiée, retirez-les.
+
+## Étape 4 : mode debug — `PRESTAFLOW_DEBUG=true`
+
+Quand le scénario semble tourner mais l'assertion tombe sur une donnée dont on ne comprend pas la provenance, il faut voir ce que la lib a résolu comme contexte.
+
+```env
+PRESTAFLOW_DEBUG=true
+```
+
+La sortie CLI s'enrichit alors avec la locale résolue, la version PS détectée, et des détails supplémentaires d'exécution. Cas typique où ça sauve : un test qui passe en 8.1.7 et casse en 9.0.0, où le mode debug affiche noir sur blanc *"Locale: fr, Version: 9"* — et vous découvrez que votre catalogue de traductions n'a rien pour v9 alors que v8 l'avait (cf. le mécanisme de merge de l'[annexe *scénarios multi-locales*](/2026/09/02/prestaflow-scenarios-multi-locales/)).
+
+## Étape 5 : le `dump` temporaire, dernière ligne de défense
+
+Quand rien de tout ce qui précède ne vous a mené à la cause, restez pragmatique. Dans une méthode de Page ou dans un `it` :
+
+```php
+->it('lit la valeur', function () use ($page) {
+    $value = $page->getTextContent('.some-selector');
+    var_dump($value);            // ← temporaire
+    dump($this->translationsCatalog);  // ← si Laravel/Symfony chargé
+    Expect::that($value)->contains('foo');
+});
+```
+
+Bricolage assumé, mais qui coupe court à toutes les hypothèses. Contrairement au stack trace ou aux captures, il vous donne l'accès direct à la structure de données que la lib manipule à l'instant `t`.
+
+<Warning title="Un dump/var_dump laissé dans le code committé casse le rapport HTML (le JSON de résultats est pollué par la sortie inline) et fait fuiter du contenu dans les logs CI. Un pre-commit hook qui grep var_dump\\|dd\\(\\|dump\\( sur les fichiers de tests est un investissement rentable." />
+
+## Le cas particulier du flake
+
+Un test qui passe *parfois* et échoue *parfois* n'est pas un bug fonctionnel. C'est un bug de scénario, et il en existe trois causes classiques :
+
+- **Wait manquant** — l'assertion est faite avant que l'action asynchrone n'ait fini de rendre son résultat. Parade : `waitForPageLoaded()` après une navigation, `isVisible($sel, 5000)` avant de lire un contenu injecté par JS.
+- **Ordre d'exécution / état résiduel** — un `it` dépend d'un état laissé par le précédent, qui échoue silencieusement dans certaines conditions (session expirée, cookie perdu). Rendre chaque `it` idempotent quand c'est possible.
+- **Données polluées** — vu dans l'[annexe *tester un module tiers*](/2026/08/12/prestaflow-tester-un-module-tiers/) : le second run crée l'inscription que le premier a laissée. Suffixe unique par run (`time()`, uuid) ou cleanup en fin de suite.
+
+**Diagnostic** : relancez le scénario 5 fois de suite. Si l'échec est intermittent, c'est un flake — traitez-le comme un bug de test, pas comme un bug de code métier. Un flake ignoré finit toujours par masquer une vraie régression.
+
+## Notes
+
+<Warning title="Screenshot d'erreur vide ou absent : Chrome a probablement crashé avant que la capture puisse être prise. Vérifiez la sortie chrome-php côté logs (souvent OperationTimedOut sur une navigation qui ne revient jamais)." />
+
+<Info title="Rapport HTML absent : la commande a été tuée avant la fin du run (Ctrl+C local, timeout CI). Le rapport n'est écrit qu'après la boucle complète des it. Un scénario qui plante son runner en cours de route ne laisse rien à lire — d'où l'intérêt des captures d'erreur, écrites au fil de l'eau." />
+
+<Info title="Flaky uniquement en CI, jamais en local : souvent le boot Flashlight qui n'est pas totalement prêt quand le premier hit arrive. Monter le timeout de la boucle wait de l'article 2 (60 tentatives × 2s = 2 min) résout la plupart des cas — les 10-20 secondes de plus sont indolores comparées à un CI rouge intermittent." />
+
+## Pour aller plus loin
+
+- Un rapport à lire en profondeur : voir la vue résultat de l'[application](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/), qui présente les mêmes données en plus interactif.
+- Une capture visuelle qui diffère de la baseline sans que l'assertion ne tombe : c'est le sujet de l'[annexe régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/).
+- Un échec qui n'apparaît que sur une version PS ou une locale : cf. les annexes [multi-versions](/2026/08/26/prestaflow-multi-versions-prestashop/) et [multi-locales](/2026/09/02/prestaflow-scenarios-multi-locales/) pour comprendre ce que la lib a résolu comme contexte.

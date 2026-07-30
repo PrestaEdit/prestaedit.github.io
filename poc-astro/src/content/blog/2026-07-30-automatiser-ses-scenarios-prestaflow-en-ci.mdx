@@ -1,0 +1,248 @@
+---
+title: "Automatiser ses scénarios PrestaFlow en CI"
+date: 2026-07-30
+tags:
+  - GitHub
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-07-30-automatiser-ses-scenarios-prestaflow-en-ci.png'
+summary: "Exécuter ses scénarios PrestaFlow depuis GitHub Actions, à deux niveaux : la CLI en workflow, puis l'Action officielle avec Flashlight et matrice multi-versions."
+---
+
+<Info title="Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge : PrestaEdit/psflowdemo." />
+
+## Préambule
+
+Dans l'[article précédent](/2026/07/29/ecrire-son-premier-scenario-prestaflow/), nous avons mis en place trois suites PrestaFlow pour le module `psflowdemo` — un parcours d'achat fourni, plus deux suites custom — et nous les avons lancées en local avec `./vendor/bin/prestaflow run tests/prestaflow`.
+
+Fonctionnel, mais rapidement fastidieux : à chaque commit, sur chaque version de PrestaShop qu'on prétend supporter, il faudrait relancer ces scénarios à la main. C'est très exactement le même argumentaire que celui du [précédent article sur PHPStan en CI](/2024/11/06/tester-son-module-via-ci-cd/), transposé au fonctionnel.
+
+Voyons comment déléguer cette exécution à GitHub Actions — d'abord en pilotant la CLI PrestaFlow depuis un workflow (sans dépendance externe), puis en passant à l'Action officielle pour bénéficier des remontées sur la plateforme.
+
+## Le défi propre au E2E en CI
+
+Faire tourner PHPStan en CI est facile : `composer install`, puis on lance l'analyse statique. Rien ne s'exécute vraiment.
+
+Pour du E2E, il faut **une boutique PrestaShop réellement démarrée**, contre laquelle PrestaFlow va naviguer. C'est là que se joue tout le confort du CI.
+
+La solution standard, à l'heure de cet article, est [Flashlight](https://github.com/PrestaShop/prestashop-flashlight) : une image Docker officielle de la communauté PrestaShop qui livre une instance PS installée, prête à répondre en HTTP, sans persistance. Idéale pour les tests : on démarre, on teste, on jette.
+
+Toute la suite de l'article repose dessus.
+
+## Niveau 1 : la CLI PrestaFlow dans un workflow
+
+Objectif : lancer nos scénarios à chaque push, sans compte prestaflow.io, sans token. Juste le workflow, Docker, et la CLI.
+
+Créez `.github/workflows/prestaflow.yml` :
+
+```yaml
+name: PrestaFlow
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  e2e:
+    name: E2E — PrestaShop 8.1.7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: gd
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Start PrestaShop (Flashlight)
+        run: |
+          docker run -d --rm --name ps \
+            -p 80:80 \
+            prestashop/prestashop-flashlight:8.1.7
+
+      - name: Wait for PrestaShop to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost/ > /dev/null; then
+              echo "PrestaShop répond"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timeout" && exit 1
+
+      - name: Run PrestaFlow scenarios
+        env:
+          PRESTAFLOW_PS_VERSION: 8.1.7
+          PRESTAFLOW_LOCALE: fr
+          PRESTAFLOW_FO_URL: http://localhost/
+          PRESTAFLOW_BO_URL: http://localhost/admin-dev/
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
+          PRESTAFLOW_HEADLESS: 'true'
+        run: ./vendor/bin/prestaflow run tests/prestaflow
+
+      - name: Upload PrestaFlow report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prestaflow-report
+          path: tests/prestaflow/reports/
+```
+
+<Info title="Les variables d'environnement PRESTAFLOW_* du bloc env: reprennent la même logique que le fichier .env local de l'article 1, avec les valeurs propres à Flashlight : le dossier admin est /admin-dev/ et les identifiants BO par défaut sont admin@prestashop.com / prestashop (définis dans assets/hydrate.sh du dépôt PrestaShop/prestashop-flashlight)." />
+
+Ce workflow fait, dans l'ordre :
+
+1. **Cloner le module** (`actions/checkout`).
+2. **Installer PHP et Composer**, puis les dépendances du module (`shivammathur/setup-php`, `composer install`).
+3. **Démarrer Flashlight** en arrière-plan avec l'image PS 8.1.7. L'option `-p 80:80` expose le port du conteneur sur le runner.
+4. **Attendre que PrestaShop réponde** — Flashlight met ~30 à 60 secondes à s'initialiser au premier démarrage. Une boucle de polling `curl` avec timeout est suffisante.
+5. **Lancer PrestaFlow** avec les variables d'environnement pointant vers `http://localhost/`.
+6. **Uploader le rapport HTML en artifact** si un scénario échoue, pour pouvoir l'inspecter depuis l'interface GitHub sans avoir à rejouer.
+
+<Info title="La CLI PrestaFlow retourne un code de sortie non-nul en cas d'échec. C'est ce qui fait rougir le job." />
+
+C'est déjà utile en l'état : chaque push est testé, l'échec est visible, les rapports sont téléchargeables. Le tout sans avoir créé un seul compte externe.
+
+## Niveau 2 : l'Action officielle `PrestaFlow/github-action`
+
+Le niveau 1 marche, mais il laisse plusieurs choses à désirer :
+
+- **Aucune synthèse dans la PR.** Il faut aller lire les logs pour savoir ce qui a échoué.
+- **Pas d'historique.** Chaque run repart de zéro, sans comparaison possible avec les précédents.
+- **Pas de régressions visuelles.** On ne détecte pas qu'un template s'est cassé si aucun sélecteur ne bouge.
+- **Le workflow YAML gonfle** dès qu'on ajoute des versions de PS.
+
+L'[Action officielle PrestaFlow](https://github.com/PrestaFlow/github-action) résout tout cela, en s'appuyant sur la plateforme [prestaflow.io](https://prestaflow.io).
+
+### Prérequis
+
+Trois choses à faire, une seule fois :
+
+1. **Créer un compte** sur [prestaflow.io](https://prestaflow.io) puis un projet pour votre module. La plateforme vous fournit un **projectId** de la forme `pk_01ABCDEF...`.
+2. **Générer un token d'API** depuis les réglages du projet.
+3. **Ajouter le token en secret GitHub** du dépôt, sous le nom `PRESTAFLOW_TOKEN` (Settings → Secrets and variables → Actions).
+
+### Déclarer le script Composer
+
+L'Action attend un script Composer nommé `prestaflow:json:file`, qui lance PrestaFlow avec le format de sortie qu'elle sait consommer. Ajoutez-le à votre `composer.json` :
+
+```json
+"scripts": {
+    "prestaflow:json:file": "./vendor/prestaflow/php-library/bin/prestaflow run --output=JSON ./tests --file"
+}
+```
+
+### Le workflow
+
+Créez (ou remplacez) `.github/workflows/prestaflow.yml` :
+
+```yaml
+name: PrestaFlow
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  e2e:
+    name: E2E — PrestaShop 8.1.7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: gd
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run PrestaFlow
+        id: prestaflow
+        uses: PrestaFlow/github-action@v2
+        with:
+          token: ${{ secrets.PRESTAFLOW_TOKEN }}
+          projectId: 'pk_01ABCDEFGHIJKLMNOP'
+          flashlight: true
+          ps-version: '8.1.7'
+```
+
+**15 lignes utiles**, contre 40 pour le niveau 1. Ce que l'Action fait à votre place :
+
+- **Démarre Flashlight** avec la version demandée via l'input `ps-version`. Plus de `docker run` manuel, plus d'attente `curl`.
+- **Injecte les variables d'environnement** attendues par la lib (URLs, credentials, locale).
+- **Lance le script Composer `prestaflow:json:file`** puis pousse le résultat à la plateforme.
+- **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (respecté par le bloc `permissions: pull-requests: write`).
+- **Synchronise les régressions visuelles** avec la plateforme : les baselines sont téléchargées avant l'exécution, les nouvelles captures et les diffs sont uploadés à la fin. Un template modifié qui casse le rendu apparaît dans le rapport visuel de la plateforme, même si aucun `it` ne tombe.
+
+### Consommer les outputs
+
+L'Action expose des outputs consommables par les étapes suivantes :
+
+```yaml
+      - name: Show summary
+        if: always()
+        run: |
+          echo "Status : ${{ steps.prestaflow.outputs.status }}"
+          echo "Passed : ${{ steps.prestaflow.outputs.passed }}"
+          echo "Failed : ${{ steps.prestaflow.outputs.failed }}"
+          echo "Report : ${{ steps.prestaflow.outputs.report-url }}"
+```
+
+Utile pour brancher une notification Slack, un statut custom, ou un gate sur `status == 'success'` avant de publier votre module.
+
+## Matrix multi-versions
+
+C'est ici que le passage à l'Action prend tout son sens. Pour tester votre module contre **1.7.8**, **8.1.7** et **9.0.0** en parallèle :
+
+```yaml
+jobs:
+  e2e:
+    name: E2E — PrestaShop ${{ matrix.ps-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ps-version: ['1.7.8', '8.1.7', '9.0.0']
+    steps:
+      - uses: actions/checkout@v4
+      # ... setup PHP, composer install ...
+      - uses: PrestaFlow/github-action@v2
+        with:
+          token: ${{ secrets.PRESTAFLOW_TOKEN }}
+          projectId: 'pk_01ABCDEFGHIJKLMNOP'
+          flashlight: true
+          ps-version: ${{ matrix.ps-version }}
+```
+
+<Info title="fail-fast: false garantit qu'un échec sur PS 1.7 n'annule pas les runs 8.1 et 9.0. On veut voir le tableau complet — sinon un flake sur une version cache l'état des autres." />
+
+Côté plateforme, chaque version remonte comme un run distinct, avec son propre historique. Le commentaire PR agrège les trois. Vous détectez d'un coup d'œil que votre nouveau template casse spécifiquement en 1.7 sans toucher au reste.
+
+C'est exactement le pattern que nous avions installé pour PHPStan en 2024, transposé au fonctionnel.
+
+## Notes
+
+<Warning title="Le token PRESTAFLOW_TOKEN est lié à votre projet. Si vous testez plusieurs modules dans une même organisation, utilisez plutôt un secret d'organisation avec une portée restreinte aux dépôts concernés — plutôt qu'un secret par dépôt." />
+
+Le niveau 1 reste une option légitime pour un projet expérimental ou personnel, ou pour un module dont vous ne souhaitez pas remonter les résultats sur la plateforme. Il fait ce qu'il promet : rougir le CI quand un scénario casse.
+
+Dès que le module vit en production, que plusieurs personnes contribuent, ou que vous supportez plus d'une version de PrestaShop, le niveau 2 s'amortit vite. Le commentaire PR remplace la lecture des logs, l'historique remplace la mémoire humaine, et les régressions visuelles rattrapent la classe de bugs *"j'ai touché un CSS et je ne l'ai pas vu"*.
+
+<Info title="Le prochain article de la série couvrira l'application PrestaFlow elle-même : dashboard, historique des runs, revue humaine des régressions visuelles, et cloud runs (déclencher un scénario depuis l'app sans passer par le CI)." />

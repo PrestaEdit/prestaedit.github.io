@@ -1,0 +1,53 @@
+---
+interface Heading { depth: number; slug: string; text: string }
+interface Props { headings: Heading[] }
+const { headings } = Astro.props;
+const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+{items.length > 0 && (
+  <nav class="rounded-2xl border border-gray-200 p-6" aria-label="Sommaire de l'article">
+    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sommaire</p>
+    <ul class="mt-4 space-y-2 text-sm">
+      {items.map((h) => (
+        <li class={h.depth === 3 ? 'pl-4' : ''}>
+          <a href={`#${h.slug}`} class="block text-gray-600 transition hover:text-blue-600" data-toc-link={h.slug}>
+            {h.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}
+
+<script>
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  const targets = links
+    .map((link) => ({ link, el: document.getElementById(link.dataset.tocLink!) }))
+    .filter((t): t is { link: HTMLAnchorElement; el: HTMLElement } => t.el !== null);
+
+  if (targets.length > 0) {
+    const OFFSET = 120;
+    let active: HTMLAnchorElement | null = null;
+
+    const update = () => {
+      let current = targets[0];
+      for (const t of targets) {
+        if (t.el.getBoundingClientRect().top - OFFSET <= 0) current = t;
+        else break;
+      }
+      if (current.link !== active) {
+        active?.classList.remove('text-blue-600', 'font-medium');
+        current.link.classList.add('text-blue-600', 'font-medium');
+        active = current.link;
+      }
+    };
+
+    update();
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => { update(); ticking = false; });
+    }, { passive: true });
+  }
+</script>
