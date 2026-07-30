@@ -1,0 +1,199 @@
+---
+title: "PrestaFlow : bibliothèque de Pages partagée entre projets"
+date: 2027-01-27
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2027-01-27-prestaflow-bibliotheque-pages-partagee.png'
+summary: "Une agence qui teste dix boutiques réplique dix fois les mêmes Pages. Un package Composer maison mutualise les Pages custom communes (thème maison, module maison) et se require depuis chaque projet."
+---
+
+<Info title="Prérequis">
+Annexe de la série PrestaFlow. Prérequis : avoir lu [« Écrire son premier scénario de test avec PrestaFlow »](/2026/07/29/ecrire-son-premier-scenario-prestaflow/) et [« Factoriser ses Pages entre plusieurs suites »](/2026/08/05/prestaflow-factoriser-ses-pages/).
+</Info>
+
+## Le décor : dix boutiques, dix fois les mêmes Pages
+
+Une agence PrestaShop maintient dix boutiques clientes. Toutes tournent sur le même thème maison `theme-agence` et embarquent le même module de cross-sell maison `agencycrosssell`. Chaque projet a été monté avec PrestaFlow, chaque projet a factorisé ses Pages comme décrit dans l'annexe [Factoriser ses Pages](/2026/08/05/prestaflow-factoriser-ses-pages/).
+
+Le résultat est que les Pages `Theme\Home`, `Theme\Product` et `Modules\Crosssell\Widget` existent en dix exemplaires. Une par repo client. Toutes identiques.
+
+Un jour, le lead thème renomme un sélecteur : `.home-hero` devient `.home-hero-block`. La suite CI de chaque projet client casse. Il faut ouvrir dix PR, obtenir dix reviews, déployer dix fois. Le changement lui-même prend cinq minutes, la propagation prend une demi-journée.
+
+Le remède est de sortir ces Pages communes du repo projet et de les publier dans un package Composer maison. Chaque projet client fait `composer require myorg/prestaflow-pages` et pointe vers une seule source de vérité.
+
+## Le package Composer maison
+
+Le package est un projet indépendant, versionné, publié en interne. Structure type :
+
+```
+prestaflow-pages/
+├─ composer.json
+├─ README.md
+└─ src/
+   ├─ Pages/
+   │  ├─ Common/
+   │  │  ├─ Modules/Crosssell/Widget/Page.php
+   │  │  └─ Theme/Home/Page.php
+   │  ├─ v8/
+   │  │  ├─ Modules/Crosssell/Widget/Page.php
+   │  │  └─ Theme/Home/Page.php
+   │  └─ v9/
+   │     ├─ Modules/Crosssell/Widget/Page.php
+   │     └─ Theme/Home/Page.php
+   └─ Support/
+      └─ AgencyFrontOfficeUrl.php
+```
+
+Le dossier `Common/` porte la logique métier et les sélecteurs stables. Les dossiers `v8/`, `v9/` étendent le parent commun avec les spécificités de chaque majeure PrestaShop, exactement comme décrit dans l'annexe [Multi-versions PrestaShop](/2026/08/26/prestaflow-multi-versions-prestashop/).
+
+Le `composer.json` du package est minimal :
+
+```json
+{
+    "name": "myorg/prestaflow-pages",
+    "type": "library",
+    "description": "Pages PrestaFlow partagées : thème et modules maison.",
+    "require": {
+        "php": "^8.1",
+        "prestaflow/php-library": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MyOrg\\PrestaFlowPages\\": "src/"
+        }
+    }
+}
+```
+
+Le namespace racine `MyOrg\PrestaFlowPages\` mappe le dossier `src/`. Une classe `src/Pages/v8/Theme/Home/Page.php` est donc `MyOrg\PrestaFlowPages\Pages\v8\Theme\Home\Page`. PSR-4 pur, rien de particulier.
+
+## Le projet client require le package
+
+Dans le `composer.json` de chaque projet client, on déclare le package et son dépôt. Publication via Git direct :
+
+```json
+{
+    "require-dev": {
+        "prestaflow/php-library": "^1.0",
+        "myorg/prestaflow-pages": "^1.0"
+    },
+    "repositories": [
+        { "type": "vcs", "url": "git@github.com:myorg/prestaflow-pages.git" }
+    ],
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/prestaflow/"
+        }
+    }
+}
+```
+
+Le `autoload-dev` du projet reste en place — il porte toujours les Pages projet-spécifiques et les suites. Les deux namespaces cohabitent : `Tests\Pages\...` pour ce qui est propre au client, `MyOrg\PrestaFlowPages\Pages\...` pour ce qui est mutualisé.
+
+<Info title="Où publier le package">
+Trois options selon la taille de l'équipe. Un dépôt Git privé (GitHub, GitLab, Bitbucket) référencé en `type: vcs` suffit dès le début — zéro infra. GitHub Packages ou un Satis auto-hébergé donnent une URL de type Packagist et un peu plus de cache, pour un setup léger. Packagist Private est le service commercial ; il vaut le coup à partir d'une dizaine de développeurs actifs, quand le nombre de projets consommateurs justifie sa facturation par équipe.
+</Info>
+
+## Importer une Page partagée dans une suite
+
+`importPage()` construit son namespace à partir du paramètre `domain`. La ligne suivante, extraite d'une suite projet :
+
+```php
+$this->importPage('Modules\Crosssell\Widget', domain: 'MyOrg\PrestaFlowPages');
+```
+
+résout `MyOrg\PrestaFlowPages\Pages\v8\Modules\Crosssell\Widget\Page` sur une boutique 8.x. Le nom de variable exposée dans `$this->pages` reste construit à partir du chemin — ici `$modulesCrosssellWidgetPage`. Le préfixe de namespace n'y entre pas.
+
+Concrètement dans une suite :
+
+```php
+public function testCrosssellAppearsOnProduct(): void
+{
+    $this->importPage('Theme\Product', domain: 'MyOrg\PrestaFlowPages');
+    $this->importPage('Modules\Crosssell\Widget', domain: 'MyOrg\PrestaFlowPages');
+
+    extract($this->pages);
+
+    $themeProductPage->visit(1);
+    $this->assertTrue($modulesCrosssellWidgetPage->hasProducts());
+}
+```
+
+La même suite peut mélanger les deux domains sans problème :
+
+```php
+$this->importPage('Theme\Product', domain: 'MyOrg\PrestaFlowPages');
+$this->importPage('Checkout\SpecificFlow', domain: 'Tests');
+```
+
+## Ce qui vit dans le package, ce qui reste dans le projet
+
+La ligne de partage se lit vite :
+
+- **Dans le package** : les Pages qui décrivent des écrans partagés — thème maison, modules maison, modules tiers présents sur tous les clients. Plus les traits utilitaires transverses (`AgencyFrontOfficeUrl`, helpers de sélecteurs communs, factories de données non-métier).
+- **Dans chaque projet** : les Suites — elles portent le comportement métier propre à ce client, ça ne se mutualise pas. Et les Pages 100 % projet-spécifiques : la Page d'un module custom écrit pour ce client seul, la Page d'un écran BO customisé pour lui.
+
+<Warning title="Pas de fixtures dans le package">
+Les fixtures et les scripts d'init sont projet-spécifiques : le client A a besoin de 12 catégories avec un arbre particulier, le client B d'un seul catalogue à plat. Ces objets restent dans chaque repo, comme décrit dans l'annexe [Fixtures et seed data](/2026/09/30/prestaflow-fixtures-seed-data/). Le package doit rester une bibliothèque de descripteurs d'écrans, pas un dépôt de données de test.
+</Warning>
+
+## Override côté projet quand un client a customisé
+
+Le client X a ajouté un bloc `.client-x-custom-bloc` sur la Home. Sa Page projet étend celle du package :
+
+```php
+// tests/prestaflow/Pages/v8/Theme/Home/Page.php
+namespace Tests\Pages\v8\Theme\Home;
+
+use MyOrg\PrestaFlowPages\Pages\v8\Theme\Home\Page as SharedHome;
+
+class Page extends SharedHome
+{
+    public function defineSelectors(): array
+    {
+        return array_merge(parent::defineSelectors(), [
+            'clientBloc' => '.client-x-custom-bloc',
+        ]);
+    }
+
+    public function hasClientBloc(): bool
+    {
+        return $this->isVisible('clientBloc');
+    }
+}
+```
+
+Dans les suites du client X, on importe alors la Page projet :
+
+```php
+$this->importPage('Theme\Home', domain: 'Tests');
+```
+
+au lieu de la Page mutualisée. Le nom de variable exposée reste `$themeHomePage`, les suites héritent gratuitement de toutes les méthodes du parent, plus `hasClientBloc()`.
+
+## Versioning et compatibilité
+
+Le package suit SemVer, et c'est ce qui permet à dix projets de le consommer sans se marcher dessus :
+
+- **PATCH** (1.0.x) — fix de sélecteur, sans changement d'API publique. Chaque projet met à jour sans y penser.
+- **MINOR** (1.x.0) — nouvelles Pages, nouvelles méthodes publiques. Les existantes ne bougent pas.
+- **MAJOR** (x.0.0) — signature de méthode modifiée, Page renommée, méthode supprimée. À documenter dans un `CHANGELOG.md` avec la marche à suivre. Chaque projet migre à son rythme.
+
+Chaque projet pin selon sa tolérance dans son `composer.json` :
+
+```json
+"myorg/prestaflow-pages": "^1.0"   // toutes les 1.x
+"myorg/prestaflow-pages": "~1.2.0" // que les patchs de 1.2
+```
+
+<Info title="Tests unitaires du package">
+Le package peut avoir sa propre suite PHPUnit qui vérifie la cohérence formelle de ses Pages : chaque sélecteur déclaré est bien une chaîne non vide, chaque méthode `hasX()` retourne un booléen, chaque classe `v8/v9` est bien un descendant du parent `Common/`. Ces tests tournent en isolation, sans Chrome, sans PrestaShop — juste un `phpunit` qui charge les classes et introspecte. Le vrai test fonctionnel, c'est chaque projet client qui le fait en exécutant ses suites contre sa boutique.
+</Info>
+
+## Documenter, sinon personne ne réutilise
+
+Le README du package liste les Pages exposées, leurs méthodes publiques et l'écran PrestaShop couvert. Une simple table à trois colonnes : chemin Page, méthodes disponibles, versions supportées. Sans ça, chaque nouveau projet client redécouvre par grep ce qui existe déjà, et finit par réécrire des Pages qui étaient là. Le README est le vrai contrat du package, davantage que la signature PHP.

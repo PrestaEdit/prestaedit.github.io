@@ -1,0 +1,192 @@
+---
+title: "PrestaFlow : trois options CLI méconnues — --junit, --draft, --visual-report"
+date: 2027-02-10
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2027-02-10-prestaflow-options-cli-meconnues.png'
+summary: "La CLI PrestaFlow expose trois options qu'aucun article de la série n'a mentionnées jusqu'ici. Une pour l'intégration CI legacy (JUnit XML), une pour le workflow dev (mode brouillon), une pour la revue humaine des visuels."
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Trois options qu'on a ignorées
+
+Vingt-neuf articles plus tard, on a couvert `--output=JSON`, `--file`, `--group`, `PRESTAFLOW_HEADLESS`, `PRESTAFLOW_DEBUG` — l'essentiel de la CLI PrestaFlow. Trois options sont pourtant restées silencieuses :
+
+- **`--junit`** — écrit un rapport XML au format JUnit standard
+- **`--draft` / `-d`** — filtre les suites selon leur statut brouillon
+- **`--visual-report`** — génère un rapport HTML dédié aux régressions visuelles
+
+Chacune répond à un besoin précis qu'aucune autre option ne couvre. Cette annexe les documente une par une.
+
+## `--junit` : intégrer avec un CI qui parle JUnit
+
+Le format JUnit XML est le standard historique du reporting de tests. Jenkins l'affiche nativement (widget test results), GitLab CI l'ingère via `artifacts:reports:junit`, Azure DevOps et Bitbucket font pareil. Beaucoup d'outils de dashboards de tests (Allure, ReportPortal) le consomment aussi.
+
+PrestaFlow sait le produire :
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow --junit
+```
+
+Écrit `prestaflow/junit.xml` par défaut. Ou path explicite :
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow --junit=reports/junit.xml
+```
+
+Le fichier suit la structure JUnit standard : un `<testsuite>` par suite exécutée, un `<testcase>` par `it`, avec `<failure>` / `<skipped>` selon l'état. Directement ingérable par n'importe quel outil qui parle JUnit.
+
+### Intégration GitLab CI
+
+`.gitlab-ci.yml` — ajouter à un job PrestaFlow :
+
+```yaml
+e2e:
+  # ...
+  script:
+    - ./vendor/bin/prestaflow run tests/prestaflow --junit=reports/junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: reports/junit.xml
+    paths:
+      - reports/
+```
+
+Résultat côté GitLab : l'onglet **Tests** de la pipeline affiche le récapitulatif natif — passes / failures / durée par `it`, avec drill-down sur les échecs. Pas de plugin, pas de script custom.
+
+### Intégration Jenkins
+
+Dans un `Jenkinsfile` (voir aussi l'annexe [CI hors GitHub Actions](/2026/11/18/prestaflow-ci-hors-github-actions/)) :
+
+```groovy
+post {
+    always {
+        junit 'reports/junit.xml'
+    }
+}
+```
+
+Le widget **Test Result Trend** de Jenkins accumule les résultats sur les runs successifs et trace le graphe des passes/failures.
+
+### JUnit vs `results.json`
+
+L'annexe [consommer results.json](/2026/11/25/prestaflow-consommer-results-json/) a montré le format JSON riche de PrestaFlow. JUnit est complémentaire, pas concurrent :
+
+- **JUnit** — format standard, consommé passivement par vos outils CI existants (dashboards, historique, alertes)
+- **`results.json`** — format PrestaFlow, consommé activement par vos scripts custom (Slack, badge README, dashboard maison)
+
+Rien n'empêche d'activer les deux dans le même run : `--junit --output=JSON --file` produit les deux fichiers, chacun pour son usage.
+
+## `--draft` / `-d` : isoler les brouillons
+
+Un scénario que vous êtes en train d'écrire n'est pas fait pour tourner en CI ni pour rougir tous les runs de votre équipe. Vous voulez pouvoir le committer sans qu'il pollue le reste — jusqu'à ce qu'il soit prêt.
+
+PrestaFlow expose un statut **draft** au niveau de la suite, activé via une propriété :
+
+```php
+class WorkInProgressCheckoutV2 extends TestsSuite
+{
+    protected $draft = true;
+
+    public function init()
+    {
+        // scénario en cours d'écriture, sélecteurs qui bougent
+    }
+}
+```
+
+Combiné avec le flag CLI qui prend trois formes :
+
+- **`--draft`** — ne joue **que** les suites `$draft = true`. Utile en dev pour boucler sur le scénario en cours d'écriture, sans réexécuter les 40 suites stables du reste du projet.
+- **`--no-draft`** — ne joue **que** les suites `$draft = false` (défaut de la classe). C'est ce que le CI devrait passer pour être imperméable aux brouillons committés.
+- **Sans flag** — joue tout, drafts inclus. Comportement neutre, comme si l'option n'existait pas.
+
+### Workflow suggéré
+
+- **En dev local** : `./vendor/bin/prestaflow run tests/prestaflow --draft` pendant qu'on itère sur un scénario neuf.
+- **En CI (workflow principal)** : `--no-draft` pour ignorer les brouillons et garantir la stabilité.
+- **En CI (workflow nightly optionnel)** : sans flag, pour un run complet qui inclut aussi les drafts et donne un signal sur leur maturité.
+
+Une fois le scénario stable, on retire `$draft = true` de la classe. Le scénario devient normal, il tourne dans le CI principal.
+
+<Info title="Le flag utilise Symfony Console avec VALUE_NEGATABLE : --draft active, --no-draft désactive, et il n'y a pas de troisième valeur possible. Absence de flag ≠ --no-draft — c'est le mode « sans filtrage » où tout tourne." />
+
+## `--visual-report` : un rapport dédié aux visuels
+
+L'annexe [régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/) a introduit `visualCheckpoint()`. Ces checkpoints apparaissent dans le rapport HTML principal des tests, mêlés aux assertions fonctionnelles. Utile en debug — moins utile quand un reviewer non-technique doit valider ou rejeter une série de diffs visuels.
+
+Le flag `--visual-report` produit un **rapport HTML séparé**, dédié uniquement aux régressions visuelles :
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow --visual-report
+```
+
+Écrit `reports/visual/index.html` par défaut. Ou path explicite :
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow --visual-report=public/visual-latest.html
+```
+
+Le rapport présente les checkpoints en cartes visuelles : baseline / actual / diff en trois vignettes côte à côte, statut passe/fail, threshold utilisé. C'est le format à envoyer au designer ou au chef de projet qui doit trancher *« ce changement de padding est-il volontaire ? »*.
+
+Un fichier `visual-results.json` est écrit dans le même dossier (par exemple `reports/visual/visual-results.json`) — machine-readable si vous voulez automatiser une décision.
+
+### Fuseau horaire du stamp
+
+Par défaut, le stamp *« généré le X »* du rapport est en UTC. Deux manières de contrôler :
+
+```sh
+# Via env var (globale)
+PRESTAFLOW_TZ=Europe/Brussels ./vendor/bin/prestaflow run tests/prestaflow --visual-report
+
+# Via option CLI (spécifique au run)
+./vendor/bin/prestaflow run tests/prestaflow --visual-report --visual-report-tz=Europe/Brussels
+```
+
+L'option CLI gagne sur l'env var, l'env var gagne sur UTC. Si l'identifiant de fuseau est invalide, PrestaFlow retombe silencieusement sur UTC — le rapport est toujours généré.
+
+<Info title="Un rapport visuel non-versionné peut être publié sur une URL éphémère (S3 static, GitHub Pages d'une branche, artifact GitLab avec expose_as). Envoi d'un lien au reviewer, il valide dans le navigateur, il répond par ✓ / ✗ sans avoir besoin d'un compte prestaflow.io. Utile quand la revue humaine externe reste plus légère qu'une intégration plateforme complète." />
+
+## Combiner les trois
+
+Les trois options sont indépendantes et se cumulent :
+
+```sh
+./vendor/bin/prestaflow run tests/prestaflow \
+  --no-draft \
+  --junit=reports/junit.xml \
+  --visual-report=reports/visual/index.html \
+  --output=JSON --file
+```
+
+Un seul run produit :
+
+- Le rapport HTML principal (par défaut)
+- Le fichier `results.json` (`--output=JSON --file`)
+- Le rapport JUnit XML (`--junit`)
+- Le rapport visuel HTML dédié + son JSON (`--visual-report`)
+
+Chacun pour son usage — le HTML pour l'humain qui debug, le JSON pour les scripts custom, le JUnit pour le CI qui l'ingère nativement, le visual pour la revue humaine des baselines.
+
+<Warning title="Ne pas cumuler --draft et --no-draft (Symfony Console refuse cette combinaison). Choisir l'un ou l'autre — ou aucun des deux pour tout jouer." />
+
+## Interaction avec les autres annexes
+
+- **[CI hors GitHub Actions](/2026/11/18/prestaflow-ci-hors-github-actions/)** — GitLab CI et Jenkins ont un support natif de JUnit qui rend `--junit` immédiatement rentable. Sur GitHub Actions, le support natif JUnit est moins riche (il faut un plugin type `dorny/test-reporter`) — l'`--output=JSON` reste souvent plus adapté.
+- **[Consommer results.json](/2026/11/25/prestaflow-consommer-results-json/)** — les deux formats se cumulent, chacun a son bon usage.
+- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — `--visual-report` est le compagnon naturel de `visualCheckpoint()`. Sans checkpoints visuels dans vos suites, le rapport est vide.
+- **[Consulter l'historique cloud](/2026/09/16/prestaflow-consulter-historique-cloud/)** — la plateforme prestaflow.io consomme le `results.json`, pas le JUnit ni le visual-report HTML. Ces derniers restent des artefacts locaux ou CI.
+
+## Notes
+
+<Info title="Le rapport JUnit est écrit APRÈS l'exécution de toutes les suites, comme le résumé HTML. Si vous coupez le run en cours (Ctrl+C, timeout CI), le fichier n'existe pas — vos configs artifacts:reports:junit doivent gérer l'absence de fichier proprement (typiquement via allowEmptyArchive: true chez Jenkins, ou une expression when: always chez GitLab)." />
+
+<Info title="Le --draft est un filtre de suite, pas de it. Vous ne pouvez pas marquer un it individuel comme brouillon — c'est la suite entière qui l'est. Pour un it isolé, l'annexe debug rappelle que ->skip() et ->todo() existent (mais ils sortent du rapport avec un statut spécifique, pas comme un « pas là »)." />
+
+<Info title="Le --visual-report affiche uniquement les checkpoints du run courant. Il ne compare pas entre runs, il ne conserve pas d'historique — c'est un instantané du dernier run. Pour l'historique inter-runs, retour à la plateforme prestaflow.io ou à un dashboard maison qui consomme results.json." />
