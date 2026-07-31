@@ -75,6 +75,24 @@ const formatted = post.data.date.toLocaleDateString('fr-FR', { day: 'numeric', m
           <Content components={mdxComponents} />
         </div>
 
+        <script>
+          const handleBrokenImages = () => {
+            document.querySelectorAll<HTMLImageElement>('.prose img').forEach((img) => {
+              if (img.dataset.errorHandled) return;
+              img.dataset.errorHandled = 'true';
+              const fallback = () => {
+                img.src = '/placeholder.svg';
+                img.classList.add('bg-gray-50');
+                img.setAttribute('title', 'Capture à venir');
+              };
+              img.addEventListener('error', fallback, { once: true });
+              if (img.complete && img.naturalWidth === 0) fallback();
+            });
+          };
+          handleBrokenImages();
+          document.addEventListener('astro:page-load', handleBrokenImages);
+        </script>
+
         {post.data.series && seriesTotal > 1 && (
           <p class="mt-12 text-center text-sm text-gray-500">
             Dans la <a href={`/series/${post.data.series}`} class="font-medium text-emerald-700 hover:underline">Série {seriesLabel}</a>
