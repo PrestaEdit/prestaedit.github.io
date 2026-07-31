@@ -1,17 +1,19 @@
 ---
-title: "Écrire son premier scénario de test avec PrestaFlow"
-date: 2026-07-29
+title: Écrire son premier scénario de test avec PrestaFlow
+date: 2026-08-01
 tags:
   - Outils
   - Tests
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-07-29-ecrire-son-premier-scenario-prestaflow.svg'
-summary: "Installer PrestaFlow, lancer un scénario fourni, puis écrire le sien pour tester un module maison."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-07-29-ecrire-son-premier-scenario-prestaflow.svg
+summary: >-
+  Installer PrestaFlow, lancer un scénario fourni, puis écrire le sien pour
+  tester un module maison.
+draft: false
 ---
-
 <Info title="Vous trouverez les sources du module réalisé dans cet article sur le dépôt GitHub suivant : PrestaEdit/psflowdemo" />
 
 ## Préambule
@@ -36,9 +38,9 @@ Un test E2E, ici, veut dire : PrestaFlow pilote un vrai navigateur (Chrome, sans
 
 Ce qui la distingue des outils généralistes comme Playwright ou Cypress :
 
-- **Elle est écrite en PHP.** Pas besoin d'introduire une stack JavaScript ou Python dans un projet PS. Vos tests vivent à côté de votre module, dans le langage du projet.
-- **Elle connaît PrestaShop.** Les pages front standard (produit, panier, checkout) et les principales pages BO (login, dashboard, modules) sont déjà modélisées. Vous n'écrivez pas les sélecteurs CSS du panier, ils sont fournis.
-- **Elle est livrée avec des scénarios prêts à l'emploi.** Parcours d'achat, création de produit, gestion de commande… On peut en lancer un immédiatement, sans écrire une ligne.
+* **Elle est écrite en PHP.** Pas besoin d'introduire une stack JavaScript ou Python dans un projet PS. Vos tests vivent à côté de votre module, dans le langage du projet.
+* **Elle connaît PrestaShop.** Les pages front standard (produit, panier, checkout) et les principales pages BO (login, dashboard, modules) sont déjà modélisées. Vous n'écrivez pas les sélecteurs CSS du panier, ils sont fournis.
+* **Elle est livrée avec des scénarios prêts à l'emploi.** Parcours d'achat, création de produit, gestion de commande… On peut en lancer un immédiatement, sans écrire une ligne.
 
 Le tout est documenté sur [prestaflow.io/docs](https://prestaflow.io/docs/).
 
@@ -46,8 +48,8 @@ Le tout est documenté sur [prestaflow.io/docs](https://prestaflow.io/docs/).
 
 Pour illustrer l'article, nous allons tester un module minimaliste, **psflowdemo**, dont le seul rôle est :
 
-- d'afficher un bloc sur la page d'accueil, via le hook `displayHome`,
-- avec un titre configurable depuis une page BO.
+* d'afficher un bloc sur la page d'accueil, via le hook `displayHome`,
+* avec un titre configurable depuis une page BO.
 
 C'est le plus petit module possible qui expose à la fois du **front**, du **BO** et de la **persistance de configuration** — les trois choses qu'on veut savoir tester.
 
@@ -145,8 +147,8 @@ Objectif : vérifier que **psflowdemo** affiche bien son bloc, avec le titre par
 
 Le pattern PrestaFlow, calqué sur ce qu'on retrouve dans les projets qui l'utilisent en production, tient en deux fichiers :
 
-- une **classe `Page`** qui décrit *où* trouver les choses (sélecteurs) et expose des méthodes sémantiques (`hasBlock`, `getBlockTitle`),
-- une **classe `TestsSuite`** qui décrit *quoi* vérifier, en n'appelant que ces méthodes sémantiques.
+* une **classe `Page`** qui décrit *où* trouver les choses (sélecteurs) et expose des méthodes sémantiques (`hasBlock`, `getBlockTitle`),
+* une **classe `TestsSuite`** qui décrit *quoi* vérifier, en n'appelant que ces méthodes sémantiques.
 
 L'intérêt de séparer les deux : quand un sélecteur change (nouvelle version PS, refonte du thème), on ne touche qu'à la Page. Les scénarios restent lisibles et n'ont aucune connaissance du DOM.
 
@@ -227,10 +229,10 @@ class DisplayHome extends TestsSuite
 
 À noter :
 
-- **`importPage('Modules\Psflowdemo\Home', domain: 'Tests')`** — le paramètre `domain` indique à PrestaFlow que la Page n'est pas dans la librairie mais dans **votre** namespace `Tests` (défini plus bas dans le `composer.json`).
-- **La variable exposée** suit le nommage camelCase du chemin : `Modules\Psflowdemo\Home` devient `$modulesPsflowdemoHomePage`.
-- **`describe()->it()`** — la syntaxe est empruntée à Jest / Mocha. Chaque `it` est une étape, qui échoue ou réussit indépendamment.
-- **`Expect::that(...)->isTheSameAs(...) / ->contains(...)`** — les assertions. La liste complète est dans le dossier `src/Expects/` de la librairie.
+* **`importPage('Modules\Psflowdemo\Home', domain: 'Tests')`** — le paramètre `domain` indique à PrestaFlow que la Page n'est pas dans la librairie mais dans **votre** namespace `Tests` (défini plus bas dans le `composer.json`).
+* **La variable exposée** suit le nommage camelCase du chemin : `Modules\Psflowdemo\Home` devient `$modulesPsflowdemoHomePage`.
+* **`describe()->it()`** — la syntaxe est empruntée à Jest / Mocha. Chaque `it` est une étape, qui échoue ou réussit indépendamment.
+* **`Expect::that(...)->isTheSameAs(...) / ->contains(...)`** — les assertions. La liste complète est dans le dossier `src/Expects/` de la librairie.
 
 Pour que le namespace `Tests\` soit résolu, ajoutez dans le `composer.json` de votre module :
 
@@ -320,8 +322,8 @@ Relancez la commande `run`. Passez `PRESTAFLOW_HEADLESS=false` le temps de la d�
 
 Après chaque exécution, PrestaFlow génère un rapport dans `tests/prestaflow/reports/`. Deux choses utiles à savoir y trouver :
 
-- **La liste des étapes** avec leur statut (vert = passé, rouge = échec, gris = skipped/todo).
-- **Les captures d'écran** prises à chaque étape, particulièrement précieuses quand une étape casse et qu'on cherche à comprendre pourquoi.
+* **La liste des étapes** avec leur statut (vert = passé, rouge = échec, gris = skipped/todo).
+* **Les captures d'écran** prises à chaque étape, particulièrement précieuses quand une étape casse et qu'on cherche à comprendre pourquoi.
 
 <img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-suites.png" alt="Rapport avec les trois suites exécutées" />
 
