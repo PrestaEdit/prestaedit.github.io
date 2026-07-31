@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" role="img" aria-label="PrestaFlow : trois options CLI méconnues — --junit, --draft, --visual-report">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e40af"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+  <rect width="800" height="450" fill="url(#grid)"/>
+  <g transform="translate(40 40)" fill="rgba(255,255,255,0.9)">
+    <path transform="translate(0 4)" d="M14 0L28 8v16L14 32 0 24V8z" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+    <text x="42" y="26" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="14" font-weight="600" letter-spacing="0.08em">PRESTAEDIT</text>
+  </g>
+  <g transform="translate(400 203)" fill="rgba(255,255,255,0.95)" text-anchor="middle">
+    <text font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="32" font-weight="700">
+      <tspan x="0" y="0">Trois options CLI méconnues —</tspan>
+      <tspan x="0" y="37">--junit, --draft, --visual-report</tspan>
+    </text>
+  </g>
+  <g transform="translate(400 385)" text-anchor="middle">
+    <rect x="-118" y="-16" width="236" height="32" rx="16" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>
+    <text y="5" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="rgba(255,255,255,0.9)" letter-spacing="0.08em">SÉRIE PRESTAFLOW · 30/30</text>
+  </g>
+</svg>
