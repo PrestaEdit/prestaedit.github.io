@@ -16,7 +16,7 @@ const slugify = (s) =>
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-const slug = `${today}-${slugify(title)}`;
+const slug = slugify(title);
 const path = join(BLOG_DIR, `${slug}.mdx`);
 
 try {

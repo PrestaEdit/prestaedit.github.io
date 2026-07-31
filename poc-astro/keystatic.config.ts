@@ -26,7 +26,7 @@ export default config({
           name: { label: 'Titre', validation: { length: { min: 3 } } },
           slug: {
             label: 'Slug (URL)',
-            description: 'Prefixe la date : 2027-03-15-mon-slug',
+            description: 'Segment d\'URL. Ne pas préfixer par la date, elle vient du champ Date.',
           },
         }),
         date: fields.date({
