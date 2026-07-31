@@ -1,0 +1,17 @@
+{
+    "version": "0.0.1",
+    "configurations": [
+        {
+            "name": "prestaedit-blog",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "docs:dev"],
+            "port": 8080
+        },
+        {
+            "name": "poc-astro",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["--prefix", "poc-astro", "run", "dev"],
+            "port": 4321
+        }
+    ]
+}
