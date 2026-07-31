@@ -6,7 +6,10 @@
   "scripts": {
     "build": "astro build",
     "dev": "astro dev",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "og:covers": "node scripts/gen-covers.mjs",
+    "og:site": "node scripts/gen-site-og.mjs",
+    "og:all": "npm run og:covers && npm run og:site"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.13",
@@ -24,5 +27,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.29.0"
   }
 }

@@ -43,8 +43,18 @@ const related = all
   .slice(0, 3);
 
 const formatted = post.data.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+// Cover PNG for social meta (Satori-generated at build time)
+const ogSlug = (post.data.featuredimg ?? '').split('/').pop()?.replace(/\.[a-z]+$/i, '') ?? post.id;
+const ogImage = `/head/${ogSlug}.png`;
 ---
-<BaseLayout title={post.data.title} description={post.data.summary}>
+<BaseLayout
+  title={post.data.title}
+  description={post.data.summary}
+  ogImage={ogImage}
+  ogType="article"
+  articleDate={post.data.date}
+>
   <article class="mx-auto max-w-6xl px-4 py-16">
     <a href="/" class="mb-8 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-800">
       <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z"/></svg>

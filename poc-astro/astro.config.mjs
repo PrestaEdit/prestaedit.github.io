@@ -6,7 +6,7 @@ import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  site: 'https://prestaedit.github.io',
+  site: 'https://blog.prestaedit.com',
   output: 'static',
   adapter: cloudflare({ imageService: 'compile' }),
   integrations: [mdx(), react(), keystatic()],
