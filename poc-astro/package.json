@@ -7,9 +7,12 @@
     "build": "astro build",
     "dev": "astro dev",
     "preview": "astro preview",
-    "og:covers": "node scripts/gen-covers.mjs",
+    "og": "node scripts/gen-covers.mjs",
     "og:site": "node scripts/gen-site-og.mjs",
-    "og:all": "npm run og:covers && npm run og:site"
+    "og:all": "npm run og && npm run og:site",
+    "new": "node scripts/new-article.mjs",
+    "publish": "node scripts/publish.mjs",
+    "unpublish": "node scripts/publish.mjs --draft"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.13",

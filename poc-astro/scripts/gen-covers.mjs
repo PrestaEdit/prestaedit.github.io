@@ -151,7 +151,20 @@ const [regular, bold] = await Promise.all([
   readFile(join(FONTS_DIR, 'Inter-Bold.ttf')),
 ]);
 
-const files = (await readdir(BLOG_DIR)).filter((f) => f.endsWith('.mdx'));
+const slugFilter = process.argv[2]?.trim();
+const allFiles = (await readdir(BLOG_DIR)).filter((f) => f.endsWith('.mdx'));
+const files = slugFilter
+  ? allFiles.filter((f) => f.replace(/\.mdx$/, '').includes(slugFilter))
+  : allFiles;
+
+if (slugFilter && files.length === 0) {
+  console.error(`No article matches "${slugFilter}"`);
+  process.exit(1);
+}
+if (slugFilter && files.length > 1) {
+  console.log(`Filter "${slugFilter}" matches ${files.length} articles:`);
+  for (const f of files) console.log(`  - ${f}`);
+}
 let ok = 0;
 for (const file of files) {
   const raw = await readFile(join(BLOG_DIR, file), 'utf8');
