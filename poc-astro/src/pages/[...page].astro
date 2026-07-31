@@ -44,7 +44,7 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
     <section class="mx-auto max-w-5xl px-4 pt-16 pb-10">
       <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">Dernier article</p>
       <a href={`/blog/${featured.id}`} class="group mt-4 grid gap-8 md:grid-cols-2">
-        <div class="relative aspect-[16/10] overflow-hidden rounded-2xl bg-gray-100">
+        <div class="relative aspect-[1200/630] overflow-hidden rounded-2xl bg-gray-100">
           <img
             src={featured.data.featuredimg ?? placeholderFor(featured.data.tags)}
             alt={featured.data.title}
