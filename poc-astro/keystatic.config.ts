@@ -7,6 +7,7 @@ export default config({
   storage: {
     kind: 'github',
     repo: { owner: 'PrestaEdit', name: 'prestaedit.github.io' },
+    pathPrefix: 'poc-astro',
   },
   ui: {
     brand: { name: 'PrestaEdit' },
