@@ -15,8 +15,11 @@ const {
   href, title, summary, date, tags, author, featuredimg,
   series, seriesIndex, seriesTotal,
 } = Astro.props;
+import { chipClass, placeholderFor } from '../lib/palette';
+
 const formatted = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-const src = featuredimg ?? '/placeholder.svg';
+const fallback = placeholderFor(tags);
+const src = featuredimg ?? fallback;
 const slug = href.split('/').filter(Boolean).pop();
 const heroName = `hero-${slug}`;
 const titleName = `title-${slug}`;
@@ -30,7 +33,8 @@ const metaName = `meta-${slug}`;
       transition:name={heroName}
       class="h-full w-full object-cover transition group-hover:scale-105"
       loading="lazy"
-      onerror="this.onerror=null;this.src='/placeholder.svg';"
+      data-fallback={fallback}
+      onerror={`this.onerror=null;this.src='${fallback}';`}
     />
     {series && (
       <span class="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
@@ -45,7 +49,7 @@ const metaName = `meta-${slug}`;
   <div class="flex flex-1 flex-col p-6">
     <div class="mb-3 flex flex-wrap gap-2">
       {tags.slice(0, 3).map((t) => (
-        <span class="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{t}</span>
+        <span class:list={['rounded-full px-2.5 py-0.5 text-xs font-medium', chipClass(t)]}>{t}</span>
       ))}
     </div>
     <h3 transition:name={titleName} class="text-lg font-semibold text-gray-900 group-hover:text-blue-600">

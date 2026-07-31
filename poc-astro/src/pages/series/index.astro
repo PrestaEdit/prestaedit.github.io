@@ -2,16 +2,18 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection, render } from 'astro:content';
 import { getPublishedPosts } from '../../lib/posts';
+import { placeholderFor } from '../../lib/palette';
 
 const posts = await getPublishedPosts();
-const map = new Map<string, { count: number; latest: Date; cover?: string }>();
+const map = new Map<string, { count: number; latest: Date; cover?: string; tags: string[] }>();
 for (const p of posts) {
   if (!p.data.series) continue;
-  const entry = map.get(p.data.series) ?? { count: 0, latest: new Date(0), cover: p.data.featuredimg };
+  const entry = map.get(p.data.series) ?? { count: 0, latest: new Date(0), cover: p.data.featuredimg, tags: p.data.tags };
   entry.count += 1;
   if (p.data.date > entry.latest) {
     entry.latest = p.data.date;
     entry.cover = p.data.featuredimg ?? entry.cover;
+    entry.tags = p.data.tags;
   }
   map.set(p.data.series, entry);
 }
@@ -25,10 +27,10 @@ const series = [...map.entries()].sort((a, b) => b[1].latest.valueOf() - a[1].la
       {series.map(([slug, meta]) => (
         <a href={`/series/${slug}`} class="group flex overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:border-blue-500/50 hover:shadow-lg">
           <img
-            src={meta.cover ?? '/placeholder.svg'}
+            src={meta.cover ?? placeholderFor(meta.tags)}
             alt=""
             class="hidden aspect-square w-40 flex-none object-cover sm:block"
-            onerror="this.onerror=null;this.src='/placeholder.svg';"
+            onerror={`this.onerror=null;this.src='${placeholderFor(meta.tags)}';`}
           />
           <div class="flex flex-1 flex-col justify-center p-6">
             <p class="text-xs font-semibold uppercase tracking-wider text-blue-600">Série</p>

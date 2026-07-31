@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustration à venir">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+  <rect width="800" height="450" fill="url(#grid)"/>
+  <g transform="translate(400 225)" fill="rgba(255,255,255,0.9)">
+    <path transform="translate(-42 -60)" d="M42 0L84 24v48L42 96 0 72V24z" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.6)" stroke-width="2"/>
+    <text text-anchor="middle" y="42" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="22" font-weight="600" letter-spacing="0.08em">PRESTAEDIT</text>
+    <text text-anchor="middle" y="72" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="14" fill="rgba(255,255,255,0.7)">Illustration à venir</text>
+  </g>
+</svg>
