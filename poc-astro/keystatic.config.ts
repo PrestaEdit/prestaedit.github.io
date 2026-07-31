@@ -66,6 +66,13 @@ export default config({
             Note: block({ label: 'Note (gris)', schema: calloutSchema }),
             Tip: block({ label: 'Tip (vert)', schema: calloutSchema }),
             Danger: block({ label: 'Danger (rouge)', schema: calloutSchema }),
+            img: block({
+              label: 'Image (URL)',
+              schema: {
+                src: fields.text({ label: 'URL', validation: { length: { min: 1 } } }),
+                alt: fields.text({ label: 'Texte alternatif' }),
+              },
+            }),
           },
         }),
       },
