@@ -1,5 +1,5 @@
 ---
-title: "Automatiser ses scénarios PrestaFlow en CI"
+title: Automatiser ses scénarios PrestaFlow en CI
 date: 2026-07-30
 tags:
   - GitHub
@@ -7,11 +7,14 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-07-30-automatiser-ses-scenarios-prestaflow-en-ci.svg'
-summary: "Exécuter ses scénarios PrestaFlow depuis GitHub Actions, à deux niveaux : la CLI en workflow, puis l'Action officielle avec Flashlight et matrice multi-versions."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-07-30-automatiser-ses-scenarios-prestaflow-en-ci.svg
+summary: >-
+  Exécuter ses scénarios PrestaFlow depuis GitHub Actions, à deux niveaux : la
+  CLI en workflow, puis l'Action officielle avec Flashlight et matrice
+  multi-versions.
+draft: false
 ---
-
 <Info title="Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge : PrestaEdit/psflowdemo." />
 
 ## Préambule
@@ -34,7 +37,7 @@ Toute la suite de l'article repose dessus.
 
 ## Niveau 1 : la CLI PrestaFlow dans un workflow
 
-Objectif : lancer nos scénarios à chaque push, sans compte prestaflow.io, sans token. Juste le workflow, Docker, et la CLI.
+Objectif : lancer nos scénarios à chaque push, sans compte prestaflow\.io, sans token. Juste le workflow, Docker, et la CLI.
 
 Créez `.github/workflows/prestaflow.yml` :
 
@@ -105,7 +108,7 @@ Ce workflow fait, dans l'ordre :
 1. **Cloner le module** (`actions/checkout`).
 2. **Installer PHP et Composer**, puis les dépendances du module (`shivammathur/setup-php`, `composer install`).
 3. **Démarrer Flashlight** en arrière-plan avec l'image PS 8.1.7. L'option `-p 80:80` expose le port du conteneur sur le runner.
-4. **Attendre que PrestaShop réponde** — Flashlight met ~30 à 60 secondes à s'initialiser au premier démarrage. Une boucle de polling `curl` avec timeout est suffisante.
+4. **Attendre que PrestaShop réponde** — Flashlight met \~30 à 60 secondes à s'initialiser au premier démarrage. Une boucle de polling `curl` avec timeout est suffisante.
 5. **Lancer PrestaFlow** avec les variables d'environnement pointant vers `http://localhost/`.
 6. **Uploader le rapport HTML en artifact** si un scénario échoue, pour pouvoir l'inspecter depuis l'interface GitHub sans avoir à rejouer.
 
@@ -117,10 +120,10 @@ C'est déjà utile en l'état : chaque push est testé, l'échec est visible, le
 
 Le niveau 1 marche, mais il laisse plusieurs choses à désirer :
 
-- **Aucune synthèse dans la PR.** Il faut aller lire les logs pour savoir ce qui a échoué.
-- **Pas d'historique.** Chaque run repart de zéro, sans comparaison possible avec les précédents.
-- **Pas de régressions visuelles.** On ne détecte pas qu'un template s'est cassé si aucun sélecteur ne bouge.
-- **Le workflow YAML gonfle** dès qu'on ajoute des versions de PS.
+* **Aucune synthèse dans la PR.** Il faut aller lire les logs pour savoir ce qui a échoué.
+* **Pas d'historique.** Chaque run repart de zéro, sans comparaison possible avec les précédents.
+* **Pas de régressions visuelles.** On ne détecte pas qu'un template s'est cassé si aucun sélecteur ne bouge.
+* **Le workflow YAML gonfle** dès qu'on ajoute des versions de PS.
 
 L'[Action officielle PrestaFlow](https://github.com/PrestaFlow/github-action) résout tout cela, en s'appuyant sur la plateforme [prestaflow.io](https://prestaflow.io).
 
@@ -186,11 +189,11 @@ jobs:
 
 **15 lignes utiles**, contre 40 pour le niveau 1. Ce que l'Action fait à votre place :
 
-- **Démarre Flashlight** avec la version demandée via l'input `ps-version`. Plus de `docker run` manuel, plus d'attente `curl`.
-- **Injecte les variables d'environnement** attendues par la lib (URLs, credentials, locale).
-- **Lance le script Composer `prestaflow:json:file`** puis pousse le résultat à la plateforme.
-- **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (respecté par le bloc `permissions: pull-requests: write`).
-- **Synchronise les régressions visuelles** avec la plateforme : les baselines sont téléchargées avant l'exécution, les nouvelles captures et les diffs sont uploadés à la fin. Un template modifié qui casse le rendu apparaît dans le rapport visuel de la plateforme, même si aucun `it` ne tombe.
+* **Démarre Flashlight** avec la version demandée via l'input `ps-version`. Plus de `docker run` manuel, plus d'attente `curl`.
+* **Injecte les variables d'environnement** attendues par la lib (URLs, credentials, locale).
+* **Lance le script Composer `prestaflow:json:file`** puis pousse le résultat à la plateforme.
+* **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (respecté par le bloc `permissions: pull-requests: write`).
+* **Synchronise les régressions visuelles** avec la plateforme : les baselines sont téléchargées avant l'exécution, les nouvelles captures et les diffs sont uploadés à la fin. Un template modifié qui casse le rendu apparaît dans le rapport visuel de la plateforme, même si aucun `it` ne tombe.
 
 ### Consommer les outputs
 
