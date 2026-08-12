@@ -18,10 +18,10 @@ draft: true
 
 Les annexes précédentes ont mentionné, chacune dans son coin, une manière d'attendre quelque chose :
 
-- L'annexe [debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/) évoque `waitForPageLoaded()` et `isVisible($sel, 5000)` comme parades aux flakes.
-- L'annexe [factoriser Pages](/2026/08/05/prestaflow-factoriser-ses-pages/) donne un exemple de timeout explicite dans un sélecteur (`isVisible($sel, 8000)`).
-- L'annexe [tester un thème](/2026/10/07/prestaflow-tester-un-theme/) précise que les fonts custom peuvent tromper `waitForPageLoaded()`.
-- L'annexe [tester les emails](/2026/12/09/prestaflow-tester-emails-envoyes/) utilise un `sleep(2)` avoué comme artisanal.
+- L'annexe [debug](/blog/prestaflow-debug-un-scenario-qui-casse/) évoque `waitForPageLoaded()` et `isVisible($sel, 5000)` comme parades aux flakes.
+- L'annexe [factoriser Pages](/blog/prestaflow-factoriser-ses-pages/) donne un exemple de timeout explicite dans un sélecteur (`isVisible($sel, 8000)`).
+- L'annexe [tester un thème](/blog/prestaflow-tester-un-theme/) précise que les fonts custom peuvent tromper `waitForPageLoaded()`.
+- L'annexe [tester les emails](/blog/prestaflow-tester-emails-envoyes/) utilise un `sleep(2)` avoué comme artisanal.
 
 Résultat : un lecteur qui traverse la série apprend cinq mécaniques d'attente sans jamais voir la vue d'ensemble. Cette annexe range tout, avec une règle claire par cas.
 
@@ -130,7 +130,7 @@ public function waitForMessage(string $recipient, int $timeoutSec = 10): ?array
 
 Trois choses à retenir : un timeout absolu (pour éviter l'infini), une **granularité de poll** raisonnable (500ms est un bon défaut — 100ms est trop agressif, 2s est trop lent), un retour explicite du résultat (`null` = timeout).
 
-C'est le pattern utilisé dans l'annexe [emails](/2026/12/09/prestaflow-tester-emails-envoyes/) — beaucoup plus fiable que le `sleep(2)` de l'exemple initial.
+C'est le pattern utilisé dans l'annexe [emails](/blog/prestaflow-tester-emails-envoyes/) — beaucoup plus fiable que le `sleep(2)` de l'exemple initial.
 
 ## Cas concret : combiner plusieurs waits dans un `it`
 
@@ -162,9 +162,9 @@ Chaque wait a son bon endroit. Rien de superflu, rien de manquant. Le scénario 
 
 ## Interaction avec les autres annexes
 
-- **[Debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)** — un scénario qui échoue avec une capture qui ressemble à *"j'ai capturé au mauvais moment"* est un problème de wait, pas un bug métier. Cette annexe donne le vocabulaire pour le diagnostiquer.
-- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — les baselines qui clignotent sont presque toujours dues à un wait manquant avant `visualCheckpoint`. Combiner `waitForPageLoaded` + `isVisible` sur un élément stable + éventuellement `PRESTAFLOW_SCREENSHOT_DELAY` règle 90 % des cas.
-- **[Tester un thème](/2026/10/07/prestaflow-tester-un-theme/)** — les fonts custom, mentionnées comme piège, sont un cas typique où on attend sur *"le titre final est rendu"* plutôt que sur `DOMContentLoaded`.
+- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — un scénario qui échoue avec une capture qui ressemble à *"j'ai capturé au mauvais moment"* est un problème de wait, pas un bug métier. Cette annexe donne le vocabulaire pour le diagnostiquer.
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — les baselines qui clignotent sont presque toujours dues à un wait manquant avant `visualCheckpoint`. Combiner `waitForPageLoaded` + `isVisible` sur un élément stable + éventuellement `PRESTAFLOW_SCREENSHOT_DELAY` règle 90 % des cas.
+- **[Tester un thème](/blog/prestaflow-tester-un-theme/)** — les fonts custom, mentionnées comme piège, sont un cas typique où on attend sur *"le titre final est rendu"* plutôt que sur `DOMContentLoaded`.
 
 ## Notes
 

@@ -12,14 +12,16 @@ summary: "Prise en main de l'application desktop PrestaFlow : lier un projet loc
 draft: true
 ---
 
-<Info title="Cet article ferme le triptyque des articles piliers ouvert par « Écrire son premier scénario » et « Automatiser ses scénarios en CI ». Il reprend le module fil rouge PrestaEdit/psflowdemo." />
+<Info title="Fin du triptyque">
+Cet article ferme le triptyque des articles piliers ouvert par « Écrire son premier scénario » et « Automatiser ses scénarios en CI ». Il reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+</Info>
 
 ## Préambule
 
 Les deux articles précédents nous ont donné les deux modes d'usage naturels de PrestaFlow :
 
-- **[Article 1](/2026/07/29/ecrire-son-premier-scenario-prestaflow/)** — la librairie PHP : on écrit ses scénarios et on les lance à la main avec `./vendor/bin/prestaflow run`.
-- **[Article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/)** — la GitHub Action : on délègue cette exécution à GitHub Actions à chaque commit, avec matrice multi-versions PS et remontées sur la plateforme.
+- **[Article 1](/blog/ecrire-son-premier-scenario-prestaflow/)** — la librairie PHP : on écrit ses scénarios et on les lance à la main avec `./vendor/bin/prestaflow run`.
+- **[Article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)** — la GitHub Action : on délègue cette exécution à GitHub Actions à chaque commit, avec matrice multi-versions PS et remontées sur la plateforme.
 
 Il reste un troisième mode d'usage, plus interactif : **piloter ses scénarios depuis une interface graphique**, en boucle courte, pendant le développement. C'est ce que fait l'application desktop PrestaFlow.
 
@@ -100,7 +102,7 @@ L'app conserve un **historique local** de tous les runs joués depuis qu'elle es
 
 ## Sync cloud — lier le projet à prestaflow.io
 
-Tant qu'on reste local, l'app est autonome. Mais si vous utilisez déjà la plateforme (parce que vous avez suivi [l'article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) et branché l'Action GitHub), il devient intéressant de faire remonter vos runs locaux au même endroit — pour avoir tout l'historique (local + CI) sur le même dashboard.
+Tant qu'on reste local, l'app est autonome. Mais si vous utilisez déjà la plateforme (parce que vous avez suivi [l'article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) et branché l'Action GitHub), il devient intéressant de faire remonter vos runs locaux au même endroit — pour avoir tout l'historique (local + CI) sur le même dashboard.
 
 Deux étapes de config, une fois par projet.
 

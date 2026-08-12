@@ -24,7 +24,7 @@ Cette annexe est la **boîte à outils** pour ces moments-là : les cinq leviers
 
 À chaque run, PrestaFlow produit trois choses. Consultez-les toujours dans cet ordre :
 
-- **Le stack trace** dans la sortie CLI (ou dans la vue résultat de l'app, cf. [article 3](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/)). Nom de la classe, ligne, message d'exception.
+- **Le stack trace** dans la sortie CLI (ou dans la vue résultat de l'app, cf. [article 3](/blog/piloter-ses-tests-depuis-l-application-prestaflow/)). Nom de la classe, ligne, message d'exception.
 - **La capture d'erreur** — `prestaflow/screens/errors/error_<id>-<timestamp>.png`. Prise automatiquement par `Expect::that()` au moment exact de l'assertion qui tombe.
 - **Les captures d'étape** du rapport HTML — celles qu'on lit d'habitude en fin de run réussi.
 
@@ -102,7 +102,7 @@ Quand le scénario semble tourner mais l'assertion tombe sur une donnée dont on
 PRESTAFLOW_DEBUG=true
 ```
 
-La sortie CLI s'enrichit alors avec la locale résolue, la version PS détectée, et des détails supplémentaires d'exécution. Cas typique où ça sauve : un test qui passe en 8.1.7 et casse en 9.0.0, où le mode debug affiche noir sur blanc *"Locale: fr, Version: 9"* — et vous découvrez que votre catalogue de traductions n'a rien pour v9 alors que v8 l'avait (cf. le mécanisme de merge de l'[annexe *scénarios multi-locales*](/2026/09/02/prestaflow-scenarios-multi-locales/)).
+La sortie CLI s'enrichit alors avec la locale résolue, la version PS détectée, et des détails supplémentaires d'exécution. Cas typique où ça sauve : un test qui passe en 8.1.7 et casse en 9.0.0, où le mode debug affiche noir sur blanc *"Locale: fr, Version: 9"* — et vous découvrez que votre catalogue de traductions n'a rien pour v9 alors que v8 l'avait (cf. le mécanisme de merge de l'[annexe *scénarios multi-locales*](/blog/prestaflow-scenarios-multi-locales/)).
 
 ## Étape 5 : le `dump` temporaire, dernière ligne de défense
 
@@ -127,7 +127,7 @@ Un test qui passe *parfois* et échoue *parfois* n'est pas un bug fonctionnel. C
 
 - **Wait manquant** — l'assertion est faite avant que l'action asynchrone n'ait fini de rendre son résultat. Parade : `waitForPageLoaded()` après une navigation, `isVisible($sel, 5000)` avant de lire un contenu injecté par JS.
 - **Ordre d'exécution / état résiduel** — un `it` dépend d'un état laissé par le précédent, qui échoue silencieusement dans certaines conditions (session expirée, cookie perdu). Rendre chaque `it` idempotent quand c'est possible.
-- **Données polluées** — vu dans l'[annexe *tester un module tiers*](/2026/08/12/prestaflow-tester-un-module-tiers/) : le second run crée l'inscription que le premier a laissée. Suffixe unique par run (`time()`, uuid) ou cleanup en fin de suite.
+- **Données polluées** — vu dans l'[annexe *tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/) : le second run crée l'inscription que le premier a laissée. Suffixe unique par run (`time()`, uuid) ou cleanup en fin de suite.
 
 **Diagnostic** : relancez le scénario 5 fois de suite. Si l'échec est intermittent, c'est un flake — traitez-le comme un bug de test, pas comme un bug de code métier. Un flake ignoré finit toujours par masquer une vraie régression.
 
@@ -141,6 +141,6 @@ Un test qui passe *parfois* et échoue *parfois* n'est pas un bug fonctionnel. C
 
 ## Pour aller plus loin
 
-- Un rapport à lire en profondeur : voir la vue résultat de l'[application](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/), qui présente les mêmes données en plus interactif.
-- Une capture visuelle qui diffère de la baseline sans que l'assertion ne tombe : c'est le sujet de l'[annexe régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/).
-- Un échec qui n'apparaît que sur une version PS ou une locale : cf. les annexes [multi-versions](/2026/08/26/prestaflow-multi-versions-prestashop/) et [multi-locales](/2026/09/02/prestaflow-scenarios-multi-locales/) pour comprendre ce que la lib a résolu comme contexte.
+- Un rapport à lire en profondeur : voir la vue résultat de l'[application](/blog/piloter-ses-tests-depuis-l-application-prestaflow/), qui présente les mêmes données en plus interactif.
+- Une capture visuelle qui diffère de la baseline sans que l'assertion ne tombe : c'est le sujet de l'[annexe régressions visuelles](/blog/prestaflow-regressions-visuelles/).
+- Un échec qui n'apparaît que sur une version PS ou une locale : cf. les annexes [multi-versions](/blog/prestaflow-multi-versions-prestashop/) et [multi-locales](/blog/prestaflow-scenarios-multi-locales/) pour comprendre ce que la lib a résolu comme contexte.

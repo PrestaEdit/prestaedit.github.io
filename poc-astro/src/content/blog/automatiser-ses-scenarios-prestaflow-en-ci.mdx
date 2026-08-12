@@ -15,13 +15,15 @@ summary: >-
   multi-versions.
 draft: false
 ---
-<Info title="Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge : PrestaEdit/psflowdemo." />
+<Info title="Suite de la série">
+Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+</Info>
 
 ## Préambule
 
-Dans l'[article précédent](/2026/07/29/ecrire-son-premier-scenario-prestaflow/), nous avons mis en place trois suites PrestaFlow pour le module `psflowdemo` — un parcours d'achat fourni, plus deux suites custom — et nous les avons lancées en local avec `./vendor/bin/prestaflow run tests/prestaflow`.
+Dans l'[article précédent](/blog/ecrire-son-premier-scenario-prestaflow/), nous avons mis en place trois suites PrestaFlow pour le module `psflowdemo` — un parcours d'achat fourni, plus deux suites custom — et nous les avons lancées en local avec `./vendor/bin/prestaflow run tests/prestaflow`.
 
-Fonctionnel, mais rapidement fastidieux : à chaque commit, sur chaque version de PrestaShop qu'on prétend supporter, il faudrait relancer ces scénarios à la main. C'est très exactement le même argumentaire que celui du [précédent article sur PHPStan en CI](/2024/11/06/tester-son-module-via-ci-cd/), transposé au fonctionnel.
+Fonctionnel, mais rapidement fastidieux : à chaque commit, sur chaque version de PrestaShop qu'on prétend supporter, il faudrait relancer ces scénarios à la main. C'est très exactement le même argumentaire que celui du [précédent article sur PHPStan en CI](/blog/tester-son-module-via-ci-cd/), transposé au fonctionnel.
 
 Voyons comment déléguer cette exécution à GitHub Actions — d'abord en pilotant la CLI PrestaFlow depuis un workflow (sans dépendance externe), puis en passant à l'Action officielle pour bénéficier des remontées sur la plateforme.
 

@@ -106,7 +106,7 @@ class NoXssInBlockTitle extends TestsSuite
 
 Le troisième `it` tombe : `getBlockTitle()` retourne `"Bienvenue"` seul (le `<script>` a été *interprété* et n'apparaît pas dans le texte visible), et `window.__xssFired` vaut `true`. Deux assertions échouées, mais qui pointent vers **le même bug** de fond.
 
-Preuve documentée que vous avez bien compris le problème. La capture d'erreur (voir [annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)) montre l'état exact de la home avec le script exécuté — attachable au ticket si besoin.
+Preuve documentée que vous avez bien compris le problème. La capture d'erreur (voir [annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/)) montre l'état exact de la home avec le script exécuté — attachable au ticket si besoin.
 
 ### Étape 3 — Fix
 
@@ -154,9 +154,9 @@ Ce sont **les bugs qui exigent qu'on parcoure l'app comme un utilisateur** pour 
 
 ## Interaction avec les autres annexes
 
-- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — le bug affecte le rendu ? Ajoutez un `visualCheckpoint` en plus du `Expect::that` fonctionnel. La capture rouge devient une preuve visuelle du bug.
-- **[Multi-versions PS](/2026/08/26/prestaflow-multi-versions-prestashop/)** — bug reproductible sur v8 mais pas v9 ? Le scénario tourne sur les deux en matrice CI. Vous voyez immédiatement le périmètre du problème et pouvez fixer conditionnellement.
-- **[Debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)** — quand votre scénario tombe rouge la première fois, la capture d'erreur montre l'état exact. C'est la meilleure documentation de bug qui existe : le lecteur du ticket voit précisément la page problématique.
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — le bug affecte le rendu ? Ajoutez un `visualCheckpoint` en plus du `Expect::that` fonctionnel. La capture rouge devient une preuve visuelle du bug.
+- **[Multi-versions PS](/blog/prestaflow-multi-versions-prestashop/)** — bug reproductible sur v8 mais pas v9 ? Le scénario tourne sur les deux en matrice CI. Vous voyez immédiatement le périmètre du problème et pouvez fixer conditionnellement.
+- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — quand votre scénario tombe rouge la première fois, la capture d'erreur montre l'état exact. C'est la meilleure documentation de bug qui existe : le lecteur du ticket voit précisément la page problématique.
 
 ## Notes
 

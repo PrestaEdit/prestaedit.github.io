@@ -16,11 +16,11 @@ draft: true
 
 ## Le problème qu'on découvre au 3ème mois
 
-L'[annexe régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/) a insisté sur un point : **commit `visual-baseline/`**. Les baselines font partie de vos tests, un baseline hors-repo est un test qui ne survit pas au premier `git clone`.
+L'[annexe régressions visuelles](/blog/prestaflow-regressions-visuelles/) a insisté sur un point : **commit `visual-baseline/`**. Les baselines font partie de vos tests, un baseline hors-repo est un test qui ne survit pas au premier `git clone`.
 
 Vrai. Sauf que le corollaire arrive rarement dans les discussions initiales : à quelle vitesse `visual-baseline/` grossit ?
 
-Ordre de grandeur pris de l'[annexe thème](/2026/10/07/prestaflow-tester-un-theme/) : un thème sérieusement testé, c'est 5 gabarits × 3 breakpoints × 4 locales × 2 versions PS = **120 baselines**. Chacune pèse 200 KB à 2 MB selon la taille de page et le contenu. **24 à 240 MB de PNG dans le repo Git**, uniquement pour les baselines visuelles.
+Ordre de grandeur pris de l'[annexe thème](/blog/prestaflow-tester-un-theme/) : un thème sérieusement testé, c'est 5 gabarits × 3 breakpoints × 4 locales × 2 versions PS = **120 baselines**. Chacune pèse 200 KB à 2 MB selon la taille de page et le contenu. **24 à 240 MB de PNG dans le repo Git**, uniquement pour les baselines visuelles.
 
 Un repo Git de 240 MB à cause d'images :
 
@@ -96,7 +96,7 @@ Coût : Cloudflare R2 est ~0.015$/GB/mois de stockage, aucun coût de bande pass
 
 ## Stratégie 4 : déléguer à la plateforme prestaflow.io
 
-L'[Action officielle](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) synchronise déjà les baselines avec la plateforme. Elles vivent côté serveur, sont téléchargées par l'Action avant chaque run, et les nouvelles captures + diffs sont uploadés à la fin.
+L'[Action officielle](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) synchronise déjà les baselines avec la plateforme. Elles vivent côté serveur, sont téléchargées par l'Action avant chaque run, et les nouvelles captures + diffs sont uploadés à la fin.
 
 **Ce qui change avec cette stratégie** : votre repo ne contient plus **aucun** PNG de baseline. La plateforme fait autorité, l'Action est le seul intermédiaire. Le développeur qui itère en local sans la plateforme (via la CLI PrestaFlow directe, cf. article 2 niveau 1) ne bénéficie plus des baselines partagées — il en crée localement, elles ne remontent pas.
 
@@ -126,9 +126,9 @@ Deux réflexes pour limiter le churn :
 
 ## Interaction avec les autres annexes
 
-- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — cette annexe est le complément infra de celle-ci. Une couvre le pourquoi et le comment fonctionnel (`visualCheckpoint`, seuils, tags), celle-ci couvre le stockage physique.
-- **[Tester un thème](/2026/10/07/prestaflow-tester-un-theme/)** — l'ordre de grandeur "60 à 200 baselines" y était mentionné sans discuter du coût de versioning. Cette annexe complète.
-- **[Cloud runs](/2026/09/16/prestaflow-consulter-historique-cloud/)** — la stratégie 4 s'inscrit dans le workflow global de la plateforme, où les baselines ne sont qu'un asset parmi d'autres (résultats, screenshots d'étape, diffs).
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — cette annexe est le complément infra de celle-ci. Une couvre le pourquoi et le comment fonctionnel (`visualCheckpoint`, seuils, tags), celle-ci couvre le stockage physique.
+- **[Tester un thème](/blog/prestaflow-tester-un-theme/)** — l'ordre de grandeur "60 à 200 baselines" y était mentionné sans discuter du coût de versioning. Cette annexe complète.
+- **[Cloud runs](/blog/prestaflow-consulter-historique-cloud/)** — la stratégie 4 s'inscrit dans le workflow global de la plateforme, où les baselines ne sont qu'un asset parmi d'autres (résultats, screenshots d'étape, diffs).
 
 ## Notes
 

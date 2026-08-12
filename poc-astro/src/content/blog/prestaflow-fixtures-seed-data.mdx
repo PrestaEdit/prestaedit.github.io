@@ -16,7 +16,7 @@ draft: true
 
 ## Décor
 
-Plusieurs annexes précédentes ont contourné le sujet. L'annexe [*Tester un module tiers*](/2026/08/12/prestaflow-tester-un-module-tiers/) a couvert l'isolation des données au ras des pâquerettes : suffixe timestamp pour éviter les doublons, cleanup optionnel en fin de suite. Ça marche tant qu'on présuppose que la boutique a **déjà** ce qu'il faut — au moins un produit vendable, un mode de livraison configuré, une TVA active, un compte client valide.
+Plusieurs annexes précédentes ont contourné le sujet. L'annexe [*Tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/) a couvert l'isolation des données au ras des pâquerettes : suffixe timestamp pour éviter les doublons, cleanup optionnel en fin de suite. Ça marche tant qu'on présuppose que la boutique a **déjà** ce qu'il faut — au moins un produit vendable, un mode de livraison configuré, une TVA active, un compte client valide.
 
 Sur une boutique de démo Flashlight fraîche, ces prérequis existent par défaut. Sur un projet un peu plus mûr — module qui teste un cas métier précis, boutique dont on veut contrôler chaque objet — il faut souvent semer plus. C'est le sujet de cette annexe.
 
@@ -32,7 +32,7 @@ Chacun a sa mécanique, son coût, et son bon cas d'usage.
 
 Le plus propre pour du seed **statique** : module à installer, config globale à poser, données de démo à charger. Vous versionnez le seed avec le code, il est appliqué automatiquement à chaque démarrage de conteneur.
 
-L'[Action officielle](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) expose l'input `flashlight-init-scripts` :
+L'[Action officielle](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) expose l'input `flashlight-init-scripts` :
 
 ```yaml
 - uses: PrestaFlow/github-action@v2

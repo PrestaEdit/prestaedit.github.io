@@ -24,7 +24,7 @@ PrestaFlow se fiche royalement de savoir où la boutique tourne. Il lui faut jus
 
 ## La configuration minimale
 
-Reprenons le `.env` de l'[article d'introduction](/2026/07/29/ecrire-son-premier-scenario-prestaflow/) — mais cette fois, on pointe sur une boutique locale déjà installée, par exemple `https://prestashop.test` servi par Laravel Valet :
+Reprenons le `.env` de l'[article d'introduction](/blog/ecrire-son-premier-scenario-prestaflow/) — mais cette fois, on pointe sur une boutique locale déjà installée, par exemple `https://prestashop.test` servi par Laravel Valet :
 
 ```env
 PRESTAFLOW_PS_VERSION=8.1.7
@@ -53,12 +53,12 @@ Vos suites tournent contre `prestashop.test` — la boutique qui tourne déjà s
 - **Zéro attente de boot**. Un run PrestaFlow local démarre en une seconde, contre 30-60s pour Flashlight au premier boot.
 - **Contexte de dev réaliste**. Votre thème custom, vos modules installés, votre config personnalisée, votre catalogue à vous. Vous testez ce que vous développez, pas ce qu'un conteneur générique aurait servi.
 - **Persistance entre runs**. Un produit ajouté au panier persiste, une config modifiée reste. Utile pour explorer manuellement l'état laissé par un scénario, sans qu'un conteneur ne le jette derrière vous.
-- **Vitesse d'itération**. Combiné à `PRESTAFLOW_HEADLESS=false` et à l'[app PrestaFlow](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/), on obtient la boucle courte parfaite pour écrire un scénario en tâtonnant.
+- **Vitesse d'itération**. Combiné à `PRESTAFLOW_HEADLESS=false` et à l'[app PrestaFlow](/blog/piloter-ses-tests-depuis-l-application-prestaflow/), on obtient la boucle courte parfaite pour écrire un scénario en tâtonnant.
 
 ### Les pertes
 
 - **Reproductibilité perdue**. Votre boutique a votre config, votre catalogue, votre base. Ce qui passe chez vous ne passera pas forcément chez le collègue — ni sur la CI. C'est le miroir inversé de la promesse Flashlight.
-- **Pollution de la base**. Vos suites laissent des traces (produits créés, adresses saisies, abonnements newsletter). Sans cleanup soigné (voir l'[annexe module tiers](/2026/08/12/prestaflow-tester-un-module-tiers/) sur le suffixe timestamp et le cleanup end-of-suite), la base grossit et se dégrade.
+- **Pollution de la base**. Vos suites laissent des traces (produits créés, adresses saisies, abonnements newsletter). Sans cleanup soigné (voir l'[annexe module tiers](/blog/prestaflow-tester-un-module-tiers/) sur le suffixe timestamp et le cleanup end-of-suite), la base grossit et se dégrade.
 - **Impossible en CI**. Sur GitHub Actions, il n'y a pas de `prestashop.test` — il faut soit Flashlight, soit monter une boutique dans le workflow.
 
 ## Quand choisir Flashlight, quand choisir sa stack locale
@@ -92,9 +92,9 @@ En local vous laissez PrestaFlow lire `.env` par défaut. En CI, la GitHub Actio
 
 ## Interaction avec les autres annexes
 
-- **[Cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — récupérer le cookie de session admin de votre stack locale est trivial (DevTools sur la page BO ouverte à la main). Copier-coller dans `PRESTAFLOW_COOKIES`, et vos suites BO démarrent déjà connectées.
-- **[Preprod htpasswd](/2026/10/14/prestaflow-preprod-htpasswd/)** — si votre stack locale est protégée par un htpasswd (cas rare mais possible pour partager une instance de dev entre plusieurs personnes), `PRESTAFLOW_BASIC_*` s'applique à l'identique.
-- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — les init-scripts Flashlight ne s'appliquent pas ici (pas de conteneur), le niveau 1 disparaît. Les niveaux 2 (step pré-run) et 3 (override `before()`) restent pertinents pour maintenir un état stable sur votre boutique locale.
+- **[Cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/)** — récupérer le cookie de session admin de votre stack locale est trivial (DevTools sur la page BO ouverte à la main). Copier-coller dans `PRESTAFLOW_COOKIES`, et vos suites BO démarrent déjà connectées.
+- **[Preprod htpasswd](/blog/prestaflow-preprod-htpasswd/)** — si votre stack locale est protégée par un htpasswd (cas rare mais possible pour partager une instance de dev entre plusieurs personnes), `PRESTAFLOW_BASIC_*` s'applique à l'identique.
+- **[Fixtures](/blog/prestaflow-fixtures-seed-data/)** — les init-scripts Flashlight ne s'appliquent pas ici (pas de conteneur), le niveau 1 disparaît. Les niveaux 2 (step pré-run) et 3 (override `before()`) restent pertinents pour maintenir un état stable sur votre boutique locale.
 
 ## Notes
 

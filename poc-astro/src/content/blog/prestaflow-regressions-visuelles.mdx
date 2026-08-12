@@ -174,7 +174,7 @@ Trois parades, dans l'ordre :
 
 En local, valider un changement voulu comme nouveau baseline consiste à copier `prestaflow/screens/actual/foo.png` par-dessus `visual-baseline/foo.png` puis committer. Rapide, mais aveugle.
 
-En CI (voir l'[article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/)), l'Action officielle synchronise les baselines et les diffs avec [prestaflow.io](https://prestaflow.io). La plateforme propose alors une **revue humaine** : côte-à-côte baseline vs actual, décision *« changement voulu, promouvoir en baseline »* ou *« régression, à corriger »*. Le nouveau baseline redescend automatiquement pour les runs suivants.
+En CI (voir l'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)), l'Action officielle synchronise les baselines et les diffs avec [prestaflow.io](https://prestaflow.io). La plateforme propose alors une **revue humaine** : côte-à-côte baseline vs actual, décision *« changement voulu, promouvoir en baseline »* ou *« régression, à corriger »*. Le nouveau baseline redescend automatiquement pour les runs suivants.
 
 C'est là que la trilogie de la série montre son intérêt cumulé : la lib écrit le checkpoint, la CI l'exécute sur chaque commit, l'app / la plateforme arbitre les diffs.
 

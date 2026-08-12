@@ -16,11 +16,11 @@ draft: true
 
 ## Décor
 
-L'[article 3](/2026/07/31/piloter-ses-tests-depuis-l-application-prestaflow/) s'est arrêté à *« Sync now → le run apparaît côté plateforme »*. On s'y arrête ici pour aller à l'étape suivante : **consulter l'historique complet du projet depuis l'app**, en agrégeant tout ce qui arrive sur prestaflow.io — quelle que soit la source.
+L'[article 3](/blog/piloter-ses-tests-depuis-l-application-prestaflow/) s'est arrêté à *« Sync now → le run apparaît côté plateforme »*. On s'y arrête ici pour aller à l'étape suivante : **consulter l'historique complet du projet depuis l'app**, en agrégeant tout ce qui arrive sur prestaflow.io — quelle que soit la source.
 
 Sur un projet actif, la plateforme reçoit des runs de plusieurs endroits :
 
-- **Depuis la CI** — chaque push déclenche l'[Action GitHub](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) qui pousse son résultat.
+- **Depuis la CI** — chaque push déclenche l'[Action GitHub](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) qui pousse son résultat.
 - **Depuis d'autres desktops** — vos collègues qui utilisent l'app et cliquent `Sync now` sur leurs runs locaux.
 - **Depuis l'API** — n'importe quel script tiers qui envoie un `POST /api/projects/{id}/runs` avec un token valide.
 

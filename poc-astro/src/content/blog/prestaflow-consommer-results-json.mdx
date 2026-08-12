@@ -16,7 +16,7 @@ draft: true
 
 ## Le fichier oublié de la boucle CI
 
-L'[article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) mentionne que l'Action officielle lance `composer run prestaflow:json:file` puis pousse le résultat à la plateforme. L'annexe [historique cloud](/2026/09/16/prestaflow-consulter-historique-cloud/) explique qu'on peut télécharger ce même fichier via une URL S3 pré-signée depuis l'app.
+L'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) mentionne que l'Action officielle lance `composer run prestaflow:json:file` puis pousse le résultat à la plateforme. L'annexe [historique cloud](/blog/prestaflow-consulter-historique-cloud/) explique qu'on peut télécharger ce même fichier via une URL S3 pré-signée depuis l'app.
 
 Mais on n'a jamais dit **ce qu'il y a dedans**, ni ce qu'on peut faire avec en dehors de le regarder.
 
@@ -83,11 +83,11 @@ Un tableau JSON, une entrée par suite exécutée dans le run. Chaque entrée co
 Les champs qui comptent en pratique :
 
 - **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
-- **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/).
+- **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/).
 - **`tests[].expect`** — le message d'assertion en cas d'échec, du style *"Expected 'inscription' to be contained in 'You have successfully subscribed'"*. Non-null uniquement si `state:fail`.
 - **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`.
 - **`tests[].time`** — durée en millisecondes.
-- **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/2026/11/11/prestaflow-scenarios-parametres-chainage/)).
+- **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)).
 - **`tests[].visual`** — bloc de résultats de régressions visuelles pour ce `it`, si `visualCheckpoint` a été appelé.
 
 Le reste (`code`, `attachments`, `warnings`, `screens`) est du bonus utile en debug mais rarement consommé par un script.

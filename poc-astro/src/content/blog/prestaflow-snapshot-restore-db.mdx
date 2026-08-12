@@ -14,13 +14,13 @@ draft: true
 
 <Info title="Prérequis" />
 
-Annexe de la série PrestaFlow. Prérequis : avoir lu [« Fixtures et seed data reproductibles »](/2026/09/30/prestaflow-fixtures-seed-data/) (le complément côté seed) et [« Sans Flashlight — stack locale »](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) (contexte où le snapshot devient nécessaire).
+Annexe de la série PrestaFlow. Prérequis : avoir lu [« Fixtures et seed data reproductibles »](/blog/prestaflow-fixtures-seed-data/) (le complément côté seed) et [« Sans Flashlight — stack locale »](/blog/prestaflow-sans-flashlight-stack-locale/) (contexte où le snapshot devient nécessaire).
 
 ## Décor : pourquoi snapshot
 
-Dans un pipeline **Flashlight**, la base MySQL vit dans le conteneur. Le conteneur meurt à la fin du run, la base avec lui. Rien à nettoyer. L'annexe [fixtures niveau 1](/2026/09/30/prestaflow-fixtures-seed-data/) exploite ce modèle : on injecte via `init-scripts`, on ne retire jamais.
+Dans un pipeline **Flashlight**, la base MySQL vit dans le conteneur. Le conteneur meurt à la fin du run, la base avec lui. Rien à nettoyer. L'annexe [fixtures niveau 1](/blog/prestaflow-fixtures-seed-data/) exploite ce modèle : on injecte via `init-scripts`, on ne retire jamais.
 
-Sur une boutique **persistante** — Valet, MAMP, préprod partagée, comme décrit dans [l'annexe stack locale](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) — la base survit aux runs. Un test qui crée un client crée un vrai client. Un test qui commande décrémente un vrai stock. Au bout de dix runs, la base est un dépotoir : commandes fantômes, produits épuisés, configurations pétées. **Le cleanup n'est plus optionnel, il est obligatoire.**
+Sur une boutique **persistante** — Valet, MAMP, préprod partagée, comme décrit dans [l'annexe stack locale](/blog/prestaflow-sans-flashlight-stack-locale/) — la base survit aux runs. Un test qui crée un client crée un vrai client. Un test qui commande décrémente un vrai stock. Au bout de dix runs, la base est un dépotoir : commandes fantômes, produits épuisés, configurations pétées. **Le cleanup n'est plus optionnel, il est obligatoire.**
 
 Trois grains pour l'organiser, du plus grossier au plus fin :
 
@@ -96,7 +96,7 @@ class CheckoutSuite extends TestsSuite
 
 <Warning title="parent::before() doit être le PREMIER appel" />
 
-Le commentaire du code de la lib est explicite : si on override `before()` sans appeler `parent::before(...)` **en premier**, le browser n'est pas instancié, les cookies ne sont pas posés, la basic auth n'est pas appliquée. Tous les `it()` échoueront sans message clair. L'annexe fixtures [le rappelait déjà](/2026/09/30/prestaflow-fixtures-seed-data/) — c'est le piège numéro un des overrides.
+Le commentaire du code de la lib est explicite : si on override `before()` sans appeler `parent::before(...)` **en premier**, le browser n'est pas instancié, les cookies ne sont pas posés, la basic auth n'est pas appliquée. Tous les `it()` échoueront sans message clair. L'annexe fixtures [le rappelait déjà](/blog/prestaflow-fixtures-seed-data/) — c'est le piège numéro un des overrides.
 
 Symétrique pour `after()` : `parent::after()` en **dernier**, après le restore, pour laisser la lib fermer le browser sur un état DB propre.
 
@@ -133,7 +133,7 @@ Un restore naïf réinitialise les compteurs `AUTO_INCREMENT` à leur valeur du 
 
 ## Interaction avec les scénarios chaînés
 
-L'annexe [scénarios paramétrés et chaînage](/2026/11/11/prestaflow-scenarios-parametres-chainage/) décrit comment un scénario `CreateOrder` peut poser un ID en `store()` qu'un scénario `RefundOrder` récupère via `retrieve()`. Ces deux scénarios partagent un état DB.
+L'annexe [scénarios paramétrés et chaînage](/blog/prestaflow-scenarios-parametres-chainage/) décrit comment un scénario `CreateOrder` peut poser un ID en `store()` qu'un scénario `RefundOrder` récupère via `retrieve()`. Ces deux scénarios partagent un état DB.
 
 Un snapshot au niveau **suite** casse cette chaîne : si `RefundOrder` s'exécute dans une suite qui restore avant, la commande créée par `CreateOrder` a disparu. Deux options :
 
@@ -146,8 +146,8 @@ Choisir en fonction du couplage. Si peu de chaînes, snapshot par suite. Si beau
 
 Un snapshot restore ne compense pas :
 
-- **Un test flaky** — le problème est ailleurs. Voir [l'annexe debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/). Snapshotter un test qui timeout ne le stabilise pas, ça masque juste la pollution qu'il laisse derrière.
-- **Une fixture manquante** — l'état attendu doit être posé **avant** le snapshot, pas restauré depuis un run précédent. La [niveau 1 des fixtures](/2026/09/30/prestaflow-fixtures-seed-data/) reste la vérité de base.
+- **Un test flaky** — le problème est ailleurs. Voir [l'annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/). Snapshotter un test qui timeout ne le stabilise pas, ça masque juste la pollution qu'il laisse derrière.
+- **Une fixture manquante** — l'état attendu doit être posé **avant** le snapshot, pas restauré depuis un run précédent. La [niveau 1 des fixtures](/blog/prestaflow-fixtures-seed-data/) reste la vérité de base.
 - **Un manque de partitionnement** — paralléliser deux workers sur la même base sans partition les fait s'écraser mutuellement. Le snapshot ne les isole pas.
 
 ## Notes

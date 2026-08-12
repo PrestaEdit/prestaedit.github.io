@@ -13,7 +13,7 @@ draft: true
 ---
 
 <Info title="Prérequis">
-Annexe de la série PrestaFlow. Prérequis : avoir lu [« Automatiser ses scénarios PrestaFlow en CI »](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) (article 2).
+Annexe de la série PrestaFlow. Prérequis : avoir lu [« Automatiser ses scénarios PrestaFlow en CI »](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) (article 2).
 </Info>
 
 ## Décor
@@ -83,7 +83,7 @@ Deux points de vigilance dans ce snippet :
 
 ## Preview URL protégée par htpasswd
 
-Par défaut, Vercel, Netlify et la plupart des PaaS collent une protection Basic Auth sur les previews : éviter l'indexation, bloquer les accès accidentels d'un client curieux. L'annexe [htpasswd](/2026/10/14/prestaflow-preprod-htpasswd/) s'applique tel quel.
+Par défaut, Vercel, Netlify et la plupart des PaaS collent une protection Basic Auth sur les previews : éviter l'indexation, bloquer les accès accidentels d'un client curieux. L'annexe [htpasswd](/blog/prestaflow-preprod-htpasswd/) s'applique tel quel.
 
 ```yaml
         env:
@@ -92,7 +92,7 @@ Par défaut, Vercel, Netlify et la plupart des PaaS collent une protection Basic
           PRESTAFLOW_BASIC_PASS: ${{ secrets.PREVIEW_BASIC_PASS }}
 ```
 
-Même chose pour un bandeau RGPD injecté par le PaaS ou un cookie de bypass Cloudflare : l'annexe [cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/) via `PRESTAFLOW_COOKIES` reste la bonne réponse.
+Même chose pour un bandeau RGPD injecté par le PaaS ou un cookie de bypass Cloudflare : l'annexe [cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/) via `PRESTAFLOW_COOKIES` reste la bonne réponse.
 
 ## Chaque preview a son état — attention aux hypothèses
 
@@ -100,7 +100,7 @@ Deux différences essentielles par rapport à Flashlight :
 
 **La preview vit plus longtemps qu'un run.** Plusieurs runs peuvent taper dessus (push successifs sur la même PR). Un scénario qui crée un produit laisse ce produit pour le run suivant. Sur Flashlight, chaque run repart d'un état vierge — pas ici.
 
-La bonne pratique : coupler avec l'annexe [snapshot/restore DB](/2027/01/20/prestaflow-snapshot-restore-db/), mais uniquement si la preview vous donne un accès `mysqldump` (Fly.io oui via `flyctl ssh`, Netlify non parce qu'il n'y a pas de DB, Coolify oui). Sinon, écrire des scénarios idempotents, ou nettoyer explicitement en fin de test.
+La bonne pratique : coupler avec l'annexe [snapshot/restore DB](/blog/prestaflow-snapshot-restore-db/), mais uniquement si la preview vous donne un accès `mysqldump` (Fly.io oui via `flyctl ssh`, Netlify non parce qu'il n'y a pas de DB, Coolify oui). Sinon, écrire des scénarios idempotents, ou nettoyer explicitement en fin de test.
 
 **L'état initial dépend du seed du PaaS.** Fly.io « fresh install » ne contient rien qui ne soit dans votre Dockerfile. Coolify peut restaurer un backup au boot. Netlify sert un build statique — pas de BO à tester. Adapter les fixtures selon ce que la preview livre.
 
@@ -115,7 +115,7 @@ La preview elle-même est détruite par le PaaS quand la PR ferme — rien à fa
 Deux points d'attention :
 
 - **Les baselines de la branche PR ne doivent pas devenir les baselines de main.** Une régression visuelle introduite par la PR ne doit pas se transformer en nouveau référentiel. Isoler les baselines par branche (préfixe dans le nom de projet, ou espace de projet distinct côté plateforme).
-- **Les issues auto-créées par le pattern de l'annexe [consommer results.json](/2026/11/25/prestaflow-consommer-results-json/) ne doivent pas se déclencher sur PR.** Sur main c'est logique, sur PR ça pollue. Vérifier la garde `if: github.ref == 'refs/heads/main'` sur le step de création d'issue — inversée par rapport à ce qu'on veut ici.
+- **Les issues auto-créées par le pattern de l'annexe [consommer results.json](/blog/prestaflow-consommer-results-json/) ne doivent pas se déclencher sur PR.** Sur main c'est logique, sur PR ça pollue. Vérifier la garde `if: github.ref == 'refs/heads/main'` sur le step de création d'issue — inversée par rapport à ce qu'on veut ici.
 
 ## Interaction avec la matrice multi-versions
 

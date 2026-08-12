@@ -18,8 +18,8 @@ draft: true
 
 Plusieurs annexes de cette série ont contourné un même sujet en le repoussant à plus tard :
 
-- Dans [*Tester un module tiers*](/2026/08/12/prestaflow-tester-un-module-tiers/), l'assertion `contains('subscription')` a été volontairement affaiblie en `isNotEmpty()` — parce que sur une boutique française le message contient *« inscription »*, pas *« subscription »*, et qu'aucune assertion en dur ne peut couvrir les deux.
-- Dans [*Un scénario qui tient de PS 1.7 à 9*](/2026/08/26/prestaflow-multi-versions-prestashop/), on a noté que multi-versions rime souvent avec multi-locale et qu'il faudrait *"paramétrer le texte attendu selon la locale du run"*.
+- Dans [*Tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/), l'assertion `contains('subscription')` a été volontairement affaiblie en `isNotEmpty()` — parce que sur une boutique française le message contient *« inscription »*, pas *« subscription »*, et qu'aucune assertion en dur ne peut couvrir les deux.
+- Dans [*Un scénario qui tient de PS 1.7 à 9*](/blog/prestaflow-multi-versions-prestashop/), on a noté que multi-versions rime souvent avec multi-locale et qu'il faudrait *"paramétrer le texte attendu selon la locale du run"*.
 
 Dès qu'une boutique existe en plusieurs langues — ou qu'on la teste en anglais aujourd'hui puis dans sa version localisée demain — l'assertion en dur casse. Il faut un mécanisme.
 
@@ -157,7 +157,7 @@ done
 
 Prérequis : que votre boutique de test ait bien les langues installées et activées. Sinon vos navigations aboutissent en 404, et vos assertions traduites tombent sur un message resté en anglais.
 
-En CI, le pattern est identique à la matrice multi-versions de l'[article 2](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) — on ajoute simplement une dimension :
+En CI, le pattern est identique à la matrice multi-versions de l'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) — on ajoute simplement une dimension :
 
 ```yaml
 strategy:

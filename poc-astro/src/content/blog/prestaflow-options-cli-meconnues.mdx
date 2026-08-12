@@ -63,7 +63,7 @@ Résultat côté GitLab : l'onglet **Tests** de la pipeline affiche le récapitu
 
 ### Intégration Jenkins
 
-Dans un `Jenkinsfile` (voir aussi l'annexe [CI hors GitHub Actions](/2026/11/18/prestaflow-ci-hors-github-actions/)) :
+Dans un `Jenkinsfile` (voir aussi l'annexe [CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/)) :
 
 ```groovy
 post {
@@ -77,7 +77,7 @@ Le widget **Test Result Trend** de Jenkins accumule les résultats sur les runs 
 
 ### JUnit vs `results.json`
 
-L'annexe [consommer results.json](/2026/11/25/prestaflow-consommer-results-json/) a montré le format JSON riche de PrestaFlow. JUnit est complémentaire, pas concurrent :
+L'annexe [consommer results.json](/blog/prestaflow-consommer-results-json/) a montré le format JSON riche de PrestaFlow. JUnit est complémentaire, pas concurrent :
 
 - **JUnit** — format standard, consommé passivement par vos outils CI existants (dashboards, historique, alertes)
 - **`results.json`** — format PrestaFlow, consommé activement par vos scripts custom (Slack, badge README, dashboard maison)
@@ -120,7 +120,7 @@ Une fois le scénario stable, on retire `$draft = true` de la classe. Le scénar
 
 ## `--visual-report` : un rapport dédié aux visuels
 
-L'annexe [régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/) a introduit `visualCheckpoint()`. Ces checkpoints apparaissent dans le rapport HTML principal des tests, mêlés aux assertions fonctionnelles. Utile en debug — moins utile quand un reviewer non-technique doit valider ou rejeter une série de diffs visuels.
+L'annexe [régressions visuelles](/blog/prestaflow-regressions-visuelles/) a introduit `visualCheckpoint()`. Ces checkpoints apparaissent dans le rapport HTML principal des tests, mêlés aux assertions fonctionnelles. Utile en debug — moins utile quand un reviewer non-technique doit valider ou rejeter une série de diffs visuels.
 
 Le flag `--visual-report` produit un **rapport HTML séparé**, dédié uniquement aux régressions visuelles :
 
@@ -179,10 +179,10 @@ Chacun pour son usage — le HTML pour l'humain qui debug, le JSON pour les scri
 
 ## Interaction avec les autres annexes
 
-- **[CI hors GitHub Actions](/2026/11/18/prestaflow-ci-hors-github-actions/)** — GitLab CI et Jenkins ont un support natif de JUnit qui rend `--junit` immédiatement rentable. Sur GitHub Actions, le support natif JUnit est moins riche (il faut un plugin type `dorny/test-reporter`) — l'`--output=JSON` reste souvent plus adapté.
-- **[Consommer results.json](/2026/11/25/prestaflow-consommer-results-json/)** — les deux formats se cumulent, chacun a son bon usage.
-- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — `--visual-report` est le compagnon naturel de `visualCheckpoint()`. Sans checkpoints visuels dans vos suites, le rapport est vide.
-- **[Consulter l'historique cloud](/2026/09/16/prestaflow-consulter-historique-cloud/)** — la plateforme prestaflow.io consomme le `results.json`, pas le JUnit ni le visual-report HTML. Ces derniers restent des artefacts locaux ou CI.
+- **[CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/)** — GitLab CI et Jenkins ont un support natif de JUnit qui rend `--junit` immédiatement rentable. Sur GitHub Actions, le support natif JUnit est moins riche (il faut un plugin type `dorny/test-reporter`) — l'`--output=JSON` reste souvent plus adapté.
+- **[Consommer results.json](/blog/prestaflow-consommer-results-json/)** — les deux formats se cumulent, chacun a son bon usage.
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — `--visual-report` est le compagnon naturel de `visualCheckpoint()`. Sans checkpoints visuels dans vos suites, le rapport est vide.
+- **[Consulter l'historique cloud](/blog/prestaflow-consulter-historique-cloud/)** — la plateforme prestaflow.io consomme le `results.json`, pas le JUnit ni le visual-report HTML. Ces derniers restent des artefacts locaux ou CI.
 
 ## Notes
 

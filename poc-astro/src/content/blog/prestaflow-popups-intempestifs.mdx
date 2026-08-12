@@ -16,7 +16,7 @@ draft: true
 
 ## Le cas résiduel
 
-L'[annexe cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/) a montré comment neutraliser un bandeau RGPD *quand il expose un cookie de consentement*. On pré-règle le cookie, le bandeau ne s'affiche plus, tous les scénarios sont peinards.
+L'[annexe cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/) a montré comment neutraliser un bandeau RGPD *quand il expose un cookie de consentement*. On pré-règle le cookie, le bandeau ne s'affiche plus, tous les scénarios sont peinards.
 
 Ça règle une catégorie de popups. Il en reste trois, chacune sans mécanisme cookie propre, qui empoisonnent les scénarios sur les boutiques un peu vécues :
 
@@ -52,7 +52,7 @@ public function hideThirdPartyWidgets(): void
 }
 ```
 
-Appliqué à la Page utilisée par vos scénarios (ou en fin de `before()` overridé, cf. [annexe fixtures](/2026/09/30/prestaflow-fixtures-seed-data/) niveau 3), le CSS s'injecte à chaque nouvelle page chargée.
+Appliqué à la Page utilisée par vos scénarios (ou en fin de `before()` overridé, cf. [annexe fixtures](/blog/prestaflow-fixtures-seed-data/) niveau 3), le CSS s'injecte à chaque nouvelle page chargée.
 
 **Avantages** : simple, aucune interaction requise, ne consomme aucun temps par étape.
 **Limites** : suppose que vous connaissez tous les sélecteurs à masquer — un nouveau widget qui arrive n'est pas neutralisé automatiquement.
@@ -143,9 +143,9 @@ Appelé dans la méthode qui suit chaque navigation, ce trait rend la boutique t
 
 ## Interaction avec les autres annexes
 
-- **[Cookies pré-injectés](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — pour tout popup qui expose un cookie de consentement, la solution cookie reste **la plus propre** (elle simule un utilisateur qui a déjà interagi, pas un utilisateur qui verrait un site cassé). Cette annexe est le complément pour tous les autres cas.
-- **[Régressions visuelles](/2026/08/19/prestaflow-regressions-visuelles/)** — un widget masqué en CSS n'apparaît pas dans les baselines. Bien. Mais un widget qu'on n'a pas pensé à masquer produit un baseline qui *contient le widget* — la première fois qu'il change (nouvelle version du chat, promo Halloween → Noël), tous vos checkpoints tombent d'un coup. Toujours masquer avant de figer les baselines.
-- **[TDD](/2026/10/21/prestaflow-tdd-scenario-avant-fix/)** — un bug qui apparaît uniquement quand un popup se superpose à un sélecteur est un cas parfait de scénario TDD : reproduisez le popup + le clic bloqué, fixez le CSS de votre site pour que le popup respecte le z-index, le scénario passe et reste comme garde-fou.
+- **[Cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/)** — pour tout popup qui expose un cookie de consentement, la solution cookie reste **la plus propre** (elle simule un utilisateur qui a déjà interagi, pas un utilisateur qui verrait un site cassé). Cette annexe est le complément pour tous les autres cas.
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — un widget masqué en CSS n'apparaît pas dans les baselines. Bien. Mais un widget qu'on n'a pas pensé à masquer produit un baseline qui *contient le widget* — la première fois qu'il change (nouvelle version du chat, promo Halloween → Noël), tous vos checkpoints tombent d'un coup. Toujours masquer avant de figer les baselines.
+- **[TDD](/blog/prestaflow-tdd-scenario-avant-fix/)** — un bug qui apparaît uniquement quand un popup se superpose à un sélecteur est un cas parfait de scénario TDD : reproduisez le popup + le clic bloqué, fixez le CSS de votre site pour que le popup respecte le z-index, le scénario passe et reste comme garde-fou.
 
 ## Notes
 

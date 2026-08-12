@@ -150,7 +150,7 @@ Pour partager de la **donnée** entre scénarios (l'id d'une commande créée da
 
 ## `store()` / `retrieve()` : partager l'état
 
-Le pattern est visible dans le vrai code du monorepo `lacitedesnuages.be` (annexe [module tiers](/2026/08/12/prestaflow-tester-un-module-tiers/)) :
+Le pattern est visible dans le vrai code du monorepo `lacitedesnuages.be` (annexe [module tiers](/blog/prestaflow-tester-un-module-tiers/)) :
 
 ```php
 ->it('navigue vers la commande de test', function () use ($ordersPage) {
@@ -213,9 +213,9 @@ En termes de lignes de test : un projet qui utilise ces trois mécaniques a typi
 
 ## Interaction avec les autres annexes
 
-- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — `store()` est le compagnon naturel des fixtures niveau 3 (override `before()`) : le `before()` crée une donnée, en stocke la clef via `store()`, les `it` la réutilisent via `retrieve()`.
-- **[Debug](/2026/09/09/prestaflow-debug-un-scenario-qui-casse/)** — un `it` qui itère sur 20 datasets et tombe au 12ème : la sortie CLI indique le dataset actif, la capture d'erreur porte le contexte. Le `skip()` peut cibler le `it` entier pendant le debug, l'`->with()` continue de fournir les datasets.
-- **[Multi-locales](/2026/09/02/prestaflow-scenarios-multi-locales/)** — un dataset peut porter une locale (`['locale' => 'en', 'title' => 'Welcome']`), et le `->scenario()` la relaie au Scenario invoqué qui la posera sur les globals. Testez cinq locales dans une seule suite, sans script shell.
+- **[Fixtures](/blog/prestaflow-fixtures-seed-data/)** — `store()` est le compagnon naturel des fixtures niveau 3 (override `before()`) : le `before()` crée une donnée, en stocke la clef via `store()`, les `it` la réutilisent via `retrieve()`.
+- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — un `it` qui itère sur 20 datasets et tombe au 12ème : la sortie CLI indique le dataset actif, la capture d'erreur porte le contexte. Le `skip()` peut cibler le `it` entier pendant le debug, l'`->with()` continue de fournir les datasets.
+- **[Multi-locales](/blog/prestaflow-scenarios-multi-locales/)** — un dataset peut porter une locale (`['locale' => 'en', 'title' => 'Welcome']`), et le `->scenario()` la relaie au Scenario invoqué qui la posera sur les globals. Testez cinq locales dans une seule suite, sans script shell.
 
 ## Notes
 

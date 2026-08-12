@@ -13,12 +13,12 @@ draft: true
 ---
 
 <Info title="Prérequis">
-Annexe de la série PrestaFlow. Prérequis : avoir lu [« Écrire son premier scénario de test avec PrestaFlow »](/2026/07/29/ecrire-son-premier-scenario-prestaflow/) et [« Factoriser ses Pages entre plusieurs suites »](/2026/08/05/prestaflow-factoriser-ses-pages/).
+Annexe de la série PrestaFlow. Prérequis : avoir lu [« Écrire son premier scénario de test avec PrestaFlow »](/blog/ecrire-son-premier-scenario-prestaflow/) et [« Factoriser ses Pages entre plusieurs suites »](/blog/prestaflow-factoriser-ses-pages/).
 </Info>
 
 ## Le décor : dix boutiques, dix fois les mêmes Pages
 
-Une agence PrestaShop maintient dix boutiques clientes. Toutes tournent sur le même thème maison `theme-agence` et embarquent le même module de cross-sell maison `agencycrosssell`. Chaque projet a été monté avec PrestaFlow, chaque projet a factorisé ses Pages comme décrit dans l'annexe [Factoriser ses Pages](/2026/08/05/prestaflow-factoriser-ses-pages/).
+Une agence PrestaShop maintient dix boutiques clientes. Toutes tournent sur le même thème maison `theme-agence` et embarquent le même module de cross-sell maison `agencycrosssell`. Chaque projet a été monté avec PrestaFlow, chaque projet a factorisé ses Pages comme décrit dans l'annexe [Factoriser ses Pages](/blog/prestaflow-factoriser-ses-pages/).
 
 Le résultat est que les Pages `Theme\Home`, `Theme\Product` et `Modules\Crosssell\Widget` existent en dix exemplaires. Une par repo client. Toutes identiques.
 
@@ -49,7 +49,7 @@ prestaflow-pages/
       └─ AgencyFrontOfficeUrl.php
 ```
 
-Le dossier `Common/` porte la logique métier et les sélecteurs stables. Les dossiers `v8/`, `v9/` étendent le parent commun avec les spécificités de chaque majeure PrestaShop, exactement comme décrit dans l'annexe [Multi-versions PrestaShop](/2026/08/26/prestaflow-multi-versions-prestashop/).
+Le dossier `Common/` porte la logique métier et les sélecteurs stables. Les dossiers `v8/`, `v9/` étendent le parent commun avec les spécificités de chaque majeure PrestaShop, exactement comme décrit dans l'annexe [Multi-versions PrestaShop](/blog/prestaflow-multi-versions-prestashop/).
 
 Le `composer.json` du package est minimal :
 
@@ -139,7 +139,7 @@ La ligne de partage se lit vite :
 - **Dans chaque projet** : les Suites — elles portent le comportement métier propre à ce client, ça ne se mutualise pas. Et les Pages 100 % projet-spécifiques : la Page d'un module custom écrit pour ce client seul, la Page d'un écran BO customisé pour lui.
 
 <Warning title="Pas de fixtures dans le package">
-Les fixtures et les scripts d'init sont projet-spécifiques : le client A a besoin de 12 catégories avec un arbre particulier, le client B d'un seul catalogue à plat. Ces objets restent dans chaque repo, comme décrit dans l'annexe [Fixtures et seed data](/2026/09/30/prestaflow-fixtures-seed-data/). Le package doit rester une bibliothèque de descripteurs d'écrans, pas un dépôt de données de test.
+Les fixtures et les scripts d'init sont projet-spécifiques : le client A a besoin de 12 catégories avec un arbre particulier, le client B d'un seul catalogue à plat. Ces objets restent dans chaque repo, comme décrit dans l'annexe [Fixtures et seed data](/blog/prestaflow-fixtures-seed-data/). Le package doit rester une bibliothèque de descripteurs d'écrans, pas un dépôt de données de test.
 </Warning>
 
 ## Override côté projet quand un client a customisé

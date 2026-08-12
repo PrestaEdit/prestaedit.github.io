@@ -13,7 +13,7 @@ draft: true
 ---
 
 <Info title="Prérequis">
-Annexe de la série PrestaFlow. Prérequis : avoir lu <a href="/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/">« Automatiser ses scénarios PrestaFlow en CI »</a> (article 2).
+Annexe de la série PrestaFlow. Prérequis : avoir lu <a href="/blog/automatiser-ses-scenarios-prestaflow-en-ci/">« Automatiser ses scénarios PrestaFlow en CI »</a> (article 2).
 </Info>
 
 ## Décor
@@ -143,8 +143,8 @@ Deux, trois, quatre partitions couvrent la majorité des cas. Au-delà, on paye 
 
 Chaque job CI est un environnement indépendant. Il télécharge le repo, démarre son Flashlight, monte sa boutique. Deux conséquences pratiques :
 
-- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/2026/09/30/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs. Elles font partie de la config du conteneur, pas d'une suite.
-- Les **baselines visuelles** (cf. [versionner les baselines visuelles](/2026/12/23/prestaflow-versionner-baselines-visuelles/)) doivent être accessibles à tous les jobs qui font du visual matching. Elles sont committées dans le repo, donc le `checkout` initial les récupère — pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
+- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs. Elles font partie de la config du conteneur, pas d'une suite.
+- Les **baselines visuelles** (cf. [versionner les baselines visuelles](/blog/prestaflow-versionner-baselines-visuelles/)) doivent être accessibles à tous les jobs qui font du visual matching. Elles sont committées dans le repo, donc le `checkout` initial les récupère — pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
 
 Ce qui reste **spécifique** à chaque job : la boutique, les cookies, l'état runtime. Rien ne fuit d'un job à l'autre, et c'est ce qui rend le partitionnement sûr.
 
@@ -155,7 +155,7 @@ Un scénario `CreateOrder` qui crée une commande, suivi d'un scénario `RefundO
 Deux façons de gérer :
 
 1. **Regrouper**. Mettre `CreateOrder` et `RefundOrder` dans le même dossier (mécanique 1) ou leur donner un groupe commun `order-lifecycle` (mécanique 2). Le partitionnement respecte la dépendance.
-2. **Casser la dépendance**. Utiliser `store()`/`retrieve()` limité à la même suite, comme décrit dans l'annexe [scénarios paramétrés et chaînage](/2026/11/11/prestaflow-scenarios-parametres-chainage/), pour rendre chaque scénario autoportant. Plus de travail au départ, plus de liberté ensuite.
+2. **Casser la dépendance**. Utiliser `store()`/`retrieve()` limité à la même suite, comme décrit dans l'annexe [scénarios paramétrés et chaînage](/blog/prestaflow-scenarios-parametres-chainage/), pour rendre chaque scénario autoportant. Plus de travail au départ, plus de liberté ensuite.
 
 Le choix dépend du volume : si trois scénarios se chaînent, on regroupe. Si quinze scénarios forment une chaîne, il vaut mieux investir dans l'autonomie pour ne pas se retrouver avec une partition géante qui domine le wall-clock.
 
@@ -164,4 +164,4 @@ Le choix dépend du volume : si trois scénarios se chaînent, on regroupe. Si q
 - **Gain typique** : trois jobs parallèles réduisent le wall-clock de 60 à 70 %, pas 66 %. L'overhead de boot Flashlight rogne les gains. Cinq jobs et au-delà, les rendements deviennent décroissants — chaque conteneur coûte le même temps de démarrage pour de moins en moins de travail utile.
 - **Coût CI** : sur GitHub Actions gratuit, les jobs parallèles consomment N minutes de facturation où N est le nombre de jobs. Trois jobs de cinq minutes = quinze minutes facturées, contre quinze minutes pour un seul job de quinze minutes. Le wall-clock chute, la facture ne change pas — sauf sur runners auto-hébergés ou plans où c'est la durée sérielle qui compte. À vérifier avant d'industrialiser.
 - **Combiner partition et matrice multi-versions** : matrice `ps-version × partition` = N×M jobs. Avec trois versions PrestaShop et trois partitions, on atteint neuf jobs. Vite explosif. Un compromis usuel : un smoke rapide (un seul groupe `smoke`) sur toutes les versions PrestaShop supportées, plus un run complet partitionné sur la version pivot. On garde une couverture large sur la matrice sans la faire exploser.
-- Les deux mécaniques décrites ici sont **transposables** aux autres CI. GitLab CI (`parallel: matrix:`), Bitbucket Pipelines (`parallel:`), CircleCI (`parallelism:`) offrent tous une matrice équivalente à `strategy.matrix` de GitHub Actions. L'annexe [PrestaFlow en CI hors GitHub Actions](/2026/11/18/prestaflow-ci-hors-github-actions/) détaille les équivalents ligne par ligne.
+- Les deux mécaniques décrites ici sont **transposables** aux autres CI. GitLab CI (`parallel: matrix:`), Bitbucket Pipelines (`parallel:`), CircleCI (`parallelism:`) offrent tous une matrice équivalente à `strategy.matrix` de GitHub Actions. L'annexe [PrestaFlow en CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/) détaille les équivalents ligne par ligne.

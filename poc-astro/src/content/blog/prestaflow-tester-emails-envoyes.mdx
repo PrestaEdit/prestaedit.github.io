@@ -47,7 +47,7 @@ Deux ports Mailpit exposés :
 - **1025** : port SMTP standard, celui vers lequel PrestaShop enverra
 - **8025** : UI web + **API REST** — c'est celle qu'on consomme depuis PrestaFlow
 
-Il faut ensuite dire à PrestaShop d'utiliser ce SMTP. Le plus propre : un init-script Flashlight (cf. [annexe fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)) qui configure les paramètres SMTP au boot :
+Il faut ensuite dire à PrestaShop d'utiliser ce SMTP. Le plus propre : un init-script Flashlight (cf. [annexe fixtures](/blog/prestaflow-fixtures-seed-data/)) qui configure les paramètres SMTP au boot :
 
 **`tests/flashlight-init/30-configure-smtp.sh`**
 
@@ -216,13 +216,13 @@ Un `it` qui vérifie la présence d'un PDF :
 
 ## Localement, sans Docker
 
-Si vous testez sur la [stack locale](/2026/11/04/prestaflow-sans-flashlight-stack-locale/) (Valet, MAMP), Mailpit tourne aussi en binaire natif : `brew install mailpit` sur macOS, puis `mailpit` lance le SMTP sur `1025` et l'UI sur `8025`. Config PS pareille (`PS_MAIL_SERVER=127.0.0.1`, `PS_MAIL_SMTP_PORT=1025`), la Page `Support\Mailbox` fonctionne à l'identique.
+Si vous testez sur la [stack locale](/blog/prestaflow-sans-flashlight-stack-locale/) (Valet, MAMP), Mailpit tourne aussi en binaire natif : `brew install mailpit` sur macOS, puis `mailpit` lance le SMTP sur `1025` et l'UI sur `8025`. Config PS pareille (`PS_MAIL_SERVER=127.0.0.1`, `PS_MAIL_SMTP_PORT=1025`), la Page `Support\Mailbox` fonctionne à l'identique.
 
 ## Interaction avec les autres annexes
 
-- **[Fixtures](/2026/09/30/prestaflow-fixtures-seed-data/)** — la config SMTP fait partie de l'état initial de la boutique, donc niveau 1 (init-script Flashlight) est le bon endroit pour la poser. Cette annexe applique exactement le pattern.
-- **[Auth cookies](/2026/09/23/prestaflow-auth-cookies-pre-injectes/)** — si votre scénario email nécessite un login client (email de suivi de commande), le cookie pré-injecté fait sauter l'étape login. Combiné : boutique SMTP-configurée + session client déjà ouverte + captation Mailpit = suite d'email test en 3 `it`.
-- **[TDD](/2026/10/21/prestaflow-tdd-scenario-avant-fix/)** — bug remonté *"le mail admin n'est plus envoyé après update du module"* → scénario de reproduction (soumet formulaire + attend email) → rouge → fix → vert. Le scénario reste comme garde-fou.
+- **[Fixtures](/blog/prestaflow-fixtures-seed-data/)** — la config SMTP fait partie de l'état initial de la boutique, donc niveau 1 (init-script Flashlight) est le bon endroit pour la poser. Cette annexe applique exactement le pattern.
+- **[Auth cookies](/blog/prestaflow-auth-cookies-pre-injectes/)** — si votre scénario email nécessite un login client (email de suivi de commande), le cookie pré-injecté fait sauter l'étape login. Combiné : boutique SMTP-configurée + session client déjà ouverte + captation Mailpit = suite d'email test en 3 `it`.
+- **[TDD](/blog/prestaflow-tdd-scenario-avant-fix/)** — bug remonté *"le mail admin n'est plus envoyé après update du module"* → scénario de reproduction (soumet formulaire + attend email) → rouge → fix → vert. Le scénario reste comme garde-fou.
 
 ## Notes
 

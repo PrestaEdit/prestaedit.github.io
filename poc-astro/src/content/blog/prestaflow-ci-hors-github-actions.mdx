@@ -15,7 +15,7 @@ draft: true
 
 ## Décor
 
-L'[article 2 de la série](/2026/07/30/automatiser-ses-scenarios-prestaflow-en-ci/) a couvert deux niveaux de CI :
+L'[article 2 de la série](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a couvert deux niveaux de CI :
 
 - **Niveau 1** — la CLI PrestaFlow dans un workflow, sans compte prestaflow.io, avec Docker pour lancer Flashlight à la main.
 - **Niveau 2** — l'Action officielle `PrestaFlow/github-action@v2`, qui gère Flashlight, matrice, commentaire PR et sync plateforme.
@@ -204,7 +204,7 @@ Peu importe le CI, les mêmes règles s'appliquent :
 L'Action officielle du niveau 2 n'existe que pour GitHub. Sur les autres CI, deux options :
 
 - **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
-- **Faire soi-même le POST vers l'API prestaflow.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/2026/09/16/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un step qui prend le `results.json` produit par PrestaFlow et le pousse via `curl`. C'est du travail (auth, retries, formatage), mais faisable — le badge `api` est prévu pour ça.
+- **Faire soi-même le POST vers l'API prestaflow.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un step qui prend le `results.json` produit par PrestaFlow et le pousse via `curl`. C'est du travail (auth, retries, formatage), mais faisable — le badge `api` est prévu pour ça.
 
 Ce second cas justifierait à lui seul un article dédié. Pour l'instant, on note l'option et on renvoie à la doc API.
 
