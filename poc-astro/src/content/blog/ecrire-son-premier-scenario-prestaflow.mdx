@@ -139,7 +139,7 @@ Puis, depuis la racine du module :
 
 PrestaFlow ouvre Chrome en arrière-plan, va sur la page produit, ajoute au panier, remplit l'adresse, choisit la livraison et le paiement, puis vérifie que la page de confirmation est bien atteinte. À la fin de l'exécution, un rapport HTML est généré dans `tests/prestaflow/reports/`.
 
-<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-checkout.png" alt="Rapport d'exécution du scénario GuestCheckout" />
+<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-checkout.svg" alt="Rapport d'exécution du scénario GuestCheckout" />
 
 Si tout est vert, l'installation est bonne. On peut passer à l'écriture de son propre scénario.
 
@@ -327,7 +327,7 @@ Après chaque exécution, PrestaFlow génère un rapport dans `tests/prestaflow/
 * **La liste des étapes** avec leur statut (vert = passé, rouge = échec, gris = skipped/todo).
 * **Les captures d'écran** prises à chaque étape, particulièrement précieuses quand une étape casse et qu'on cherche à comprendre pourquoi.
 
-<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-suites.png" alt="Rapport avec les trois suites exécutées" />
+<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-suites.svg" alt="Rapport avec les trois suites exécutées" />
 
 Quand un `it` échoue, la capture prise juste avant l'assertion vous montre l'état exact de la page à ce moment. Souvent, ça suffit pour identifier le problème sans avoir à rejouer localement.
 
