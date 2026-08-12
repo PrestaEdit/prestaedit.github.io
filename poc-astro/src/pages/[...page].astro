@@ -61,6 +61,31 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
               {featured.seriesIndex && featured.seriesTotal && <span class="opacity-80"> · {featured.seriesIndex}/{featured.seriesTotal}</span>}
             </span>
           )}
+          {featured.data.draft !== undefined && (
+            <span
+              class:list={[
+                'absolute right-3 top-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold shadow-sm',
+                featured.data.draft ? 'bg-amber-500 text-white' : 'bg-green-600 text-white',
+              ]}
+              title={featured.data.draft ? 'Brouillon (non publié en production)' : 'Publié'}
+            >
+              {featured.data.draft ? (
+                <>
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.04a1 1 0 0 0 0-1.41l-2.51-2.51a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 2-1.66z"/>
+                  </svg>
+                  Brouillon
+                </>
+              ) : (
+                <>
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                  </svg>
+                  Publié
+                </>
+              )}
+            </span>
+          )}
         </div>
         <div class="flex flex-col justify-center">
           <div class="mb-3 flex flex-wrap gap-2">
@@ -96,6 +121,7 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
           series={p.data.series}
           seriesIndex={p.seriesIndex}
           seriesTotal={p.seriesTotal}
+          draft={p.data.draft}
         />
       ))}
       {isFirstPage && page.url.next && (
