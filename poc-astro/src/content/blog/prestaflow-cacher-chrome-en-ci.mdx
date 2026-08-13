@@ -8,7 +8,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-10-21-prestaflow-cacher-chrome-en-ci.svg'
-summary: "Le Chromium re-téléchargé à chaque run coûte 30 à 60 s sur runners GitHub Actions. Comment cacher le binaire avec la bonne clé, mesurer le gain wall-clock, éviter les cache miss après update de la lib."
+summary: "PrestaFlow s'appuie sur chrome-php, qui n'embarque pas Chrome — c'est au workflow de le fournir. Sur ubuntu-latest c'est gratuit ; dans un container PHP ou sur un runner minimal, l'install ajoute 30 à 60 s à chaque run. Comment l'installer, quand la piner, comment la cacher."
 draft: true
 ---
 
@@ -16,30 +16,197 @@ draft: true
 
 ## Décor
 
-<!-- Le problème concret que cette annexe résout, en 2-3 paragraphes. Pourquoi c'est un vrai sujet, ce que la série ne couvre pas encore. -->
+Sous le capot, PrestaFlow parle à Chrome via [`chrome-php/chrome`](https://github.com/chrome-php/chrome) — un client CDP en PHP pur. Contrairement à Playwright ou Puppeteer, `chrome-php` **n'embarque pas** de binaire : il pilote celui qu'il trouve sur `PATH`. C'est au workflow CI de garantir qu'un `google-chrome` (ou `chromium`) est disponible avant le premier scénario.
 
-## Le pattern
+Cas où c'est gratuit :
 
-<!-- Le montage minimal, code à l'appui. -->
+- **`runs-on: ubuntu-latest`** — l'image GitHub Actions embarque `google-chrome-stable` pré-installé (`/usr/bin/google-chrome`). Zéro travail à faire.
+- **Image officielle PrestaFlow/Flashlight** avec Chrome pré-installé — même chose.
 
-```php
-// TODO
+Cas où c'est douloureux :
+
+- **Container CI** (`container: image: php:8.2-cli`, exécuteur Docker GitLab, Bitbucket Pipelines) — l'image PHP officielle n'a pas Chrome. Sans install, chaque run échoue à `Browser factory failed to start`.
+- **Runner auto-hébergé minimal** — souvent une VM Debian slim où Chrome n'est jamais tombé.
+- **Runners `macos-latest` / `windows-latest`** — pas de Chrome preinstall selon les versions d'image.
+
+Sur ces cas, l'install brute ajoute **30 à 60 s** à chaque run (téléchargement du `.deb`, dépendances système, extraction). Sur une suite de 3 min qui tourne 40 fois par jour, c'est **~40 min/jour** de wall-clock perdu — visible dans les factures runner auto-hébergé, invisible mais coûteux sur les feedback loops PR.
+
+## Trois patterns d'install
+
+### 1. `apt-get install` — simple, non-piné
+
+Le plus court, à privilégier quand la version exacte de Chrome ne pèse sur rien (pas de tests visuels).
+
+```yaml
+- name: Install Chromium
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends chromium
 ```
 
-## Un scénario complet
+Compte ~25-40 s selon le miroir apt. Version suivie par la distro — bougera à chaque mise à jour de l'image de base.
 
-<!-- Un scénario de bout en bout qui illustre le pattern. -->
+### 2. `browser-actions/setup-chrome` — piné, cache géré par GHA
 
-```php
-// TODO
+L'action de la communauté [`browser-actions/setup-chrome`](https://github.com/browser-actions/setup-chrome) télécharge le canal (stable/beta/dev/canary) ou une version exacte, et gère un cache GitHub Actions à la clé (OS + version).
+
+```yaml
+- name: Setup Chrome
+  uses: browser-actions/setup-chrome@v1
+  with:
+    chrome-version: 'stable'      # ou '129.0.6668.100' pour piner
+    install-dependencies: true
 ```
+
+**Premier run** : ~30-45 s (download + extract). **Runs suivants** : ~2-5 s (restore cache). Pour piner : mettre le numéro exact, changer quand on veut monter — le cache miss reste **une fois** par bump.
+
+### 3. Installer soi-même dans un cache manuel
+
+Utile en dehors de GitHub Actions (GitLab, Bitbucket) ou pour un contrôle total du chemin de cache.
+
+```yaml
+- name: Cache Chrome
+  id: cache-chrome
+  uses: actions/cache@v4
+  with:
+    path: /opt/chrome
+    key: chrome-${{ runner.os }}-129.0.6668.100
+
+- name: Install Chrome if not cached
+  if: steps.cache-chrome.outputs.cache-hit != 'true'
+  run: |
+    curl -sSLo /tmp/chrome.deb 'https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb'
+    sudo dpkg -x /tmp/chrome.deb /opt/chrome
+    sudo apt-get install -y --no-install-recommends \
+      libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 \
+      libxdamage1 libgbm1 libpango-1.0-0 libasound2
+
+- name: Point PATH to cached Chrome
+  run: echo "/opt/chrome/opt/google/chrome" >> $GITHUB_PATH
+```
+
+Verbeux, mais reproductible partout et le cache survit aux updates d'image runner.
+
+## La recette recommandée (GitHub Actions + Flashlight)
+
+Sur un projet à tests visuels, la version Chrome fait partie de la définition du build — un bump silencieux casse les baselines. On pin la version dans le workflow, on met `browser-actions/setup-chrome`, et on la bump volontairement (comme composer.lock ou package-lock.json).
+
+```yaml
+name: PrestaFlow
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: gd
+          tools: composer:v2
+
+      - name: Setup Chrome (pinned, cached)
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: '129.0.6668.100'
+          install-dependencies: true
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - uses: PrestaFlow/github-action@main
+        with:
+          token: ${{ secrets.PRESTAFLOW_TOKEN }}
+          projectId: 'pk_01ABC...'
+          flashlight: true
+          ps-version: '9.0.0'
+```
+
+Le second run d'un PR touche le cache et le setup Chrome tombe à quelques secondes. Le premier run après un bump paie l'install une fois.
+
+<Info title="Sur ubuntu-latest sans tests visuels, l'étape Setup Chrome est facultative — la version pré-installée fait l'affaire. Ajoutez-la dès que vous piner (visuels, comportements de rendu spécifiques version, bug Chrome connu que vous contournez)." />
+
+## Mesurer le gain
+
+Avant/après sur un projet réel :
+
+```yaml
+- name: Setup Chrome
+  uses: browser-actions/setup-chrome@v1
+  with:
+    chrome-version: '129.0.6668.100'
+    install-dependencies: true
+  # Le temps de cette étape est loggé par GitHub Actions — visible dans
+  # le résumé du run sous « Duration ».
+```
+
+Chiffres typiques observés :
+
+| Configuration | Premier run | Runs suivants |
+|---|---|---|
+| `ubuntu-latest`, Chrome preinstall | 0 s | 0 s |
+| `container: php:8.2-cli`, `apt-get install chromium` | 35 s | 35 s (pas de cache) |
+| `ubuntu-latest`, `browser-actions/setup-chrome` piné | 40 s | 3 s |
+| `ubuntu-latest`, cache manuel `/opt/chrome` | 45 s | 5 s |
+
+Sur une suite qui tourne 50 fois par jour, l'écart *cache miss vs cache hit* fait gagner ~25 minutes de wall-clock quotidien.
+
+## GitLab CI
+
+Le pattern est identique, avec `cache:` YAML natif GitLab.
+
+```yaml
+test:
+  image: composer:2
+  cache:
+    key: chrome-129.0.6668.100
+    paths:
+      - .cache/chrome
+  before_script:
+    - |
+      if [ ! -f .cache/chrome/chrome ]; then
+        apt-get update && apt-get install -y --no-install-recommends chromium
+        mkdir -p .cache/chrome
+        cp /usr/bin/chromium .cache/chrome/chrome
+      fi
+    - export PATH="$CI_PROJECT_DIR/.cache/chrome:$PATH"
+    - composer install --prefer-dist --no-progress
+  script:
+    - bin/prestaflow run tests
+```
+
+Le chemin exact du binaire chromium varie selon la base — `chromium-browser` sur Debian, `chromium` sur Alpine. Vérifier avec `which chromium` dans un run initial.
+
+## Le piège des baselines visuelles
+
+Chrome rend le texte, les ombres CSS et l'antialiasing légèrement différemment entre versions majeures. Une baseline capturée avec 128 comparée avec 129 peut tomber juste sous le seuil de similitude et fail — sans qu'aucun code ait bougé.
+
+Trois disciplines qui verrouillent ça :
+
+- **Pin la version Chrome** dans le workflow (numéro exact, pas `stable`).
+- **Documentez la version Chrome dans le repo** — un `.chrome-version` à côté du `composer.json`, ou un commentaire au-dessus de la ligne `chrome-version:` dans le workflow.
+- **Bumpez Chrome comme composer.lock** : PR dédiée, régénérer les baselines si besoin (cf. [versionner ses baselines visuelles](/blog/prestaflow-versionner-baselines-visuelles/)).
 
 ## Interaction avec les autres annexes
 
-<!-- Cross-links avec les annexes existantes de la série. -->
-
-- **[TODO](/blog/TODO/)** — lien.
+- **[Automatiser ses scénarios PrestaFlow en CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)** — l'article de base ne parle pas du binaire Chrome parce que `ubuntu-latest` le fournit. Cette annexe couvre les cas où ce n'est plus vrai.
+- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** et **[versionner ses baselines visuelles](/blog/prestaflow-versionner-baselines-visuelles/)** — le pinning Chrome est un préalable pour des baselines qui ne dérivent pas.
+- **[CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/)** — GitLab, Bitbucket et Jenkins n'ont pas les images ubuntu-latest de GHA, l'install Chrome y est presque toujours nécessaire.
+- **[Runner auto-hébergé](/blog/prestaflow-runner-auto-heberge/)** — sur un self-hosted, le cache Chrome n'est plus une affaire de workflow mais de provisionning machine. Chrome installé une fois pour toutes vaut mieux qu'un cache téléchargé à chaque job.
 
 ## Notes
 
-<Info title="TODO — piège / astuce / limite à connaître." />
+<Warning title="`browser-actions/setup-chrome` télécharge Chrome depuis les serveurs Google. En cas d'audit sécurité ou de restriction réseau interne (proxy corporate, air-gapped runner), cette source peut être bloquée. Le pattern cache manuel avec un miroir interne devient obligatoire — voir la doc de votre PaaS CI pour le mirroring de dépendances." />
+
+<Info title="Chromium (open source) et Google Chrome (build Google) rendent les pages de façon quasi identique mais pas parfaitement — polices propriétaires, codecs vidéo. Si vos baselines visuels ont été capturés avec Chrome, restez sur Chrome en CI ; si avec Chromium, restez sur Chromium. Le mélange casse les diffs." />
+
+<Info title="`--no-install-recommends` sur les apt-get évite d'installer 200 Mo de docs et locales inutiles. Sur un container ou un runner facturé au stockage/bande passante, c'est un vrai gain — pas juste un tic cosmétique." />
+
+<Info title="Si `bin/prestaflow run` échoue avec « Browser factory failed to start » ou « CDP handshake failed », le premier réflexe est de vérifier `which google-chrome` (ou `which chromium`). 90 % des cas c'est un binaire manquant sur PATH — pas un problème de la suite." />
