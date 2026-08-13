@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : composer ses scénarios avec composeScenario"
+title: "PrestaFlow : composer ses scénarios avec ->scenario()"
 date: 2026-10-26
 tags:
   - Outils
@@ -8,7 +8,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-10-26-prestaflow-composer-scenarios-fluent.svg'
-summary: "Approfondissement du composeScenario livré en 1.5.0 : chaîner CheckoutOrder puis ManageOrder, partager de l'état entre briques via $this->get('CheckoutOrder.orderId'), écrire ses propres scénarios composables."
+summary: "->scenario() prend un scénario réutilisable et le colle dans une suite. Chaîné, il en enchaîne deux. Combiné à ->store() et ->retrieve(), le second scénario reprend l'état laissé par le premier. Le pattern qui fait que CheckoutOrder + ManageOrder tiennent en deux lignes."
 draft: true
 ---
 
@@ -16,30 +16,199 @@ draft: true
 
 ## Décor
 
-<!-- Le problème concret que cette annexe résout, en 2-3 paragraphes. Pourquoi c'est un vrai sujet, ce que la série ne couvre pas encore. -->
+Une suite PrestaFlow décrit un flow métier : loguer, ajouter au panier, checkout, retrouver la commande en BO, changer son statut. En pratique on retape la même **séquence de préambule** dans dix suites : login, panier, checkout — puis on assert la seule chose qui varie. C'est du boilerplate.
 
-## Le pattern
+La bibliothèque expose depuis la [1.5.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.5.0) le concept de **scénario réutilisable** : une classe qui empile des `it()` et qu'on colle dans une suite avec `->scenario(::class)`. Deux scénarios se chaînent sur la même suite, et l'état passe de l'un à l'autre via `->store()` / `->retrieve()`. Le boilerplate disparaît.
 
-<!-- Le montage minimal, code à l'appui. -->
+## La primitive : `->scenario()`
 
-```php
-// TODO
-```
-
-## Un scénario complet
-
-<!-- Un scénario de bout en bout qui illustre le pattern. -->
+Signature côté suite :
 
 ```php
-// TODO
+public function scenario(string $class, array $params = []): static
 ```
+
+Trois choses qui se passent quand on l'appelle :
+
+1. Une instance de `$class` est créée avec `$this` (la suite courante) + `$params`.
+2. Le constructeur du scénario merge les params, propage locale/version, puis appelle `steps($testSuite)`.
+3. Dans `steps()`, chaque `$testSuite->it(...)` **s'ajoute à la suite courante** — le scénario ne crée pas une suite parallèle, il alimente celle qu'on lui passe.
+
+Retour chaînable, donc plusieurs `->scenario()` s'empilent dans le même flow.
+
+## Écrire un scénario réutilisable
+
+Un scénario est une classe qui étend `PrestaFlow\Library\Scenarios\Scenario` et redéfinit `steps($testSuite)`. Convention : quelques params par défaut, tout `it()` va sur `$testSuite`, l'état à partager va dans `$this->store()`.
+
+Exemple minimal : un scénario qui crée un client de test et retient son `id` et son email pour la suite.
+
+```php
+<?php
+
+namespace Tests\Scenarios;
+
+use PrestaFlow\Library\Scenarios\Scenario;
+
+class CreateTestCustomer extends Scenario
+{
+    public $params = [
+        'firstname' => 'Jean',
+        'lastname'  => 'Test',
+        'password'  => 'PrestaFlow2026!',
+    ];
+
+    public function steps($testSuite)
+    {
+        $testSuite->importPage('BackOffice\Login');
+        $testSuite->importPage('BackOffice\Customers');
+
+        extract($testSuite->pages);
+
+        $email = 'test-' . uniqid() . '@example.test';
+
+        $testSuite
+        ->it('log en BO', function () use ($backOfficeLoginPage) {
+            $backOfficeLoginPage->goToPage('index');
+            $backOfficeLoginPage->login();
+        })
+        ->it('crée le client', function () use ($backOfficeCustomersPage, $email) {
+            $backOfficeCustomersPage->createCustomer([
+                'firstname' => $this->getParam('firstname'),
+                'lastname'  => $this->getParam('lastname'),
+                'email'     => $email,
+                'password'  => $this->getParam('password'),
+            ]);
+
+            // $this ici = TestsSuite (closures rebindées à l'exécution),
+            // donc store() / retrieve() sont accessibles pour la suite.
+            $this->store('CreateTestCustomer.email', $email);
+            $this->store('CreateTestCustomer.id', $backOfficeCustomersPage->getCreatedCustomerId());
+        });
+
+        return $testSuite;
+    }
+}
+```
+
+Trois idées à retenir :
+
+- **`$this->getParam('name')`** dans `steps()` (contexte scénario) lit le param passé au compose, ou la valeur par défaut de `$params`.
+- **`$this->store('key', $val)`** dans les closures `it()` (contexte suite, rebindé par `.call($this)` côté runner) empile de l'état accessible plus tard.
+- **Namespacing des clés `store` par nom de scénario** (`CreateTestCustomer.email`) — évite les collisions quand deux scénarios composés stockent chacun leur `email` ou leur `id`.
+
+## Composer deux scénarios avec passage d'état
+
+Le scénario suivant reprend l'état posé par le premier. Il n'a rien à savoir de l'implémentation du premier — juste connaître les clés qu'il expose.
+
+```php
+<?php
+
+namespace Tests\Scenarios;
+
+use PrestaFlow\Library\Scenarios\Scenario;
+
+class LoginAsTestCustomer extends Scenario
+{
+    public function steps($testSuite)
+    {
+        $testSuite->importPage('FrontOffice\Login');
+
+        extract($testSuite->pages);
+
+        $testSuite
+        ->it('log en FO avec le client créé', function () use ($frontOfficeLoginPage) {
+            $email = $this->retrieve('CreateTestCustomer.email');
+            $password = 'PrestaFlow2026!';
+
+            $frontOfficeLoginPage->goToPage('login');
+            $frontOfficeLoginPage->login($email, $password);
+        });
+
+        return $testSuite;
+    }
+}
+```
+
+Et la suite qui les compose fait tenir la logique en 4 lignes utiles :
+
+```php
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+use Tests\Scenarios\CreateTestCustomer;
+use Tests\Scenarios\LoginAsTestCustomer;
+
+class NewCustomerJourney extends TestsSuite
+{
+    public function init()
+    {
+        $this
+        ->describe('Nouveau client — création BO puis login FO')
+        ->scenario(CreateTestCustomer::class)
+        ->scenario(LoginAsTestCustomer::class)
+        ->it('accède à son espace client', function () {
+            Expect::that()->customerIsLogged('.user-info a.account');
+        });
+    }
+}
+```
+
+Deux `->scenario()` chaînés, une assertion propre à ce test, et c'est tout. Le corps de `NewCustomerJourney` reste centré sur ce qu'il vérifie ; la mécanique création + login est réutilisée telle quelle.
+
+## Passer des params au compose
+
+Le second argument de `->scenario()` override les défauts déclarés dans `$params` du scénario. Utile pour piloter le même scénario dans plusieurs suites avec des variations.
+
+```php
+$this
+->scenario(CreateTestCustomer::class, [
+    'firstname' => 'Alice',
+    'lastname'  => 'Belge',
+    'password'  => 'AutreMdp2026!',
+])
+->scenario(LoginAsTestCustomer::class);
+```
+
+Le scénario lit ses params via `$this->getParam('firstname')` — jamais en accédant directement à `$this->params[…]`, pour rester compatible avec les datasets (cf. [scénarios paramétrés & chaînage](/blog/prestaflow-scenarios-parametres-chainage/)).
+
+## Le cas d'école livré avec la lib : `OrderLifecycle`
+
+C'est exactement le pattern derrière la suite [`OrderLifecycle`](https://github.com/PrestaFlow/php-library/blob/main/src/Tests/Suites/Scenarios/OrderLifecycle.php) fournie par la lib :
+
+```php
+class OrderLifecycle extends TestsSuite
+{
+    public function init()
+    {
+        $this
+        ->describe('Créer une commande puis piloter son cycle de vie en BO')
+        ->scenario(\PrestaFlow\Library\Scenarios\CheckoutOrder::class)
+        ->scenario(\PrestaFlow\Library\Scenarios\ManageOrder::class);
+    }
+}
+```
+
+- `CheckoutOrder` fait le tunnel FO → confirmation → contrôle en BO, et **stocke** l'`orderReference` en fin de parcours.
+- `ManageOrder` **retrouve** cette référence, la filtre en BO, change le statut, ajoute une note, pose un tracking.
+
+Zéro glue entre les deux, sinon le contrat de clé `orderReference` que les deux honorent. C'est la vraie promesse du pattern : découpler la mécanique du flow métier de la variation qu'on veut tester.
 
 ## Interaction avec les autres annexes
 
-<!-- Cross-links avec les annexes existantes de la série. -->
-
-- **[TODO](/blog/TODO/)** — lien.
+- **[Écrire son premier scénario](/blog/ecrire-son-premier-scenario-prestaflow/)** — l'article d'introduction crée UNE Page et UN scénario dans une suite. Cette annexe montre comment sortir le scénario de la suite pour le réutiliser.
+- **[Scénarios paramétrés & chaînage](/blog/prestaflow-scenarios-parametres-chainage/)** — les params passés au compose et les datasets `->with([...])` sont deux dimensions complémentaires : compose = variations qualitatives (nature du flow), datasets = variations quantitatives (X couples de valeurs sur le même flow).
+- **[Fixtures & seed data](/blog/prestaflow-fixtures-seed-data/)** — un scénario réutilisable qui crée de l'état (client, produit, adresse) n'est pas une fixture : c'est une **suite exécutable** qui pose de l'état. Les deux se complètent — fixture pour l'état permanent de la boutique, scénario pour l'état spécifique d'un flow.
+- **[Bibliothèque de Pages partagée](/blog/prestaflow-bibliotheque-pages-partagee/)** — au-delà d'une équipe/projet, on partage aussi ses scénarios. Le pattern est identique aux Pages : un composer package, un namespace, `->scenario(External\CheckoutOrder::class)`.
 
 ## Notes
 
-<Info title="TODO — piège / astuce / limite à connaître." />
+<Warning title="`$this` dans une closure `it()` est rebindé à TestsSuite au moment de l'exécution (via Closure::call), pas à l'écriture. Ne comptez pas sur les propriétés du scénario dans une closure `it()` : elles ne seront pas là. Passez les données par `use ($var)` (capture à l'écriture) ou par `store/retrieve` (transport runtime)." />
+
+<Info title="Le param `locale` est propagé automatiquement du scénario à la suite au tout début du steps() — c'est ce qui fait que CheckoutOrder résout ses URLs friendly (connexion / panier / commande) en français sur la boutique de démo. Pour tester un flow multi-locales, override le param `locale` à chaque compose : ->scenario(CheckoutOrder::class, ['locale' => 'en'])." />
+
+<Info title="Un scénario n'est pas une suite : il n'a ni describe() ni exécution autonome. Pour lancer un scénario seul, il faut une suite bidon qui ne contient qu'un ->scenario(). C'est le pattern des Tests\Suites\Scenarios\CheckoutOrder livrés par la lib — un wrapper 3-lignes qui permet de lancer le scénario en isolation depuis le CLI." />
+
+<Info title="Nommer les clés `store` avec un préfixe scénario (`CreateTestCustomer.email` plutôt que `email`) prend 5 caractères de plus et évite un debug de 20 minutes le jour où deux scénarios composés stockent chacun un `email`. Convention à poser dès la première suite composée." />

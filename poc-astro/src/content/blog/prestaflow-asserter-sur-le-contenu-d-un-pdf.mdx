@@ -95,8 +95,7 @@ class InvoiceTaxExemptMention extends TestsSuite
 {
     public function init()
     {
-        $this->importScenario('CheckoutOrder');           // fournie par la lib
-        $this->importPage('BackOffice\Login');
+        $this->importPage('BackOffice\Orders');
         $this->importPage('Support\Invoice', domain: 'Tests');
 
         extract($this->pages);
@@ -105,16 +104,16 @@ class InvoiceTaxExemptMention extends TestsSuite
 
         $this
         ->describe('Facture d\'un client hors UE — mention légale ajoutée')
-        ->composeScenario('CheckoutOrder', [
-            'customer.email' => 'client-hors-ue@example.test',
-            'customer.country' => 'US',                   // déclenche le module
+        ->scenario(\PrestaFlow\Library\Scenarios\CheckoutOrder::class, [
+            'customerEmail' => 'client-hors-ue@example.test',
+            // Pré-requis fixture : ce client a une adresse US en base
+            // (cf. annexe fixtures-seed-data), ce qui déclenche le module.
         ])
-        ->it('log dans le BO', function () use ($backOfficeLoginPage) {
-            $backOfficeLoginPage->goToPage($backOfficeLoginPage);
-            $backOfficeLoginPage->login();
-        })
-        ->it('télécharge la facture PDF de la commande', function () use ($supportInvoicePage) use ($pdfPath) {
-            $orderId = $this->get('CheckoutOrder.orderId');   // exporté par le scénario composé
+        ->it('télécharge la facture PDF de la commande', function () use ($backOfficeOrdersPage, $supportInvoicePage, $pdfPath) {
+            // CheckoutOrder stocke la référence de commande sous 'orderReference'.
+            // On la traduit en id_order via la BO Orders page pour l'URL AdminPdf.
+            $orderRef = $this->retrieve('orderReference');
+            $orderId = $backOfficeOrdersPage->findOrderIdByReference($orderRef);
             $supportInvoicePage->downloadInvoiceForOrder($orderId, $pdfPath);
 
             Expect::that(is_file($pdfPath))->isTheSameAs(true);
