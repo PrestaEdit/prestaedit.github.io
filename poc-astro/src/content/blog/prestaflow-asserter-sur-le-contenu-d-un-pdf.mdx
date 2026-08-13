@@ -1,0 +1,207 @@
+---
+title: "PrestaFlow : asserter sur le contenu d'une facture PDF"
+date: 2027-02-17
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2027-02-17-prestaflow-asserter-sur-le-contenu-d-un-pdf.svg'
+summary: "Une commande passée en checkout, une facture PDF générée par PS, un module fiscal qui doit y ajouter la mention légale d'exonération de TVA. Comment vérifier depuis PrestaFlow que le PDF contient bien le bon texte, la bonne référence, la bonne mention — sans ouvrir le fichier à la main."
+draft: true
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et l'annexe « tester les emails envoyés » (le PDF vient souvent en pièce jointe d'un mail de confirmation). Nouveau depuis PrestaFlow/php-library 1.6.0." />
+
+## Décor
+
+Beaucoup de modules PS touchent au **PDF généré** par PrestaShop : un module fiscal ajoute une mention légale sur la facture, un module de livraison imprime un bon de livraison, un module de fidélité colle un code cadeau sur l'avoir, un module marketplace régénère une facture par vendeur. Tout ce contenu vit **à côté du HTML** — les assertions front classiques de PrestaFlow ne voient rien de ce qui finit dans le PDF.
+
+Vérifier que le bon texte s'y retrouve demande deux choses : **récupérer le fichier PDF** produit par PS (depuis le BO, depuis une pièce jointe email, depuis un stockage S3), et **extraire son texte** pour asserter dessus. Le second point est ce qui bloquait jusqu'ici — installer un parser, mapper une API, gérer le cache — et c'est exactement ce que la 1.6.0 rend trivial.
+
+## `Support\Pdf` : le wrapper livré avec la 1.6.0
+
+Depuis la [1.6.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.6.0), la lib embarque `PrestaFlow\Library\Support\Pdf` — un wrapper mince autour de [`smalot/pdfparser`](https://github.com/smalot/pdfparser) qui expose exactement ce dont un scénario a besoin, rien de plus :
+
+```php
+use PrestaFlow\Library\Support\Pdf;
+
+$pdf = Pdf::fromFile('/tmp/facture.pdf');   // ou fromString($binary)
+$pdf->contains('TVA');                       // bool — case-insensitive par défaut
+$pdf->contains('TVA', caseSensitive: true);  // strict
+$pdf->matches('/Facture\s*#?\s*(\d+)/', 1);  // capture group 1 → ['2024-000042']
+$pdf->pages();                               // string[] — 1 entrée par page
+$pdf->pageCount();                           // int
+$pdf->text();                                // tout le PDF, pages séparées par \n\n
+```
+
+Deux entrées : **`fromFile()`** pour un chemin disque, **`fromString()`** pour un binaire déjà en mémoire (typique quand on a fetché le PDF via HTTP ou récupéré une pièce jointe d'un mail). Le parser n'est instancié qu'à la première lecture, et les résultats sont mis en cache par instance — on peut chaîner `contains` puis `matches` puis `pages()` sans re-parser.
+
+Rien à installer côté module : `smalot/pdfparser ^2.11` est dépendance runtime de la lib.
+
+## Récupérer le PDF de facture depuis le BackOffice
+
+Le pattern le plus courant : on vient de passer une commande dans le scénario, PrestaShop a généré la facture, et on veut vérifier son contenu. La facture est téléchargeable depuis le BO à l'URL `index.php?controller=AdminPdf&submitAction=generateInvoicePDF&id_order={id}` (avec un token admin).
+
+Créez `tests/prestaflow/Pages/v8/Support/Invoice/Page.php` — une Page utilitaire qui télécharge le PDF et le pose sur disque pour que le scénario puisse l'attaquer avec `Pdf::fromFile()` :
+
+```php
+<?php
+
+namespace Tests\Pages\v8\Support\Invoice;
+
+use PrestaFlow\Library\Pages\v8\BackOffice\Page as BasePage;
+
+class Page extends BasePage
+{
+    public function downloadInvoiceForOrder(int $orderId, string $destPath): string
+    {
+        $url = $_ENV['PRESTAFLOW_BO_URL']
+            . 'index.php?controller=AdminPdf&submitAction=generateInvoicePDF'
+            . '&id_order=' . $orderId;
+
+        $this->goToUrl($url);
+        // AdminPdf répond avec le binaire PDF ; on le récupère depuis la
+        // réponse Chrome plutôt que refaire un curl côté PHP (les cookies
+        // de session admin sont déjà négociés par PrestaFlow).
+        $binary = $this->getPage()->getResponseBody();
+
+        file_put_contents($destPath, $binary);
+
+        return $destPath;
+    }
+}
+```
+
+Volontairement mince — la Page ne fait qu'une chose : télécharger et écrire sur disque. C'est le scénario qui attaque le fichier avec `Pdf::fromFile()`.
+
+<Info title="Pourquoi passer par Chrome plutôt que curl ? L'endpoint AdminPdf exige une session admin valide, avec token CSRF frais. PrestaFlow a déjà cette session (elle vient du login BO du scénario). Refaire un curl côté PHP oblige à ré-extraire cookies + token, à re-jouer le login, et à re-synchroniser sur chaque changement du flow login BO. Passer par le Chrome piloté = zéro duplication de logique auth." />
+
+## Un scénario complet : commande + facture + assertion
+
+Objectif : le module `psflowdemo_taxexempt` doit ajouter la mention « Exonération de TVA – Article 262 ter I du CGI » sur la facture des clients marqués « hors UE ». Le scénario passe une commande avec un client marqué, télécharge la facture générée, et vérifie la présence de la mention.
+
+```php
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Support\Pdf;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class InvoiceTaxExemptMention extends TestsSuite
+{
+    public function init()
+    {
+        $this->importScenario('CheckoutOrder');           // fournie par la lib
+        $this->importPage('BackOffice\Login');
+        $this->importPage('Support\Invoice', domain: 'Tests');
+
+        extract($this->pages);
+
+        $pdfPath = sys_get_temp_dir() . '/facture-' . uniqid() . '.pdf';
+
+        $this
+        ->describe('Facture d\'un client hors UE — mention légale ajoutée')
+        ->composeScenario('CheckoutOrder', [
+            'customer.email' => 'client-hors-ue@example.test',
+            'customer.country' => 'US',                   // déclenche le module
+        ])
+        ->it('log dans le BO', function () use ($backOfficeLoginPage) {
+            $backOfficeLoginPage->goToPage($backOfficeLoginPage);
+            $backOfficeLoginPage->login();
+        })
+        ->it('télécharge la facture PDF de la commande', function () use ($supportInvoicePage) use ($pdfPath) {
+            $orderId = $this->get('CheckoutOrder.orderId');   // exporté par le scénario composé
+            $supportInvoicePage->downloadInvoiceForOrder($orderId, $pdfPath);
+
+            Expect::that(is_file($pdfPath))->isTheSameAs(true);
+            Expect::that(filesize($pdfPath))->isGreaterThan(1000);   // pas un PDF vide
+        })
+        ->it('le PDF contient la mention légale d\'exonération', function () use ($pdfPath) {
+            $pdf = Pdf::fromFile($pdfPath);
+
+            Expect::that($pdf->contains('Exonération de TVA'))->isTheSameAs(true);
+            Expect::that($pdf->contains('Article 262 ter I du CGI'))->isTheSameAs(true);
+        })
+        ->it('le PDF ne mentionne aucune ligne TVA à taux non-zéro', function () use ($pdfPath) {
+            $pdf = Pdf::fromFile($pdfPath);
+
+            // Aucune ligne "TVA XX,XX %" ne doit apparaître (exemption totale).
+            $tvaLines = $pdf->matches('/TVA\s+(\d+[,\.]\d+)\s*%/', 1);
+            Expect::that($tvaLines)->isEmpty();
+        })
+        ->it('le PDF a bien le numéro de facture attendu', function () use ($pdfPath) {
+            $pdf = Pdf::fromFile($pdfPath);
+
+            $numeros = $pdf->matches('/Facture\s*#?\s*([A-Z0-9\-]+)/', 1);
+            Expect::that(count($numeros))->isGreaterThanOrEqualTo(1);
+            Expect::that($numeros[0])->startsWith($_ENV['PS_INVOICE_PREFIX'] ?? 'IN');
+        });
+    }
+}
+```
+
+Cinq `it`, qui répondent aux cinq questions qu'on se pose sur un PDF généré :
+
+- Le PDF a bien été produit (fichier présent, non-vide)
+- Le texte attendu est dedans (**mention légale positive**)
+- Le texte interdit n'est **pas** dedans (**assertion négative sur les lignes TVA**)
+- Le format du numéro de facture est correct (regex + capture)
+- Le préfixe configuré côté PS est respecté
+
+Les deux `contains` sont case-insensitive par défaut — l'extraction PDF renvoie souvent tout en majuscules pour les mentions légales, et ce qu'on veut asserter est lisible côté humain, pas byte-à-byte.
+
+## Utiliser le PDF depuis une pièce jointe email
+
+Si le PDF vous arrive par mail (facture attachée à l'email de confirmation), pas besoin du détour BO — on récupère le binaire depuis Mailpit et on passe par `fromString()`. Le pont avec l'[annexe « tester les emails envoyés »](/blog/prestaflow-tester-emails-envoyes/) tient en trois lignes :
+
+```php
+$message = $supportMailboxPage->findByRecipient('client@example.test');
+$binary = $supportMailboxPage->downloadAttachment($message['ID'], 'facture.pdf');
+$pdf = Pdf::fromString($binary);
+
+Expect::that($pdf->contains('Exonération de TVA'))->isTheSameAs(true);
+```
+
+`downloadAttachment()` n'est pas dans la Page Mailbox de l'annexe emails — c'est un ajout naturel qui interroge `GET /api/v1/message/{ID}/part/{PartID}` (l'API Mailpit renvoie le binaire brut de la pièce jointe). Cinq lignes à ajouter à cette Page si le besoin se présente.
+
+## `matches()` : capturer plutôt que juste vérifier
+
+`contains()` répond à *"la mention est-elle là"*. `matches()` répond à *"quelle est la valeur ?"* — et c'est souvent ce qu'on veut asserter finement.
+
+```php
+// Total TTC affiché sur la facture, en float.
+$totaux = $pdf->matches('/Total\s+TTC\s+([\d\s,]+)\s*€/', 1);
+$totalTtc = (float) str_replace([' ', ','], ['', '.'], $totaux[0]);
+Expect::that($totalTtc)->isBetween(120.00, 121.00);
+
+// Toutes les références de produits listées sur la facture.
+$refs = $pdf->matches('/Réf\.\s*:\s*([A-Z0-9\-]+)/', 1);
+Expect::that($refs)->contains('SKU-DEMO-42');
+```
+
+Le regex tourne sur `text()` (concaténation de toutes les pages avec `\n\n` comme séparateur). Si la mention doit se trouver **spécifiquement sur la première page** (ex. mention légale d'exemption, qui légalement ne peut être qu'en tête de facture), utilisez `pages()[0]` :
+
+```php
+Expect::that($pdf->pages()[0])->contains('Exonération de TVA');
+```
+
+## Interaction avec les autres annexes
+
+- **[Tester les emails envoyés](/blog/prestaflow-tester-emails-envoyes/)** — le compagnon naturel. Cette annexe **capture** un mail avec sa pièce jointe PDF ; celle-ci **assert** sur le contenu du PDF. Combinées, elles couvrent le flow *"la commande envoie un mail au client avec la bonne facture dedans"* de bout en bout.
+- **[Tester un module tiers](/blog/prestaflow-tester-un-module-tiers/)** — le cas d'usage typique où la question *"le module a-t-il bien modifié la facture ?"* revient : module fiscal, module de livraison, module marketplace, module d'avoir. `Pdf` transforme cette question en 2 lignes de test.
+- **[TDD](/blog/prestaflow-tdd-scenario-avant-fix/)** — bug remonté *"la mention d'exonération de TVA a disparu après update PS 9"* → scénario de reproduction (commande client US + `Pdf::contains('Exonération')`) → rouge → fix côté module → vert. Le scénario reste comme non-régression.
+- **[Fixtures](/blog/prestaflow-fixtures-seed-data/)** — le client marqué « hors UE » (adresse US + groupe fiscal exempté) fait partie de l'état initial nécessaire. Le poser en niveau 1 (init-script Flashlight) permet au scénario de démarrer avec le bon terrain sans passer une minute à créer client + adresse à chaque run.
+
+## Notes
+
+<Warning title="Le texte extrait d'un PDF n'est pas toujours le texte visible. Selon comment PrestaShop (ou le module) génère le PDF — dompdf, TCPDF, wkhtmltopdf — l'ordre du texte extrait peut différer de l'ordre à l'écran (multi-colonnes, tableaux). Un `contains` reste robuste (on cherche une chaîne), un `matches` avec regex ancré sur `\n` ou sur une position peut casser. Préférer des regex tolérants aux blancs (`\s+` plutôt que ` `) et des captures larges." />
+
+<Info title="Pour les PDF composés d'images scannées (rare en sortie PS, mais courant si on teste un flux OCR côté module), `smalot/pdfparser` ne verra aucun texte — il ne fait pas d'OCR. C'est le domaine de tesseract ou d'une API OCR tierce, hors périmètre de Support\\Pdf." />
+
+<Info title="La régression visuelle (`visualCheckpoint`) et l'assertion PDF répondent à deux besoins différents et complémentaires. Le screenshot voit la mise en page — un layout de facture qui casse, un logo qui bouge. L'assertion PDF voit le contenu — une mention légale qui disparaît, un total qui change. Sur une facture critique, les deux se combinent : un checkpoint visuel sur le HTML preview du BO, plus un contains sur le PDF téléchargé. Voir aussi l'[annexe régressions visuelles](/blog/prestaflow-regressions-visuelles/)." />
+
+<Info title="Les PDF PrestaShop peuvent contenir des caractères invisibles issus des polices embarquées (ligatures, kerning encodé), qui perturbent parfois les regex stricts. Si un `matches` renvoie vide alors que le texte est visible à l'œil, dumper `$pdf->text()` dans un fichier et l'ouvrir dans un éditeur — les surprises sautent aux yeux (accents décomposés, espaces insécables, tabs…)." />
