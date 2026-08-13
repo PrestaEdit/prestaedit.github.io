@@ -8,7 +8,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-10-23-prestaflow-tester-tunnel-paiement-stripe.svg'
-summary: "Stripe en mode test (numéros de carte magiques), gestion du 3DS (redirection + retour), retry après refus, assertion sur le webhook payment_intent.succeeded. Le grand classique du checkout PrestaShop 9."
+summary: "Stripe en mode test (numéros de carte magiques), gestion du 3DS (redirection + retour), retry après refus, assertion sur le webhook payment_intent.succeeded. Le grand classique du checkout PrestaShop 9 — avec les deux intégrations Stripe qu'on croise en prod : Elements inline et Checkout hosted."
 draft: true
 ---
 
@@ -16,30 +16,248 @@ draft: true
 
 ## Décor
 
-<!-- Le problème concret que cette annexe résout, en 2-3 paragraphes. Pourquoi c'est un vrai sujet, ce que la série ne couvre pas encore. -->
+Un tunnel de paiement Stripe casse toutes les habitudes des scénarios PrestaFlow standard :
 
-## Le pattern
+- **Le formulaire de carte n'est pas dans le DOM de la boutique** — c'est une `<iframe>` servie par `js.stripe.com`, cross-origin, immune aux `setValue` classiques.
+- **Le paiement passe potentiellement par un 3DS** — nouvelle iframe (Elements) ou redirection (Checkout) vers un challenge géré par la banque du client. La suite doit savoir naviguer là-dedans et revenir.
+- **La confirmation est en deux temps** — Stripe redirige la boutique vers une URL de retour (`/order-confirmation?id_order=…`), puis notifie asynchronement par webhook (`payment_intent.succeeded`) que le paiement est bien encaissé. Le premier est visible par Chrome, le second non.
 
-<!-- Le montage minimal, code à l'appui. -->
+Cette annexe couvre les deux intégrations Stripe qu'on rencontre sur PrestaShop :
+
+- **Stripe Elements** (inline) — le module colle une iframe de carte dans le tunnel PS ; le client ne quitte pas la boutique. Utilisé par la plupart des modules Stripe payants du marketplace.
+- **Stripe Checkout** (hosted) — le module redirige vers `checkout.stripe.com` où Stripe prend en charge le formulaire ; retour ensuite sur PS. Utilisé par des intégrations plus simples.
+
+## Le mode test et les cartes magiques
+
+Stripe fournit un [mode test](https://docs.stripe.com/testing) activable par une clé API `sk_test_…` / `pk_test_…` — configurez le module PS Stripe avec ces clés dans un `.env` de test ou un init-script Flashlight, jamais en prod.
+
+Quatre numéros de carte à connaître (en test mode uniquement, tous avec `12/34` en expiration et `123` en CVC) :
+
+| Numéro | Comportement |
+|---|---|
+| `4242 4242 4242 4242` | Paiement accepté, pas de 3DS |
+| `4000 0025 0000 3155` | Paiement accepté, 3DS obligatoire (challenge) |
+| `4000 0000 0000 0002` | Paiement refusé par la banque (« Your card was declined ») |
+| `4000 0000 0000 9995` | Fonds insuffisants |
+
+On teste chaque comportement séparément — pas de « scénario global » qui empile les 4.
+
+## Écrire une Page pour Stripe Elements
+
+Le formulaire de carte étant dans une iframe cross-origin, on ne peut pas y `setValue` directement. La lib `chrome-php` expose l'API `getFrames()` qui liste les frames de la page — on cible celle dont l'URL commence par `https://js.stripe.com/`, puis on `evaluate` du JS à l'intérieur pour remplir chaque champ.
+
+Créez `tests/prestaflow/Pages/v8/Support/StripeElements/Page.php` :
 
 ```php
-// TODO
+<?php
+
+namespace Tests\Pages\v8\Support\StripeElements;
+
+use PrestaFlow\Library\Pages\v8\FrontOffice\Page as BasePage;
+
+class Page extends BasePage
+{
+    public function fillCard(string $number, string $expiry = '12/34', string $cvc = '123'): void
+    {
+        // Attendre que Stripe.js ait monté ses iframes.
+        $this->getPage()->waitUntilContainsElement('iframe[name^="__privateStripeFrame"]');
+
+        // Localiser la frame Stripe côté chrome-php.
+        $frames = $this->getPage()->getFrames();
+        $stripeFrame = null;
+        foreach ($frames as $frame) {
+            if (str_starts_with($frame->getUrl() ?? '', 'https://js.stripe.com/')) {
+                $stripeFrame = $frame;
+                break;
+            }
+        }
+
+        if ($stripeFrame === null) {
+            throw new \RuntimeException('Stripe Elements iframe not found');
+        }
+
+        // Remplir les 3 champs dans le contexte de la frame Stripe.
+        $stripeFrame->evaluate(sprintf(
+            'document.querySelector(\'input[name="cardnumber"]\').value = %s;
+             document.querySelector(\'input[name="exp-date"]\').value = %s;
+             document.querySelector(\'input[name="cvc"]\').value = %s;
+             ["cardnumber","exp-date","cvc"].forEach(n => {
+               document.querySelector(`input[name="${n}"]`)
+                 .dispatchEvent(new Event("input", { bubbles: true }));
+             });',
+            json_encode($number),
+            json_encode($expiry),
+            json_encode($cvc)
+        ));
+    }
+
+    public function confirm3DS(int $timeoutMs = 15000): void
+    {
+        // Le challenge 3DS est une nouvelle iframe (Stripe-hosted). Le bouton
+        // « Complete authentication » y est ciblable par attribut data-testid.
+        $this->getPage()->waitUntilContainsElement('iframe[name^="__privateStripeFrame"][src*="challenge"]', $timeoutMs);
+
+        $frames = $this->getPage()->getFrames();
+        foreach ($frames as $frame) {
+            if (str_contains($frame->getUrl() ?? '', 'challenge')) {
+                $frame->evaluate('document.querySelector(\'[data-testid="complete-authentication"]\')?.click();');
+                return;
+            }
+        }
+    }
+}
 ```
 
-## Un scénario complet
+<Info title="L'API getFrames() de chrome-php dépend de la version — vérifiez le nom exact dans la lib installée. Sur les anciennes versions, il faut passer par getPage()->getSession()->sendMessage() avec du CDP brut. Le pattern « attendre l'iframe puis chercher par URL » reste le même." />
 
-<!-- Un scénario de bout en bout qui illustre le pattern. -->
+## Scénario 1 : paiement accepté (carte `4242`)
+
+Objectif : passer une commande de bout en bout avec Stripe Elements et la carte magique standard.
 
 ```php
-// TODO
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class StripeCheckoutAccepted extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('FrontOffice\Login');
+        $this->importPage('FrontOffice\Product');
+        $this->importPage('FrontOffice\Cart');
+        $this->importPage('FrontOffice\Checkout');
+        $this->importPage('FrontOffice\OrderConfirmation');
+        $this->importPage('Support\StripeElements', domain: 'Tests');
+
+        extract($this->pages);
+
+        $this
+        ->describe('Stripe Elements — paiement accepté carte 4242')
+        ->it('log client', function () use ($frontOfficeLoginPage) {
+            $frontOfficeLoginPage->goToPage('login');
+            $frontOfficeLoginPage->login();
+        })
+        ->it('ajoute un produit et va au checkout', function () use ($frontOfficeProductPage, $frontOfficeCartPage, $frontOfficeCheckoutPage) {
+            $frontOfficeProductPage->goToProductPath('1-1-hummingbird-printed-t-shirt.html');
+            $frontOfficeProductPage->addToCart(1);
+            $frontOfficeCartPage->goToCart();
+            $frontOfficeCartPage->proceedToCheckout();
+            $frontOfficeCheckoutPage->confirmAddresses();
+            $frontOfficeCheckoutPage->chooseShipping();
+        })
+        ->it('choisit Stripe et remplit la carte', function () use ($frontOfficeCheckoutPage, $supportStripeElementsPage) {
+            $frontOfficeCheckoutPage->click('input[name="payment-option"][data-module-name="stripe_official"]');
+            $supportStripeElementsPage->fillCard('4242424242424242');
+            $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('termsCheckbox'));
+            $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('placeOrderButton'));
+            $frontOfficeCheckoutPage->waitForPageReload();
+        })
+        ->it('atterrit sur la confirmation de commande', function () use ($frontOfficeOrderConfirmationPage) {
+            Expect::that($frontOfficeOrderConfirmationPage->isConfirmed())->isTheSameAs(true);
+            Expect::that($frontOfficeOrderConfirmationPage->getOrderReference())->isNotEmpty();
+        });
+    }
+}
+```
+
+## Scénario 2 : refus banque (carte `0002`)
+
+Même préambule, on change juste la carte et on assert sur le message d'erreur qui reste sur la page checkout.
+
+```php
+->it('choisit Stripe et remplit une carte refusée', function () use ($frontOfficeCheckoutPage, $supportStripeElementsPage) {
+    $frontOfficeCheckoutPage->click('input[name="payment-option"][data-module-name="stripe_official"]');
+    $supportStripeElementsPage->fillCard('4000000000000002');
+    $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('termsCheckbox'));
+    $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('placeOrderButton'));
+})
+->it('reste sur checkout avec un message d\'erreur', function () use ($frontOfficeCheckoutPage) {
+    // Pas de waitForPageReload — l'erreur Stripe s'affiche sans navigation.
+    Expect::that()->elementIsVisible('.stripe-error, [data-testid="card-error"]');
+    Expect::that($frontOfficeCheckoutPage->getTextContent('.stripe-error'))
+        ->contains('declined');
+});
+```
+
+## Scénario 3 : challenge 3DS (carte `3155`)
+
+Le placement de commande démarre, Stripe ouvre l'iframe de challenge, le scénario clique « Complete authentication » à l'intérieur, la commande passe.
+
+```php
+->it('choisit Stripe et remplit une carte 3DS', function () use ($frontOfficeCheckoutPage, $supportStripeElementsPage) {
+    $frontOfficeCheckoutPage->click('input[name="payment-option"][data-module-name="stripe_official"]');
+    $supportStripeElementsPage->fillCard('4000002500003155');
+    $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('termsCheckbox'));
+    $frontOfficeCheckoutPage->click($frontOfficeCheckoutPage->getSelector('placeOrderButton'));
+})
+->it('complète le challenge 3DS', function () use ($supportStripeElementsPage) {
+    $supportStripeElementsPage->confirm3DS();
+})
+->it('atterrit sur la confirmation', function () use ($frontOfficeOrderConfirmationPage) {
+    // Bump du timeout — le 3DS ajoute quelques secondes.
+    $frontOfficeOrderConfirmationPage->waitForPageLoaded(20000);
+    Expect::that($frontOfficeOrderConfirmationPage->isConfirmed())->isTheSameAs(true);
+});
+```
+
+## Stripe Checkout (hosted) — la variante redirection
+
+Si le module utilise Stripe Checkout (redirection vers `checkout.stripe.com`) plutôt qu'Elements, la Page ci-dessus ne sert pas — on est sur un domaine tiers, PrestaFlow y navigue comme sur n'importe quelle page. Le formulaire y est standard (pas d'iframe imbriquée), les mêmes cartes magiques fonctionnent.
+
+```php
+->it('atterrit sur la page hostée Stripe', function () {
+    $this->waitForUrl('checkout.stripe.com', timeoutMs: 15000);
+})
+->it('remplit la carte sur Stripe et confirme', function () use ($frontOfficeCheckoutPage) {
+    $frontOfficeCheckoutPage->setValue('input#email', 'test@example.com');
+    $frontOfficeCheckoutPage->setValue('input#cardNumber', '4242424242424242');
+    $frontOfficeCheckoutPage->setValue('input#cardExpiry', '1234');
+    $frontOfficeCheckoutPage->setValue('input#cardCvc', '123');
+    $frontOfficeCheckoutPage->setValue('input#billingName', 'Jean Test');
+    $frontOfficeCheckoutPage->click('button[data-testid="hosted-payment-submit-button"]');
+})
+->it('revient sur PrestaShop en confirmation', function () use ($frontOfficeOrderConfirmationPage) {
+    $this->waitForUrl('/order-confirmation', timeoutMs: 20000);
+    Expect::that($frontOfficeOrderConfirmationPage->isConfirmed())->isTheSameAs(true);
+});
+```
+
+<Warning title="Les sélecteurs de checkout.stripe.com (id « cardNumber », data-testid « hosted-payment-submit-button ») sont maintenus par Stripe et changent sans préavis. Un scénario Stripe Checkout est plus fragile qu'un scénario Stripe Elements — Stripe ne s'engage pas sur la stabilité de son DOM. Sur un module qui vous propose les deux modes, Elements est le choix testable." />
+
+## Vérifier le webhook `payment_intent.succeeded`
+
+Le paiement en base côté Stripe et l'ordre côté PrestaShop passent en « paid » via le webhook `payment_intent.succeeded` — appel serveur-à-serveur, invisible depuis Chrome. Deux options :
+
+- **Attendre passivement** — en test mode Stripe déclenche le webhook réel vers l'URL configurée dans le module. Le scénario patiente 2-3 s puis relit le statut de la commande en BO.
+- **Simuler activement** — POSTer soi-même un payload `payment_intent.succeeded` vers le contrôleur du module et vérifier l'effet. C'est le pattern couvert par l'annexe [tester les webhooks](/blog/prestaflow-tester-webhooks/) — même code, appliqué à Stripe.
+
+```php
+->it('la commande passe en « Paiement accepté » après le webhook', function () use ($backOfficeOrdersPage) {
+    sleep(3);   // délai Stripe → module
+    $backOfficeOrdersPage->goToPage($backOfficeOrdersPage);
+    $backOfficeOrdersPage->openOrder($this->get('StripeCheckoutAccepted.orderReference'));
+
+    Expect::that($backOfficeOrdersPage->getCurrentStatus())->contains('Paiement accepté');
+});
 ```
 
 ## Interaction avec les autres annexes
 
-<!-- Cross-links avec les annexes existantes de la série. -->
-
-- **[TODO](/blog/TODO/)** — lien.
+- **[Tester les webhooks](/blog/prestaflow-tester-webhooks/)** — la moitié serveur-à-serveur du paiement Stripe (le `payment_intent.succeeded` que Chrome ne voit pas).
+- **[Mocker les API tierces avec WireMock](/blog/prestaflow-mock-api-tiers-wiremock/)** — pour éviter la dépendance à Stripe test mode (air-gap, coupures API), remplacer Stripe par un mock complet côté serveur.
+- **[Fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)** — poser les clés `sk_test_…` / `pk_test_…` dans la configuration du module au boot Flashlight, pour que la boutique de test soit toujours en mode test Stripe.
+- **[Popups intempestifs](/blog/prestaflow-popups-intempestifs/)** — Stripe.js peut afficher une bannière consent CMP la première fois. Le pattern d'auto-dismiss s'y applique.
 
 ## Notes
 
-<Info title="TODO — piège / astuce / limite à connaître." />
+<Info title="En test mode Stripe, aucune vraie carte n'est débitée et aucun vrai webhook n'est envoyé à un endpoint public — mais les webhooks Stripe requièrent quand même une URL accessible depuis Internet pour arriver au module. En CI, on tourne dans un container isolé : privilégier la simulation active du webhook (voir annexe webhooks) plutôt que d'attendre un webhook réel." />
+
+<Warning title="Ne jamais commiter les clés `sk_test_…` dans le repo, même si elles ne débitent rien. Elles donnent accès à votre dashboard Stripe test — quelqu'un peut les utiliser pour polluer votre historique de tests. Passer par un secret GitHub Actions / GitLab CI et un `.env` généré au boot du job." />
+
+<Info title="Pour tester la 3DS sans passer par l'iframe (fragile), Stripe expose l'option `automatic_payment_methods.session.confirmationMethod = 'automatic'` côté PaymentIntent qui simule un 3DS acceptant tout. Utile pour un smoke test rapide où le comportement UI 3DS n'est pas ce qui est testé." />
+
+<Info title="Sur un site en préprod derrière un htpasswd (cf. [annexe htpasswd](/blog/prestaflow-preprod-htpasswd/)), Stripe n'arrive pas à joindre l'URL de webhook — l'auth basique le bloque. Prévoir soit une exception htpasswd sur `/module/stripe/webhook`, soit tester en mode simulation active plutôt que réel." />
