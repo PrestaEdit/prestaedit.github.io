@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : tester un module tiers"
+title: 'PrestaFlow : tester un module tiers'
 date: 2026-08-14
 tags:
   - Outils
@@ -7,11 +7,13 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-14-prestaflow-tester-un-module-tiers.svg'
-summary: "Appliquer PrestaFlow à un module qu'on n'a pas écrit, dont on ne contrôle ni le code ni les sélecteurs — depuis un projet de test extérieur au module."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-14-prestaflow-tester-un-module-tiers.svg
+summary: >-
+  Appliquer PrestaFlow à un module qu'on n'a pas écrit, dont on ne contrôle ni
+  le code ni les sélecteurs — depuis un projet de test extérieur au module.
+draft: false
 ---
-
 <Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
 
 ## Décor
@@ -26,9 +28,9 @@ C'est ce cas qu'on couvre ici, avec un module fil rouge que tout le monde a sous
 
 Trois emplacements possibles, dont un seul est raisonnable :
 
-- **Dans le module** — non. Un `composer update` ou un upgrade de module écrase vos tests.
-- **Dans un module PS séparé qu'on écrit pour ça** — trop de cérémonie pour un dossier de tests.
-- **Dans un repo dédié**, à côté de votre projet PrestaShop.
+* **Dans le module** — non. Un `composer update` ou un upgrade de module écrase vos tests.
+* **Dans un module PS séparé qu'on écrit pour ça** — trop de cérémonie pour un dossier de tests.
+* **Dans un repo dédié**, à côté de votre projet PrestaShop.
 
 C'est la troisième option qu'on retient. Concrètement, un repo `qa-boutique` (ou n'importe quel nom parlant) avec une structure minimale :
 
@@ -183,8 +185,8 @@ Dimension nouvelle par rapport à un module dont vous êtes l'auteur : **le modu
 
 Deux garde-fous à mettre en place :
 
-- **Documenter la version testée** dans le `README` du repo de QA. La version du module + la version de PrestaShop + la version du thème. Trois lignes.
-- **Figer la version installée sur la boutique de recette**. Si le module est distribué via Composer, `composer require vendor/module-name:x.y.z` dans le repo de la boutique. Si c'est un ZIP téléchargé depuis l'Addons ou l'éditeur, garder ce ZIP dans un stockage interne et documenter sa provenance — les distributeurs remplacent silencieusement les téléchargements par de nouvelles versions.
+* **Documenter la version testée** dans le `README` du repo de QA. La version du module + la version de PrestaShop + la version du thème. Trois lignes.
+* **Figer la version installée sur la boutique de recette**. Si le module est distribué via Composer, `composer require vendor/module-name:x.y.z` dans le repo de la boutique. Si c'est un ZIP téléchargé depuis l'Addons ou l'éditeur, garder ce ZIP dans un stockage interne et documenter sa provenance — les distributeurs remplacent silencieusement les téléchargements par de nouvelles versions.
 
 Quand la mise à jour du module arrive, vous relancez la suite de tests sur la nouvelle version *avant* de la déployer en prod. C'est très exactement le rôle que l'article 2 (l'Action GitHub) automatisait — l'idée s'applique à l'identique ici.
 
