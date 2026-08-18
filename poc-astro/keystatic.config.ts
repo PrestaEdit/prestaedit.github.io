@@ -1,5 +1,5 @@
 import { config, collection, fields } from '@keystatic/core';
-import { block } from '@keystatic/core/content-components';
+import { block, wrapper } from '@keystatic/core/content-components';
 
 const calloutSchema = { title: fields.text({ label: 'Titre' }) };
 
@@ -61,11 +61,11 @@ export default config({
             image: { directory: 'public/posts', publicPath: '/posts/' },
           },
           components: {
-            Info: block({ label: 'Info (bleu)', schema: calloutSchema }),
-            Warning: block({ label: 'Warning (ambre)', schema: calloutSchema }),
-            Note: block({ label: 'Note (gris)', schema: calloutSchema }),
-            Tip: block({ label: 'Tip (vert)', schema: calloutSchema }),
-            Danger: block({ label: 'Danger (rouge)', schema: calloutSchema }),
+            Info: wrapper({ label: 'Info (bleu)', schema: calloutSchema }),
+            Warning: wrapper({ label: 'Warning (ambre)', schema: calloutSchema }),
+            Note: wrapper({ label: 'Note (gris)', schema: calloutSchema }),
+            Tip: wrapper({ label: 'Tip (vert)', schema: calloutSchema }),
+            Danger: wrapper({ label: 'Danger (rouge)', schema: calloutSchema }),
             img: block({
               label: 'Image (URL)',
               schema: {
