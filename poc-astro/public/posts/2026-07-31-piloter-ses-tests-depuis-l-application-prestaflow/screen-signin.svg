@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" font-family="system-ui, -apple-system, sans-serif">
+  <rect width="1200" height="750" fill="#f1f5f9"/>
+  <!-- window frame -->
+  <rect x="40" y="40" width="1120" height="670" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+  <!-- title bar -->
+  <rect x="40" y="40" width="1120" height="44" rx="12" fill="#f8fafc"/>
+  <rect x="40" y="72" width="1120" height="12" fill="#f8fafc"/>
+  <circle cx="72" cy="62" r="6" fill="#ef4444"/>
+  <circle cx="92" cy="62" r="6" fill="#f59e0b"/>
+  <circle cx="112" cy="62" r="6" fill="#10b981"/>
+  <text x="600" y="66" text-anchor="middle" fill="#64748b" font-size="13">PrestaFlow</text>
+  <!-- mockup badge -->
+  <rect x="1030" y="52" width="118" height="24" rx="12" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+  <text x="1089" y="68" text-anchor="middle" fill="#92400e" font-size="11" font-weight="600" letter-spacing="0.5">APERÇU · MOCKUP</text>
+
+  <!-- centered sign-in card -->
+  <rect x="400" y="180" width="400" height="440" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <!-- logo hex -->
+  <path d="M600 210 L640 232 L640 276 L600 298 L560 276 L560 232 Z" fill="none" stroke="#059669" stroke-width="2"/>
+  <text x="600" y="260" text-anchor="middle" fill="#059669" font-size="22" font-weight="700">PF</text>
+
+  <text x="600" y="340" text-anchor="middle" fill="#0f172a" font-size="22" font-weight="700">Bienvenue sur PrestaFlow</text>
+  <text x="600" y="366" text-anchor="middle" fill="#64748b" font-size="14">Connectez-vous à votre espace prestaflow.io</text>
+
+  <!-- GitHub button -->
+  <rect x="440" y="400" width="320" height="48" rx="8" fill="#0f172a"/>
+  <circle cx="470" cy="424" r="10" fill="#ffffff"/>
+  <text x="600" y="430" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="600">Continuer avec GitHub</text>
+
+  <!-- divider -->
+  <line x1="440" y1="480" x2="555" y2="480" stroke="#e2e8f0"/>
+  <text x="600" y="484" text-anchor="middle" fill="#94a3b8" font-size="12">ou</text>
+  <line x1="645" y1="480" x2="760" y2="480" stroke="#e2e8f0"/>
+
+  <!-- email field -->
+  <rect x="440" y="510" width="320" height="40" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="456" y="535" fill="#94a3b8" font-size="13">vous@exemple.com</text>
+  <!-- password field -->
+  <rect x="440" y="560" width="320" height="40" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="456" y="585" fill="#94a3b8" font-size="13">••••••••••</text>
+</svg>

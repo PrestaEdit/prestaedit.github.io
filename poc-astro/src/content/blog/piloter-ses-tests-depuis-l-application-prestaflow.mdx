@@ -58,7 +58,7 @@ Au premier démarrage, l'app demande de se connecter avec les identifiants prest
 
 Une fois authentifié, un fichier `.deviceToken` est créé dans le dossier user-data de NativePHP (`~/Library/Application Support/PrestaFlow/` sur Mac). C'est ce jeton qui sera utilisé pour toutes les interactions futures avec la plateforme.
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-signin.png" alt="Écran de connexion PrestaFlow" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-signin.svg" alt="Écran de connexion PrestaFlow" />
 
 ## Ajouter psflowdemo comme projet local
 
@@ -74,7 +74,7 @@ L'app scanne l'arborescence, détecte :
 
 Le projet apparaît dans la sidebar. La vue projet liste vos suites, chacune avec son statut du dernier run (jamais joué / passé / échoué).
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-project.png" alt="Vue projet psflowdemo avec les trois suites détectées" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-project.svg" alt="Vue projet psflowdemo avec les trois suites détectées" />
 
 ## Exécuter une suite depuis l'UI
 
@@ -88,7 +88,7 @@ Concrètement, ça veut dire :
 * les étapes s'exécutent une à une,
 * l'UI affiche la progression au fil de l'eau : étape en cours, étapes passées avec leur durée, échec éventuel.
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-run-progress.png" alt="Exécution en cours d'une suite avec progression étape par étape" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-run-progress.svg" alt="Exécution en cours d'une suite avec progression étape par étape" />
 
 En fin de run, la vue résultat s'affiche automatiquement.
 
@@ -101,7 +101,7 @@ La vue résultat est le point central de l'app. Elle affiche, pour un run donné
 * **Le stack trace** en cas d'exception, avec pointeur sur le fichier de la Page ou du Scenario.
 * **Les stats du run** : passes / failures / skips / durée totale.
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-result-detail.png" alt="Vue détaillée d'un run avec captures et statuts" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-result-detail.svg" alt="Vue détaillée d'un run avec captures et statuts" />
 
 L'app conserve un **historique local** de tous les runs joués depuis qu'elle est installée. On peut y revenir à tout moment via la sidebar : rouvrir un run d'hier, regarder sa capture, puis rebasculer sur le run d'aujourd'hui pour voir ce qui a changé quand quelque chose se met à casser.
 
@@ -125,7 +125,7 @@ Depuis la page **Settings** du projet `psflowdemo` (sidebar → projet → Setti
 
 Sélectionnez le projet correspondant. La Product Key est stockée localement, dans la config du projet.
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-cloud-link.png" alt="Liaison du projet local à un projet cloud" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-cloud-link.svg" alt="Liaison du projet local à un projet cloud" />
 
 ## Pousser un run vers la plateforme
 
@@ -133,7 +133,7 @@ Une fois le projet lié, chaque vue de run expose un bouton **Sync now**.
 
 Un clic pousse le run (résultats, captures, régressions visuelles s'il y en a) vers l'API `api.prestaflow.io`. Le bouton se transforme en **✓ Synced — Open on prestaflow\.io** en cas de succès, en **✗ Failed — Retry** avec l'erreur en tooltip sinon.
 
-<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-sync.png" alt="Bouton de sync sur la vue résultat, avant et après" />
+<img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-sync.svg" alt="Bouton de sync sur la vue résultat, avant et après" />
 
 Côté plateforme, le run apparaît dans l'historique du projet, aligné avec les runs remontés par l'Action GitHub. C'est là que la trilogie boucle : que vous testiez à la main (app), en local (CLI) ou en CI (Action), tout converge vers la même timeline. La sidebar de l'app signale les échecs de sync via un compteur **⟳ Sync failed (N)** pour éviter que des runs restent oubliés en local.
 
