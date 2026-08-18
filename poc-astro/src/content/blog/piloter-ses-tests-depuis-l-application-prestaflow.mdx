@@ -1,5 +1,5 @@
 ---
-title: "Piloter ses tests depuis l'application PrestaFlow"
+title: Piloter ses tests depuis l'application PrestaFlow
 date: 2026-08-17
 tags:
   - Outils
@@ -7,21 +7,23 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-17-piloter-ses-tests-depuis-l-application-prestaflow.svg'
-summary: "Prise en main de l'application desktop PrestaFlow : lier un projet local, exécuter une suite depuis l'UI, lire les résultats, activer le sync cloud."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-17-piloter-ses-tests-depuis-l-application-prestaflow.svg
+summary: >-
+  Prise en main de l'application desktop PrestaFlow : lier un projet local,
+  exécuter une suite depuis l'UI, lire les résultats, activer le sync cloud.
+draft: false
 ---
-
 <Info title="Fin du triptyque">
-Cet article ferme le triptyque des articles piliers ouvert par « Écrire son premier scénario » et « Automatiser ses scénarios en CI ». Il reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+  Cet article ferme le triptyque des articles piliers ouvert par « Écrire son premier scénario » et « Automatiser ses scénarios en CI ». Il reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
 </Info>
 
 ## Préambule
 
 Les deux articles précédents nous ont donné les deux modes d'usage naturels de PrestaFlow :
 
-- **[Article 1](/blog/ecrire-son-premier-scenario-prestaflow/)** — la librairie PHP : on écrit ses scénarios et on les lance à la main avec `./vendor/bin/prestaflow run`.
-- **[Article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)** — la GitHub Action : on délègue cette exécution à GitHub Actions à chaque commit, avec matrice multi-versions PS et remontées sur la plateforme.
+* [**Article 1**](/blog/ecrire-son-premier-scenario-prestaflow/) — la librairie PHP : on écrit ses scénarios et on les lance à la main avec `./vendor/bin/prestaflow run`.
+* [**Article 2**](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) — la GitHub Action : on délègue cette exécution à GitHub Actions à chaque commit, avec matrice multi-versions PS et remontées sur la plateforme.
 
 Il reste un troisième mode d'usage, plus interactif : **piloter ses scénarios depuis une interface graphique**, en boucle courte, pendant le développement. C'est ce que fait l'application desktop PrestaFlow.
 
@@ -33,21 +35,23 @@ L'application PrestaFlow est un **desktop app** construit avec [NativePHP](https
 
 ## Accès à la beta privée
 
-<Info title="À l'heure de cet article, l'application est en beta privée sur invitation, disponible pour macOS uniquement." />
+<Info title="À l'heure de cet article, l'application est en beta privée sur invitation, disponible pour macOS uniquement.">
+
+</Info>
 
 Pour demander l'accès, contactez l'équipe PrestaFlow via le formulaire de contact sur [prestaflow.io](https://prestaflow.io). Vous recevrez en retour :
 
-- un lien de téléchargement vers le `.dmg` de la dernière version,
-- un accès à votre espace sur [prestaflow.io](https://prestaflow.io) (utile plus tard pour le sync cloud).
+* un lien de téléchargement vers le `.dmg` de la dernière version,
+* un accès à votre espace sur [prestaflow.io](https://prestaflow.io) (utile plus tard pour le sync cloud).
 
 Installation classique : ouvrir le `.dmg`, glisser l'app dans `/Applications`, premier lancement.
 
 ## Premier lancement — connecter son compte
 
-Au premier démarrage, l'app demande de se connecter avec les identifiants prestaflow.io. Deux méthodes disponibles :
+Au premier démarrage, l'app demande de se connecter avec les identifiants prestaflow\.io. Deux méthodes disponibles :
 
-- **Sign-in GitHub** — flux OAuth classique, redirection navigateur.
-- **Email + mot de passe** — l'espace créé lors de la demande d'accès.
+* **Sign-in GitHub** — flux OAuth classique, redirection navigateur.
+* **Email + mot de passe** — l'espace créé lors de la demande d'accès.
 
 Une fois authentifié, un fichier `.deviceToken` est créé dans le dossier user-data de NativePHP (`~/Library/Application Support/PrestaFlow/` sur Mac). C'est ce jeton qui sera utilisé pour toutes les interactions futures avec la plateforme.
 
@@ -61,9 +65,9 @@ Depuis l'écran principal, **Add project** ouvre un sélecteur de dossier. Point
 
 L'app scanne l'arborescence, détecte :
 
-- les **suites** dans `tests/prestaflow/Suites/` (dans notre cas : `Checkout`, `DisplayHome`, `UpdateTitle`),
-- les **Pages custom** dans `tests/prestaflow/Pages/` (notre `Modules\Psflowdemo\Home`),
-- les **paramètres** du `.env` (URLs BO/FO, credentials, locale).
+* les **suites** dans `tests/prestaflow/Suites/` (dans notre cas : `Checkout`, `DisplayHome`, `UpdateTitle`),
+* les **Pages custom** dans `tests/prestaflow/Pages/` (notre `Modules\Psflowdemo\Home`),
+* les **paramètres** du `.env` (URLs BO/FO, credentials, locale).
 
 Le projet apparaît dans la sidebar. La vue projet liste vos suites, chacune avec son statut du dernier run (jamais joué / passé / échoué).
 
@@ -77,9 +81,9 @@ Sous le capot, l'app dispatche un job Laravel (`ExecuteSuite`) qui instancie la 
 
 Concrètement, ça veut dire :
 
-- l'app pilote Chrome (via [chrome-php/chrome](https://github.com/chrome-php/chrome), la même dépendance que la CLI),
-- les étapes s'exécutent une à une,
-- l'UI affiche la progression au fil de l'eau : étape en cours, étapes passées avec leur durée, échec éventuel.
+* l'app pilote Chrome (via [chrome-php/chrome](https://github.com/chrome-php/chrome), la même dépendance que la CLI),
+* les étapes s'exécutent une à une,
+* l'UI affiche la progression au fil de l'eau : étape en cours, étapes passées avec leur durée, échec éventuel.
 
 <img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-run-progress.png" alt="Exécution en cours d'une suite avec progression étape par étape" />
 
@@ -89,18 +93,20 @@ En fin de run, la vue résultat s'affiche automatiquement.
 
 La vue résultat est le point central de l'app. Elle affiche, pour un run donné :
 
-- **La liste des étapes** avec leur statut (vert / rouge / gris pour skipped ou todo) et leur durée individuelle.
-- **La capture prise à chaque étape**, cliquable pour l'agrandir. Quand une étape échoue, c'est la capture juste avant l'assertion qui s'affiche — souvent suffisante pour comprendre.
-- **Le stack trace** en cas d'exception, avec pointeur sur le fichier de la Page ou du Scenario.
-- **Les stats du run** : passes / failures / skips / durée totale.
+* **La liste des étapes** avec leur statut (vert / rouge / gris pour skipped ou todo) et leur durée individuelle.
+* **La capture prise à chaque étape**, cliquable pour l'agrandir. Quand une étape échoue, c'est la capture juste avant l'assertion qui s'affiche — souvent suffisante pour comprendre.
+* **Le stack trace** en cas d'exception, avec pointeur sur le fichier de la Page ou du Scenario.
+* **Les stats du run** : passes / failures / skips / durée totale.
 
 <img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-result-detail.png" alt="Vue détaillée d'un run avec captures et statuts" />
 
 L'app conserve un **historique local** de tous les runs joués depuis qu'elle est installée. On peut y revenir à tout moment via la sidebar : rouvrir un run d'hier, regarder sa capture, puis rebasculer sur le run d'aujourd'hui pour voir ce qui a changé quand quelque chose se met à casser.
 
-<Info title="Boucle courte typique : on écrit un it, on Run depuis l'app, on voit la capture, on ajuste le sélecteur dans la Page, on Run à nouveau. Pas de terminal, pas de recompilation, pas de perte de contexte." />
+<Info title="Boucle courte typique : on écrit un it, on Run depuis l'app, on voit la capture, on ajuste le sélecteur dans la Page, on Run à nouveau. Pas de terminal, pas de recompilation, pas de perte de contexte.">
 
-## Sync cloud — lier le projet à prestaflow.io
+</Info>
+
+## Sync cloud — lier le projet à prestaflow\.io
 
 Tant qu'on reste local, l'app est autonome. Mais si vous utilisez déjà la plateforme (parce que vous avez suivi [l'article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) et branché l'Action GitHub), il devient intéressant de faire remonter vos runs locaux au même endroit — pour avoir tout l'historique (local + CI) sur le même dashboard.
 
@@ -112,7 +118,7 @@ Ouvrez **Settings → Cloud** et activez **Enable cloud sync**. C'est un interru
 
 ### Lier le projet local au projet cloud
 
-Depuis la page **Settings** du projet `psflowdemo` (sidebar → projet → Settings), cliquez sur **Link to cloud project** dans la carte **Cloud link**. Une modale affiche la liste de vos projets prestaflow.io — c'est la même liste que celle utilisée pour l'Action GitHub, avec les mêmes Product Keys `pk_...`.
+Depuis la page **Settings** du projet `psflowdemo` (sidebar → projet → Settings), cliquez sur **Link to cloud project** dans la carte **Cloud link**. Une modale affiche la liste de vos projets prestaflow\.io — c'est la même liste que celle utilisée pour l'Action GitHub, avec les mêmes Product Keys `pk_...`.
 
 Sélectionnez le projet correspondant. La Product Key est stockée localement, dans la config du projet.
 
@@ -122,7 +128,7 @@ Sélectionnez le projet correspondant. La Product Key est stockée localement, d
 
 Une fois le projet lié, chaque vue de run expose un bouton **Sync now**.
 
-Un clic pousse le run (résultats, captures, régressions visuelles s'il y en a) vers l'API `api.prestaflow.io`. Le bouton se transforme en **✓ Synced — Open on prestaflow.io** en cas de succès, en **✗ Failed — Retry** avec l'erreur en tooltip sinon.
+Un clic pousse le run (résultats, captures, régressions visuelles s'il y en a) vers l'API `api.prestaflow.io`. Le bouton se transforme en **✓ Synced — Open on prestaflow\.io** en cas de succès, en **✗ Failed — Retry** avec l'erreur en tooltip sinon.
 
 <img src="/posts/2026-07-31-piloter-ses-tests-depuis-l-application-prestaflow/screen-sync.png" alt="Bouton de sync sur la vue résultat, avant et après" />
 
@@ -132,16 +138,20 @@ Côté plateforme, le run apparaît dans l'historique du projet, aligné avec le
 
 Les trois modes d'usage ne se remplacent pas — ils couvrent trois moments différents du cycle de développement d'un module :
 
-- **CLI** : le mode reproductible. Ce qui se joue en CI se joue à l'identique en local. Pas de dépendance graphique, scriptable, versionnable.
-- **CI (Action GitHub)** : le mode automatique. Chaque commit est testé sur chaque version PS supportée, sans intervention.
-- **App** : le mode interactif. Boucle courte pendant l'écriture d'un scénario, historique local, sync vers la plateforme quand on veut consolider.
+* **CLI** : le mode reproductible. Ce qui se joue en CI se joue à l'identique en local. Pas de dépendance graphique, scriptable, versionnable.
+* **CI (Action GitHub)** : le mode automatique. Chaque commit est testé sur chaque version PS supportée, sans intervention.
+* **App** : le mode interactif. Boucle courte pendant l'écriture d'un scénario, historique local, sync vers la plateforme quand on veut consolider.
 
 Un dev qui publie des modules open-source va typiquement utiliser les trois : app pour écrire et itérer, CI pour le filet de sécurité, CLI en dépannage ponctuel ou en environnement contraint.
 
 ## Notes
 
-<Warning title="Le .deviceToken est stocké en clair dans le user-data NativePHP (~/Library/Application Support/PrestaFlow/ sur Mac). Ne synchronisez pas ce dossier via Dropbox, iCloud Drive ou équivalent — vous partageriez votre session avec toutes les machines qui montent le dossier." />
+<Warning title="Le .deviceToken est stocké en clair dans le user-data NativePHP (~/Library/Application Support/PrestaFlow/ sur Mac). Ne synchronisez pas ce dossier via Dropbox, iCloud Drive ou équivalent — vous partageriez votre session avec toutes les machines qui montent le dossier.">
 
-<Info title="Développeurs contributeurs : Settings → Cloud → Advanced permet de surcharger api_url pour taper une instance de dev locale au lieu d'api.prestaflow.io." />
+</Warning>
+
+<Info title="Développeurs contributeurs : Settings → Cloud → Advanced permet de surcharger api_url pour taper une instance de dev locale au lieu d'api.prestaflow.io.">
+
+</Info>
 
 Vous avez maintenant les trois pièces : lib, CI, app. La série continue par des annexes plus courtes centrées sur des cas d'usage précis — factoriser ses Pages entre plusieurs suites, tester un module tiers dont on n'est pas l'auteur, exploiter les régressions visuelles, gérer les scénarios multi-versions PrestaShop. À suivre.
