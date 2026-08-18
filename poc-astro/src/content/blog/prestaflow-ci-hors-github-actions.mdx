@@ -1,24 +1,27 @@
 ---
-title: "PrestaFlow en CI hors GitHub Actions : GitLab, Bitbucket, Jenkins"
+title: 'PrestaFlow en CI hors GitHub Actions : GitLab, Bitbucket, Jenkins'
 date: 2026-08-19
 tags:
   - Tests
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-19-prestaflow-ci-hors-github-actions.svg'
-summary: "L'article 2 a couvert GitHub Actions. Le niveau 1 (CLI dans un workflow, sans plateforme) s'adapte aux autres CI en changeant la syntaxe YAML. Trois transpositions : GitLab CI, Bitbucket Pipelines, Jenkins."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-19-prestaflow-ci-hors-github-actions.svg
+summary: >-
+  L'article 2 a couvert GitHub Actions. Le niveau 1 (CLI dans un workflow, sans
+  plateforme) s'adapte aux autres CI en changeant la syntaxe YAML. Trois
+  transpositions : GitLab CI, Bitbucket Pipelines, Jenkins.
+draft: false
 ---
-
 <Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Automatiser ses scénarios PrestaFlow en CI » (article 2), dont le niveau 1 sert de gabarit à cette annexe." />
 
 ## Décor
 
 L'[article 2 de la série](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a couvert deux niveaux de CI :
 
-- **Niveau 1** — la CLI PrestaFlow dans un workflow, sans compte prestaflow.io, avec Docker pour lancer Flashlight à la main.
-- **Niveau 2** — l'Action officielle `PrestaFlow/github-action@v2`, qui gère Flashlight, matrice, commentaire PR et sync plateforme.
+* **Niveau 1** — la CLI PrestaFlow dans un workflow, sans compte prestaflow\.io, avec Docker pour lancer Flashlight à la main.
+* **Niveau 2** — l'Action officielle `PrestaFlow/github-action@v2`, qui gère Flashlight, matrice, commentaire PR et sync plateforme.
 
 Le niveau 2 est **spécifique à GitHub Actions**. Le niveau 1 ne l'est pas — c'est du shell qui pilote Docker et une commande PHP. Il s'adapte tel quel aux autres CI, à condition de traduire la syntaxe YAML.
 
@@ -76,9 +79,9 @@ e2e:
 
 Trois particularités GitLab :
 
-- **`services:`** permet de lancer un conteneur en side-car, accessible par son alias comme hostname (ici `prestashop`). Plus propre que le `docker run -d` manuel de GitHub Actions.
-- **`image:`** de niveau job = le conteneur qui exécute le script. On prend `php:8.2-cli` officiel et on y ajoute Chromium + composer.
-- **`artifacts:`** ne s'attache qu'`on_failure` — même pattern que le `if: failure()` de GitHub. Le rapport HTML et les captures d'erreur restent téléchargeables 7 jours.
+* **`services:`** permet de lancer un conteneur en side-car, accessible par son alias comme hostname (ici `prestashop`). Plus propre que le `docker run -d` manuel de GitHub Actions.
+* **`image:`** de niveau job = le conteneur qui exécute le script. On prend `php:8.2-cli` officiel et on y ajoute Chromium + composer.
+* **`artifacts:`** ne s'attache qu'`on_failure` — même pattern que le `if: failure()` de GitHub. Le rapport HTML et les captures d'erreur restent téléchargeables 7 jours.
 
 <Info title="L'image php:8.2-cli n'a ni Chromium ni GD par défaut. On les installe dans le before_script — sur GitLab.com, ça ajoute ~30-40s au démarrage du job. Alternative : une image PHP custom déjà bâtie avec Chromium (par exemple mcopolo/php-chromium sur Docker Hub), qu'on référence directement et qui économise le apt-get." />
 
@@ -119,8 +122,8 @@ definitions:
 
 Deux particularités Bitbucket :
 
-- La syntaxe `services:` se déclare dans un bloc `definitions:` séparé et se référence dans le `step:` par son nom. Les services partagent le réseau du step, donc on parle à Flashlight via `http://localhost/` — pas via un alias.
-- **Les artefacts sont toujours produits**, il n'existe pas de conditionnel natif `on_failure` — on paie donc un peu plus de stockage. Alternative : `&& exit 0 || (tar cf reports.tgz tests/prestaflow/reports/ && exit 1)` pour un tar conditionnel dans le script.
+* La syntaxe `services:` se déclare dans un bloc `definitions:` séparé et se référence dans le `step:` par son nom. Les services partagent le réseau du step, donc on parle à Flashlight via `http://localhost/` — pas via un alias.
+* **Les artefacts sont toujours produits**, il n'existe pas de conditionnel natif `on_failure` — on paie donc un peu plus de stockage. Alternative : `&& exit 0 || (tar cf reports.tgz tests/prestaflow/reports/ && exit 1)` pour un tar conditionnel dans le script.
 
 <Warning title="Bitbucket Pipelines a une limite mémoire par service à 1024 MB par défaut, insuffisante pour Flashlight sur certaines versions PS. Si le conteneur crashe au boot, augmentez avec size: 2x sur le service (voir la doc Bitbucket) — ça double la RAM disponible et fait sauter la plupart des blocages." />
 
@@ -184,9 +187,9 @@ pipeline {
 
 Trois particularités Jenkins :
 
-- **Docker-in-Docker requis** — l'agent est un conteneur PHP, mais on lance Flashlight via un `docker run` qui doit passer le socket Docker de l'host. C'est du DinD, à configurer côté Jenkins (mount de `/var/run/docker.sock`, sinon Cloud plugin type Kubernetes).
-- **`credentials()`** — Jenkins Credentials Store fournit les secrets sous forme de variables d'environnement quand on les référence via `credentials(...)`. Plus verbeux mais plus explicite que les secrets GitHub/GitLab.
-- **`post { always }`** garantit la stop du conteneur Flashlight même en cas d'échec, évitant les zombies sur le nœud.
+* **Docker-in-Docker requis** — l'agent est un conteneur PHP, mais on lance Flashlight via un `docker run` qui doit passer le socket Docker de l'host. C'est du DinD, à configurer côté Jenkins (mount de `/var/run/docker.sock`, sinon Cloud plugin type Kubernetes).
+* **`credentials()`** — Jenkins Credentials Store fournit les secrets sous forme de variables d'environnement quand on les référence via `credentials(...)`. Plus verbeux mais plus explicite que les secrets GitHub/GitLab.
+* **`post { always }`** garantit la stop du conteneur Flashlight même en cas d'échec, évitant les zombies sur le nœud.
 
 <Info title="La déclaration --network host permet à l'agent PHP et au conteneur Flashlight de partager la stack réseau et de se parler via localhost. C'est la voie la plus simple mais ne fonctionne pas sur macOS/Windows (où --network host a un comportement dégradé). Sur Jenkins hébergé Mac/Windows, préférer une déclaration explicite de réseau Docker partagé." />
 
@@ -194,17 +197,17 @@ Trois particularités Jenkins :
 
 Peu importe le CI, les mêmes règles s'appliquent :
 
-- **Wait explicite après le boot Flashlight** — 30 à 60 secondes. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile.
-- **Env vars `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute.
-- **Artefacts sur échec** — le rapport HTML dans `tests/prestaflow/reports/`, les captures d'erreur dans `prestaflow/screens/errors/`. Les rendre téléchargeables est essentiel pour debug hors du CI.
-- **Exit code non-nul de la CLI** = job rouge. Ne pas court-circuiter avec un `|| true` bien intentionné qui rendrait le CI aveugle.
+* **Wait explicite après le boot Flashlight** — 30 à 60 secondes. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile.
+* **Env vars `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute.
+* **Artefacts sur échec** — le rapport HTML dans `tests/prestaflow/reports/`, les captures d'erreur dans `prestaflow/screens/errors/`. Les rendre téléchargeables est essentiel pour debug hors du CI.
+* **Exit code non-nul de la CLI** = job rouge. Ne pas court-circuiter avec un `|| true` bien intentionné qui rendrait le CI aveugle.
 
 ## Ce qui change quand on passe au niveau 2
 
 L'Action officielle du niveau 2 n'existe que pour GitHub. Sur les autres CI, deux options :
 
-- **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
-- **Faire soi-même le POST vers l'API prestaflow.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un step qui prend le `results.json` produit par PrestaFlow et le pousse via `curl`. C'est du travail (auth, retries, formatage), mais faisable — le badge `api` est prévu pour ça.
+* **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
+* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un step qui prend le `results.json` produit par PrestaFlow et le pousse via `curl`. C'est du travail (auth, retries, formatage), mais faisable — le badge `api` est prévu pour ça.
 
 Ce second cas justifierait à lui seul un article dédié. Pour l'instant, on note l'option et on renvoie à la doc API.
 
