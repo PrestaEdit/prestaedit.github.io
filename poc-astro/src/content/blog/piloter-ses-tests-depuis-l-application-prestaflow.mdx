@@ -29,22 +29,25 @@ Il reste un troisième mode d'usage, plus interactif : **piloter ses scénarios 
 
 Ce n'est pas un remplaçant de la CLI ni du CI — c'est un complément, pensé pour les moments où on écrit un scénario, on l'ajuste, on relance, on regarde une capture, on ajuste encore. Là où repasser par le terminal casse le flux.
 
+<Info title="Preview — l'application est en préparation">
+L'application desktop décrite dans cet article est encore en construction et n'est pas disponible en téléchargement. Ce qui suit décrit **à quoi elle ressemblera** au moment de sa sortie ; les captures d'écran sont des **mockups** issus des designs en cours. Ce qui est en revanche accessible dès aujourd'hui, c'est la **beta privée de la plateforme prestaflow.io** — vous pouvez déjà y brancher vos runs CLI et CI (voir la section suivante).
+</Info>
+
 ## L'app en un paragraphe
 
 L'application PrestaFlow est un **desktop app** construit avec [NativePHP](https://nativephp.com) et Laravel. Elle tourne localement sur votre machine, lit vos projets PrestaFlow (le module et son dossier `tests/prestaflow/`), exécute les suites via un **runner interne** (elle instancie les classes `TestsSuite` directement en PHP, pas de shell-out vers la CLI) et affiche les résultats dans une UI dédiée. Un **sync cloud optionnel** pousse les runs vers [prestaflow.io](https://prestaflow.io) pour l'historique et les tableaux de bord.
 
-## Accès à la beta privée
+## Beta privée — plateforme prestaflow.io
 
-<Info title="À l'heure de cet article, l'application est en beta privée sur invitation, disponible pour macOS uniquement.">
-
-</Info>
+En attendant l'app, la partie **plateforme** (API + dashboards sur `prestaflow.io`) est déjà en **beta privée sur invitation**. C'est elle qui reçoit les runs remontés par la GitHub Action (voir [l'article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)) et, plus tard, par l'app desktop.
 
 Pour demander l'accès, contactez l'équipe PrestaFlow via le formulaire de contact sur [prestaflow.io](https://prestaflow.io). Vous recevrez en retour :
 
-* un lien de téléchargement vers le `.dmg` de la dernière version,
-* un accès à votre espace sur [prestaflow.io](https://prestaflow.io) (utile plus tard pour le sync cloud).
+* un accès à votre espace sur [prestaflow.io](https://prestaflow.io),
+* la **Product Key** `pk_...` à passer à l'Action GitHub pour envoyer vos runs CI vers vos dashboards,
+* plus tard, un lien de téléchargement de l'app desktop dès qu'elle sera prête pour la beta.
 
-Installation classique : ouvrir le `.dmg`, glisser l'app dans `/Applications`, premier lancement.
+La suite de l'article décrit le flux **end-to-end** tel qu'il se présentera avec l'app — utile pour se projeter et comprendre où viendront se brancher les pièces qui manquent encore.
 
 ## Premier lancement — connecter son compte
 
