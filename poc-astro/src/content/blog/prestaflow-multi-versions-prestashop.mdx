@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : un scénario qui tient de PrestaShop 1.7 à 9"
+title: 'PrestaFlow : un scénario qui tient de PrestaShop 1.7 à 9'
 date: 2026-08-21
 tags:
   - Outils
@@ -7,19 +7,24 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-21-prestaflow-multi-versions-prestashop.svg'
-summary: "Structurer ses Pages custom pour survivre à plusieurs versions majeures de PrestaShop, exécuter la même suite contre chacune, gérer les pièges classiques d'un passage 1.7 à 9."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-21-prestaflow-multi-versions-prestashop.svg
+summary: >-
+  Structurer ses Pages custom pour survivre à plusieurs versions majeures de
+  PrestaShop, exécuter la même suite contre chacune, gérer les pièges classiques
+  d'un passage 1.7 à 9.
+draft: false
 ---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites ».">
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites »." />
+</Info>
 
 ## Décor
 
 Deux facettes du multi-versions PS ont déjà été effleurées dans la série :
 
-- l'[annexe *Factoriser ses Pages*](/blog/prestaflow-factoriser-ses-pages/) a introduit la mécanique `Pages/v7/v8/v9/` en cinq lignes ;
-- l'[article 2 sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a montré la matrice `strategy.matrix.ps-version` qui lance la même suite contre plusieurs images Flashlight.
+* l'[annexe *Factoriser ses Pages*](/blog/prestaflow-factoriser-ses-pages/) a introduit la mécanique `Pages/v7/v8/v9/` en cinq lignes ;
+* l'[article 2 sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a montré la matrice `strategy.matrix.ps-version` qui lance la même suite contre plusieurs images Flashlight.
 
 Cette annexe va au bout : comment **structurer concrètement** ses Pages pour qu'un même scénario passe sur PS 1.7, 8 et 9 sans dupliquer sa logique métier, et comment vérifier ça en local *avant* de pousser sur la CI.
 
@@ -27,11 +32,11 @@ Cette annexe va au bout : comment **structurer concrètement** ses Pages pour qu
 
 Avant d'écrire du code, un inventaire rapide de ce qui varie et fait tomber un scénario d'un passage à l'autre :
 
-- **Layout BO refactoré**. Les pages BO ont migré progressivement de Smarty vers Twig au fil des versions majeures. Le même écran a des sélecteurs différents avant/après.
-- **Templates front**. Le thème Classic évolue entre versions majeures — c'est particulièrement visible sur le tunnel de commande entre 1.7 et 8.
-- **URLs friendly**. Les slugs par défaut d'un même contenu peuvent changer (ordre, majuscules, présence d'un préfixe langue).
-- **Features supprimées**. Certaines pages BO disparaissent (traduction legacy en 9, par exemple) — un scénario qui les visite doit être marqué skip ou repensé sur la version cible.
-- **CSRF et sessions**. Le nom du token d'authentification BO évolue ; `login()` gère mais un code custom qui pilote un formulaire à la main peut se coincer.
+* **Layout BO refactoré**. Les pages BO ont migré progressivement de Smarty vers Twig au fil des versions majeures. Le même écran a des sélecteurs différents avant/après.
+* **Templates front**. Le thème Classic évolue entre versions majeures — c'est particulièrement visible sur le tunnel de commande entre 1.7 et 8.
+* **URLs friendly**. Les slugs par défaut d'un même contenu peuvent changer (ordre, majuscules, présence d'un préfixe langue).
+* **Features supprimées**. Certaines pages BO disparaissent (traduction legacy en 9, par exemple) — un scénario qui les visite doit être marqué skip ou repensé sur la version cible.
+* **CSRF et sessions**. Le nom du token d'authentification BO évolue ; `login()` gère mais un code custom qui pilote un formulaire à la main peut se coincer.
 
 Dit autrement : **ce qui bouge, ce sont les sélecteurs et parfois le flow — pas l'intention métier**. C'est précisément ce que la séparation Page / Suite de l'article 1 est faite pour absorber.
 
@@ -39,7 +44,9 @@ Dit autrement : **ce qui bouge, ce sont les sélecteurs et parfois le flow — p
 
 Repartons de la Page `Modules\Psflowdemo\Configuration` de l'annexe 1 (une seule version, `v8`). On veut qu'elle tourne sur v7, v8, v9.
 
-<Warning title="Il n'y a pas de fallback automatique. La lib construit le nom de classe strictement à partir de la version courante : Tests\Pages\v9\Modules\Psflowdemo\Configuration\Page. Si ce fichier n'existe pas, l'import lève une exception class-not-found — pas de « je prends v8 à la place ». Chaque version supportée doit avoir sa classe, même vide." />
+<Warning title="Il n'y a pas de fallback automatique. La lib construit le nom de classe strictement à partir de la version courante : Tests\Pages\v9\Modules\Psflowdemo\Configuration\Page. Si ce fichier n'existe pas, l'import lève une exception class-not-found — pas de « je prends v8 à la place ». Chaque version supportée doit avoir sa classe, même vide.">
+
+</Warning>
 
 ### Le parent commun
 
@@ -186,7 +193,9 @@ done
 
 Le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
 
-<Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans attendre les 5-10 minutes de la matrice complète. Vous re-jouez uniquement la version fautive avec PRESTAFLOW_HEADLESS=false pour voir Chrome faire son travail." />
+<Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans attendre les 5-10 minutes de la matrice complète. Vous re-jouez uniquement la version fautive avec PRESTAFLOW_HEADLESS=false pour voir Chrome faire son travail.">
+
+</Info>
 
 ## Cas rare : conditionnelle par version dans une Page
 
@@ -236,10 +245,18 @@ Reco : privilégier l'override, ne recourir à `getMajorVersion()` que quand la 
 
 ## Notes
 
-<Warning title="Sessions Flashlight : chaque restart de l'image remet l'état à zéro. Si vous testez plusieurs versions en série avec le script ci-dessus, aucun résidu ne subsiste. En revanche, si vous re-lancez PrestaFlow plusieurs fois sur la MÊME image sans restart, l'état du run précédent (produit ajouté au panier, session BO ouverte) peut fausser le suivant." />
+<Warning title="Sessions Flashlight : chaque restart de l'image remet l'état à zéro. Si vous testez plusieurs versions en série avec le script ci-dessus, aucun résidu ne subsiste. En revanche, si vous re-lancez PrestaFlow plusieurs fois sur la MÊME image sans restart, l'état du run précédent (produit ajouté au panier, session BO ouverte) peut fausser le suivant.">
 
-<Info title="Assertions sur du texte traduit : contains('inscription') marche en fr mais pas en en. Multi-versions rime souvent avec multi-locale — préférer des assertions structurelles (isNotEmpty, isTheSameAs) quand c'est possible, ou paramétrer le texte attendu selon la locale du run." />
+</Warning>
 
-<Info title="Combiné avec le tag automatique des régressions visuelles (voir l'annexe précédente), un même visualCheckpoint('home-block') produit un baseline distinct par version : visual-baseline/home-block--auto-v8-1280x800-fr.png et visual-baseline/home-block--auto-v9-1280x800-fr.png. Zéro configuration à ajouter." />
+<Info title="Assertions sur du texte traduit : contains('inscription') marche en fr mais pas en en. Multi-versions rime souvent avec multi-locale — préférer des assertions structurelles (isNotEmpty, isTheSameAs) quand c'est possible, ou paramétrer le texte attendu selon la locale du run.">
 
-<Info title="Prochaine annexe : gérer les scénarios sur plusieurs locales — traductions BO, contenus front localisés, assertions robustes à la langue de la boutique." />
+</Info>
+
+<Info title="Combiné avec le tag automatique des régressions visuelles (voir l'annexe précédente), un même visualCheckpoint('home-block') produit un baseline distinct par version : visual-baseline/home-block--auto-v8-1280x800-fr.png et visual-baseline/home-block--auto-v9-1280x800-fr.png. Zéro configuration à ajouter.">
+
+</Info>
+
+<Info title="Prochaine annexe : gérer les scénarios sur plusieurs locales — traductions BO, contenus front localisés, assertions robustes à la langue de la boutique.">
+
+</Info>
