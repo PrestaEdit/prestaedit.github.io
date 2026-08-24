@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : factoriser ses Pages entre plusieurs suites"
+title: 'PrestaFlow : factoriser ses Pages entre plusieurs suites'
 date: 2026-08-24
 tags:
   - Outils
@@ -7,13 +7,16 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-24-prestaflow-factoriser-ses-pages.svg'
-summary: "Aller au-delà de la Page minimale de l'article d'introduction : plusieurs Pages par module, traits partagés, sélecteurs stables et adaptation entre versions PrestaShop."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-24-prestaflow-factoriser-ses-pages.svg
+summary: >-
+  Aller au-delà de la Page minimale de l'article d'introduction : plusieurs
+  Pages par module, traits partagés, sélecteurs stables et adaptation entre
+  versions PrestaShop.
+draft: false
 ---
-
 <Info title="Annexe de la série">
-Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». On reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+  Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». On reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
 </Info>
 
 ## Rappel
@@ -107,7 +110,9 @@ $this
 
 Plus une URL construite à la main, plus un sélecteur brut dans un `it`. Le scénario redevient lisible en français : *connexion → mise à jour → vérification*.
 
-<Info title="Règle simple : un dossier par écran fonctionnel, une classe Page par dossier. Un module qui expose une page de config, un onglet dans une commande, et un bloc front → trois Pages." />
+<Info title="Règle simple : un dossier par écran fonctionnel, une classe Page par dossier. Un module qui expose une page de config, un onglet dans une commande, et un bloc front → trois Pages.">
+
+</Info>
 
 ## Technique 2 : factoriser via un trait
 
@@ -150,15 +155,17 @@ class Page extends BasePage
 
 Le trait vit à un endroit, chaque Page l'importe via `use`, et le jour où la logique d'URL évolue (préfixe de langue, sous-répertoire multiboutique) on ne modifie qu'un fichier.
 
-<Info title="Ce pattern se prête bien aux petites actions transverses (URL, formats de date, waits typés). Il ne remplace pas une classe Page — dès que la logique est liée à un écran précis, elle appartient à cette Page." />
+<Info title="Ce pattern se prête bien aux petites actions transverses (URL, formats de date, waits typés). Il ne remplace pas une classe Page — dès que la logique est liée à un écran précis, elle appartient à cette Page.">
+
+</Info>
 
 ## Technique 3 : sélecteurs stables
 
 Les sélecteurs qui rendent un scénario fragile sont toujours les mêmes :
 
-- **sélecteur trop générique** — un `h1` qui capture accidentellement le titre d'un modal RGPD tiers,
-- **contenu injecté par JavaScript** avec un délai imprévisible,
-- **sélecteur qui dépend du thème** — cassé dès qu'on teste sur un thème custom.
+* **sélecteur trop générique** — un `h1` qui capture accidentellement le titre d'un modal RGPD tiers,
+* **contenu injecté par JavaScript** avec un délai imprévisible,
+* **sélecteur qui dépend du thème** — cassé dès qu'on teste sur un thème custom.
 
 Trois parades, dans l'ordre à essayer :
 
@@ -179,7 +186,9 @@ public function getHeading(): string
 
 **3. Timeout explicite.** `isVisible($selector, 8000)` laisse 8 secondes au sélecteur pour apparaître au lieu du timeout par défaut plus court. À utiliser sur les éléments dont on sait qu'ils prennent du temps, pas sur tous — sinon un scénario cassé prend une éternité à échouer.
 
-<Warning title="Un test qui échoue en 30 secondes vaut mieux qu'un test qui met 5 minutes à cause d'un timeout monté partout à 30 secondes « au cas où »." />
+<Warning title="Un test qui échoue en 30 secondes vaut mieux qu'un test qui met 5 minutes à cause d'un timeout monté partout à 30 secondes « au cas où ».">
+
+</Warning>
 
 ## Technique 4 : une Page par version PrestaShop
 
@@ -195,17 +204,21 @@ tests/prestaflow/Pages/
 
 Les deux classes ont **la même API publique** (`openConfiguration`, `fillTitle`, `save`) — ce qui change, ce sont les sélecteurs internes. Vos scénarios n'ont pas à savoir sur quelle version ils tournent : la lib route l'import selon la valeur de `PRESTAFLOW_PS_VERSION`.
 
-<Info title="Vous pouvez limiter la duplication en gardant tout le comportement commun dans une classe parente sous Pages/Common/... dont les sous-classes v7/, v8/, v9/ n'overrident que les sélecteurs divergents. C'est le pattern qu'utilise la lib PrestaFlow en interne — rien n'empêche de l'appliquer dans votre propre namespace Tests\." />
+<Info title="Vous pouvez limiter la duplication en gardant tout le comportement commun dans une classe parente sous Pages/Common/... dont les sous-classes v7/, v8/, v9/ n'overrident que les sélecteurs divergents. C'est le pattern qu'utilise la lib PrestaFlow en interne — rien n'empêche de l'appliquer dans votre propre namespace Tests\.">
+
+</Info>
 
 ## En résumé
 
 Quatre leviers, appliqués dans l'ordre où le module les demande :
 
-- **Un dossier par écran, une Page par dossier** dès qu'un deuxième écran devient testable.
-- **Un trait sous `Tests\Support\`** dès qu'une action est réutilisée entre deux Pages.
-- **Sélecteur spécifique, fallback JS, timeout ciblé** dès qu'une étape devient flaky.
-- **Sous-dossier par version PS** dès qu'on cible plus d'une version majeure.
+* **Un dossier par écran, une Page par dossier** dès qu'un deuxième écran devient testable.
+* **Un trait sous `Tests\Support\`** dès qu'une action est réutilisée entre deux Pages.
+* **Sélecteur spécifique, fallback JS, timeout ciblé** dès qu'une étape devient flaky.
+* **Sous-dossier par version PS** dès qu'on cible plus d'une version majeure.
 
 Vos scénarios restent alors des phrases en français qui décrivent le comportement métier, sans un sélecteur en vue.
 
-<Info title="Prochaine annexe : tester un module dont on n'est pas l'auteur — appliquer PrestaFlow à un module tiers, sans pouvoir modifier son code." />
+<Info title="Prochaine annexe : tester un module dont on n'est pas l'auteur — appliquer PrestaFlow à un module tiers, sans pouvoir modifier son code.">
+
+</Info>
