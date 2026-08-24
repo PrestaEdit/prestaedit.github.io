@@ -1,5 +1,5 @@
 ---
-title: 'PrestaFlow en CI hors GitHub Actions : GitLab, Bitbucket, Jenkins'
+title: 'PrestaFlow en CI hors GitHub Actions : GitLab, Bitbucket, CircleCI, Jenkins'
 date: 2026-08-19
 tags:
   - Tests
@@ -9,23 +9,32 @@ series: prestaflow
 featuredimg: >-
   https://prestaedit.github.io/head/2026-08-19-prestaflow-ci-hors-github-actions.svg
 summary: >-
-  L'article 2 a couvert GitHub Actions. Le niveau 1 (CLI dans un workflow, sans
-  plateforme) s'adapte aux autres CI en changeant la syntaxe YAML. Trois
-  transpositions : GitLab CI, Bitbucket Pipelines, Jenkins.
+  L'article 2 a couvert GitHub Actions. Le niveau 2 n'est plus GitHub-only :
+  GitLab a un Component, Bitbucket un Pipe, CircleCI un Orb. Cette annexe
+  donne les gabarits niveau 1 et niveau 2 pour chaque plateforme, plus Jenkins
+  qui reste au niveau 1.
 draft: false
 ---
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Automatiser ses scénarios PrestaFlow en CI » (article 2), dont le niveau 1 sert de gabarit à cette annexe." />
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Automatiser ses scénarios PrestaFlow en CI » (article 2), qui pose les niveaux 1 et 2 et sert de gabarit à cette annexe." />
 
 ## Décor
 
-L'[article 2 de la série](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a couvert deux niveaux de CI :
+L'[article 2 de la série](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a posé deux niveaux de CI :
 
 * **Niveau 1** — la CLI PrestaFlow dans un workflow, sans compte prestaflow\.io, avec Docker pour lancer Flashlight à la main.
-* **Niveau 2** — l'Action officielle `PrestaFlow/github-action@v2`, qui gère Flashlight, matrice, commentaire PR et sync plateforme.
+* **Niveau 2** — l'intégration officielle qui gère Flashlight, la matrice, le commentaire PR/MR, et la synchro plateforme (report URL, historique, régressions visuelles).
 
-Le niveau 2 est **spécifique à GitHub Actions**. Le niveau 1 ne l'est pas — c'est du shell qui pilote Docker et une commande PHP. Il s'adapte tel quel aux autres CI, à condition de traduire la syntaxe YAML.
+Au moment où l'article 2 est paru, le niveau 2 n'existait que pour GitHub Actions. Ce n'est plus le cas : trois nouvelles intégrations officielles sont disponibles, chacune avec ses propres inputs et sa mécanique.
 
-Cette annexe donne les gabarits pour les trois plateformes qu'on rencontre le plus dans l'écosystème PS après GitHub : **GitLab CI**, **Bitbucket Pipelines**, et **Jenkins**.
+| Plateforme | Niveau 2 officiel | Référence |
+|---|---|---|
+| GitHub | Action | `PrestaFlow/github-action@v2` |
+| GitLab | CI/CD Component | `gitlab.com/prestaflow/ci/prestaflow@v0.1.0` |
+| Bitbucket | Pipe Docker | `prestaflow/pipe-push:1.0.0` |
+| CircleCI | Orb | `prestaflow/prestaflow@1.0.0` |
+| Jenkins | — (niveau 1 uniquement) | pipeline scripté |
+
+Cette annexe donne les gabarits pour ces quatre plateformes, avec pour chacune le niveau 1 (autonome, sans compte) et le niveau 2 (intégration officielle) quand il existe.
 
 ## Ce qui doit tourner, quel que soit le CI
 
@@ -37,9 +46,11 @@ Le workflow niveau 1 fait cinq choses, dans l'ordre :
 4. Démarrer Flashlight en arrière-plan, attendre qu'il réponde en HTTP
 5. Lancer `./vendor/bin/prestaflow run tests/prestaflow` avec les env vars pointant sur `http://localhost/`
 
-Toute la variation d'un CI à l'autre concerne uniquement la syntaxe pour exprimer ces cinq étapes, plus les mécanismes de secrets et d'artifacts. La logique reste identique.
+Toute la variation d'un CI à l'autre au niveau 1 concerne uniquement la syntaxe pour exprimer ces cinq étapes, plus les mécanismes de secrets et d'artifacts. Le niveau 2 remplace ces étapes par un appel à l'intégration officielle, qui les regroupe et ajoute la remontée vers la plateforme.
 
 ## GitLab CI
+
+### Niveau 1 — CLI seule
 
 Créez `.gitlab-ci.yml` à la racine :
 
@@ -85,7 +96,46 @@ Trois particularités GitLab :
 
 <Info title="L'image php:8.2-cli n'a ni Chromium ni GD par défaut. On les installe dans le before_script — sur GitLab.com, ça ajoute ~30-40s au démarrage du job. Alternative : une image PHP custom déjà bâtie avec Chromium (par exemple mcopolo/php-chromium sur Docker Hub), qu'on référence directement et qui économise le apt-get." />
 
+### Niveau 2 — CI/CD Component
+
+Depuis la v0.1.0, PrestaFlow expose un component GitLab standard :
+
+```yaml
+include:
+  - component: gitlab.com/prestaflow/ci/prestaflow@v0.1.0
+    inputs:
+      token: $PRESTAFLOW_TOKEN
+      project_id: pk_01ABCDEF
+      flashlight: "true"
+      ps_version: "9.0.0"
+      suites: "BackOffice,FrontOffice"
+      visual: "true"
+      mr_comment: "true"
+```
+
+Les inputs clés : `token` (variable masquée), `project_id` (Product Key `pk_…`), `flashlight` (bootstrap PS via Docker), `ps_version`, `suites` (filtre), `visual` (baselines + diffs), `mr_comment`, `execute`, `upload_artifacts`.
+
+Deux env vars à configurer côté projet :
+
+* **`PRESTAFLOW_TOKEN`** — variable CI/CD masquée pour l'API.
+* **`GITLAB_TOKEN`** — token GitLab avec scope `api` pour poster les notes MR. Le `CI_JOB_TOKEN` par défaut ne peut pas commenter les MR, c'est le piège classique.
+
+Le component publie un artifact `prestaflow.env` (format dotenv) exposant `PRESTAFLOW_REPORT_ID`, `PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_PASSED/FAILED/SKIPPED/TOTAL`, `PRESTAFLOW_DURATION_MS`, `PRESTAFLOW_STATUS`. Un job downstream y accède via `needs: [{job: prestaflow, artifacts: true}]`.
+
+Matrice multi-versions PS avec `parallel:matrix:` :
+
+```yaml
+test-ps:
+  parallel:
+    matrix:
+      - PS_VERSION: ["8.1.7", "9.0.0"]
+  variables:
+    ps_version: $PS_VERSION
+```
+
 ## Bitbucket Pipelines
+
+### Niveau 1 — CLI seule
 
 Créez `bitbucket-pipelines.yml` :
 
@@ -127,7 +177,78 @@ Deux particularités Bitbucket :
 
 <Warning title="Bitbucket Pipelines a une limite mémoire par service à 1024 MB par défaut, insuffisante pour Flashlight sur certaines versions PS. Si le conteneur crashe au boot, augmentez avec size: 2x sur le service (voir la doc Bitbucket) — ça double la RAM disponible et fait sauter la plupart des blocages." />
 
+### Niveau 2 — Pipe officiel
+
+Depuis la 1.0.0, PrestaFlow publie un pipe Docker sur Docker Hub :
+
+```yaml
+image: php:8.3-cli
+
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: PrestaFlow
+          services: [docker]
+          artifacts: [prestaflow.env]
+          script:
+            - pipe: docker://prestaflow/pipe-push:1.0.0
+              variables:
+                TOKEN: $PRESTAFLOW_TOKEN
+                PROJECT_ID: pk_01ABC...
+                FLASHLIGHT: 'true'
+                PS_VERSION: '9.0.0'
+                BITBUCKET_ACCESS_TOKEN: $PRESTAFLOW_BITBUCKET_TOKEN
+
+      - step:
+          name: Notify
+          script:
+            - . prestaflow.env
+            - echo "Report → $PRESTAFLOW_REPORT_URL"
+```
+
+Variables principales : `TOKEN`, `PROJECT_ID`, `FLASHLIGHT`, `PS_VERSION`, `SUITES`, `VISUAL` (défaut `true`), `PR_COMMENT` (auto), `EXECUTE`, `FLASHLIGHT_MOUNT` (`auto`/`root`/`modules`/`themes`), `BITBUCKET_ACCESS_TOKEN` pour les commentaires PR.
+
+Deux points à noter :
+
+* **`services: [docker]` est obligatoire** dès que `FLASHLIGHT=true` — le pipe monte le sidecar MariaDB et le conteneur PS via le daemon Docker du runner.
+* **Commentaires PR idempotents** — le pipe insère un marqueur `<!-- prestaflow-run:<project-key> -->` dans la note, ce qui lui permet de mettre à jour un commentaire existant plutôt que d'en ajouter un à chaque run. Rien à faire côté config.
+
+Le `prestaflow.env` produit contient les mêmes variables que le component GitLab (`PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_STATUS`, etc.) et se source dans un step suivant.
+
+## CircleCI
+
+CircleCI a longtemps été le grand absent de cet inventaire. Il a maintenant son orb officiel `prestaflow/prestaflow@1.0.0`, publié en canal stable (le canal `volatile` reste dispo pour les fixes non-taggés).
+
+L'orb expose un `push` all-in-one plus des commandes granulaires (`flashlight`, `run-tests`, `visual-download`, `upload`, `comment-pr`, `set-outputs`, `install-deps`) qu'on compose soi-même si besoin.
+
+`.circleci/config.yml` minimal :
+
+```yaml
+version: 2.1
+orbs:
+  prestaflow: prestaflow/prestaflow@1.0.0
+workflows:
+  test:
+    jobs:
+      - prestaflow/test:
+          project_id: pk_01ABCDEFGHIJKLMNOPQR10
+          flashlight: true
+          ps_version: "9.0.0"
+          context: prestaflow
+```
+
+Trois particularités CircleCI :
+
+* **Exécuteur `machine` obligatoire** dès qu'on active Flashlight — `setup_remote_docker` ne permet pas les bind mounts dont Flashlight a besoin. L'orb bascule automatiquement, mais gardez-le en tête pour vos surcoûts crédits.
+* **`GITHUB_TOKEN` ou `BITBUCKET_ACCESS_TOKEN` à créer à la main** — CircleCI n'injecte pas de token VCS par défaut. Sans ça, pas de commentaire PR (mais le run remonte quand même côté plateforme).
+* **Outputs via `BASH_ENV`** — les variables (`PRESTAFLOW_REPORT_URL`, etc.) sont exportées dans `BASH_ENV` et dans un `prestaflow.env` artifact, plutôt qu'en outputs de step comme sur GitHub.
+
+<Info title="Un niveau 1 CircleCI est trivial à écrire en démarrant Flashlight dans un `machine` executor puis en exécutant les mêmes étapes que sur GitHub. Mais dès qu'on a un compte prestaflow.io, l'orb économise 30 lignes de YAML et ajoute le comment PR et la synchro visuelle." />
+
 ## Jenkins (déclaratif)
+
+Jenkins n'a pas d'intégration officielle — le niveau 2 y passe par un `sh curl` vers l'API prestaflow\.io depuis un pipeline scripté (voir la fin de l'article). Le niveau 1 reste donc la voie normale.
 
 Créez `Jenkinsfile` à la racine :
 
@@ -195,26 +316,28 @@ Trois particularités Jenkins :
 
 ## Ce qui reste identique partout
 
-Peu importe le CI, les mêmes règles s'appliquent :
+Peu importe le CI et le niveau, les mêmes règles s'appliquent :
 
 * **Wait explicite après le boot Flashlight** — 30 à 60 secondes. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile.
 * **Env vars `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute.
 * **Artefacts sur échec** — le rapport HTML dans `tests/prestaflow/reports/`, les captures d'erreur dans `prestaflow/screens/errors/`. Les rendre téléchargeables est essentiel pour debug hors du CI.
 * **Exit code non-nul de la CLI** = job rouge. Ne pas court-circuiter avec un `|| true` bien intentionné qui rendrait le CI aveugle.
 
-## Ce qui change quand on passe au niveau 2
+Au niveau 2, les quatre intégrations officielles (Action, Component, Pipe, Orb) exposent les **mêmes clés de sortie** — `PRESTAFLOW_REPORT_ID/URL/PASSED/FAILED/SKIPPED/TOTAL/DURATION_MS/STATUS` — via le mécanisme natif de leur plateforme (step outputs, dotenv artifact, `BASH_ENV`). Le contrat côté downstream est stable, ce qui rend les workflows portables d'une plateforme à l'autre.
 
-L'Action officielle du niveau 2 n'existe que pour GitHub. Sur les autres CI, deux options :
+## Le cas Jenkins : niveau 2 fait maison
+
+Sans intégration officielle, deux options si vous êtes sur Jenkins et voulez la synchro plateforme :
 
 * **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
-* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un step qui prend le `results.json` produit par PrestaFlow et le pousse via `curl`. C'est du travail (auth, retries, formatage), mais faisable — le badge `api` est prévu pour ça.
+* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un `sh` qui prend le `results.json` produit par PrestaFlow et le pousse via `curl` avec le `PRESTAFLOW_TOKEN`. Le badge `api` est prévu pour ça — c'est exactement le canal utilisé par les intégrations officielles quand elles remontent leurs résultats.
 
-Ce second cas justifierait à lui seul un article dédié. Pour l'instant, on note l'option et on renvoie à la doc API.
+Ce second cas justifierait à lui seul un article dédié (auth, retries, formatage, artifacts screenshots). Pour l'instant, on note l'option et on renvoie à la doc API.
 
 ## Notes
 
-<Info title="Cache Composer : sur tous les CI cités, prévoir un cache de vendor/ divise le temps de job par deux ou trois sur les runs qui suivent le premier. GitLab (cache: paths), Bitbucket (caches: composer natif), Jenkins (plugin caching ou stash). C'est l'optimisation à faire en priorité." />
+<Info title="Cache Composer : sur tous les CI cités, prévoir un cache de vendor/ divise le temps de job par deux ou trois sur les runs qui suivent le premier. GitLab (cache: paths), Bitbucket (caches: composer natif), CircleCI (save_cache / restore_cache), Jenkins (plugin caching ou stash). C'est l'optimisation à faire en priorité." />
 
-<Info title="Matrice multi-versions PS : disponible en syntaxe native sur GitLab (parallel: matrix:) et Bitbucket (via anchors YAML), moins directe sur Jenkins (nécessite un plugin ou une génération de pipelines paramétrés). Ça mérite d'être ajouté dès qu'on cible plus d'une version — cf l'article 2 qui montre le pattern sur GitHub Actions." />
+<Info title="Matrice multi-versions PS : disponible en syntaxe native sur GitLab (parallel: matrix:), Bitbucket (via anchors YAML) et CircleCI (matrix: sous un job), moins directe sur Jenkins (nécessite un plugin ou une génération de pipelines paramétrés). Ça mérite d'être ajouté dès qu'on cible plus d'une version — cf l'article 2 qui montre le pattern sur GitHub Actions." />
 
 <Warning title="Sur Jenkins auto-hébergé, ne réutilisez pas le même nom de conteneur ps entre jobs concurrents. Ajoutez le BUILD_NUMBER ou un uuid au nom (--name ps-$BUILD_NUMBER) pour éviter les collisions quand deux jobs tournent sur le même nœud." />
