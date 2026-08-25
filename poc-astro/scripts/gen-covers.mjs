@@ -53,7 +53,10 @@ function parseFrontmatter(mdx) {
   if (!m) return null;
   const fm = m[1];
   const title = fm.match(/^title:\s*"?([^"\n]+?)"?\s*$/m)?.[1]?.trim();
-  const featuredimg = fm.match(/^featuredimg:\s*'?([^'\n]+?)'?\s*$/m)?.[1]?.trim();
+  let featuredimg = fm.match(/^featuredimg:\s*'?([^'\n]+?)'?\s*$/m)?.[1]?.trim();
+  if (featuredimg && /^[>|]-?$/.test(featuredimg)) {
+    featuredimg = fm.match(/^featuredimg:\s*[>|]-?\s*\n\s+(\S[^\n]*)/m)?.[1]?.trim();
+  }
   const series = fm.match(/^series:\s*(\S+)/m)?.[1]?.trim();
   const tags = [];
   const tagsBlock = fm.match(/^tags:\s*\n((?:\s*-\s*[^\n]+\n)+)/m);
