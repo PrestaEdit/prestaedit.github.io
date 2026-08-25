@@ -1,0 +1,160 @@
+---
+title: "PrestaFlow : tester une preprod derrière Cloudflare (WAF, Bot Fight)"
+date: 2026-09-09
+tags:
+  - Outils
+  - Tests
+  - PrestaFlow
+author: PrestaEdit
+series: prestaflow
+featuredimg: 'https://prestaedit.github.io/head/2026-09-09-prestaflow-preprod-cloudflare.svg'
+summary: "Laisser passer PrestaFlow à travers Cloudflare avec un header authentifié + secret partagé — pas un filtre User-Agent, qui est trivialement falsifiable."
+draft: true
+---
+
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+
+## Décor
+
+Votre préproduction PrestaShop est derrière Cloudflare. WAF actif, Bot Fight Mode activé, éventuellement une règle « challenge » sur tout ce qui ressemble à un bot. C'est la config par défaut de la plupart des installations Cloudflare Pro/Business — et c'est très bien, sauf que vos scénarios PrestaFlow se prennent :
+
+- des **403** (WAF Managed Rules) sur la home,
+- des **Bot Fight Mode challenges** qui affichent une page « Checking your browser » à la place de la boutique,
+- ou pire, des **redirections silencieuses** vers une captcha page qui ne rend rien d'exploitable pour la régression visuelle.
+
+Le scénario tombe sur une erreur qui n'a rien à voir avec l'application testée. Vous cherchez une heure avant de suspecter Cloudflare.
+
+Cette annexe montre comment laisser passer PrestaFlow proprement, et explique pourquoi la solution qui vient d'abord à l'esprit (filtrer sur le User-Agent) est **cassée pour de mauvaises raisons de sécurité**.
+
+## La fausse bonne idée : `http.user_agent eq "PrestaFlow"`
+
+Le premier réflexe, c'est de créer une règle WAF qui bypasse toutes les protections quand le User-Agent vaut `PrestaFlow` — par défaut, c'est ce que la lib envoie.
+
+```
+Expression: (http.user_agent eq "PrestaFlow")
+Action:     Skip → All remaining custom rules, Bot Fight Mode
+```
+
+Ça marche pour vos tests. Ça marche aussi pour **n'importe quel bot** qui pense à mettre `PrestaFlow` dans son User-Agent — trois lignes de curl :
+
+```bash
+curl -A "PrestaFlow" https://preprod.example.com/admin-dev/
+```
+
+Vous venez d'ouvrir un couloir dans votre WAF que le premier crawler curieux peut trouver en itérant sur les UA connus. L'ancienne documentation PrestaFlow suggérait cette approche. **Ne le faites plus.**
+
+## La bonne approche : header custom + secret partagé
+
+Un vrai facteur d'authentification, c'est un secret aléatoire assez long pour ne pas être devinable. On le transporte dans un header HTTP arbitraire, et on demande à Cloudflare de skipper les protections **uniquement quand le header correspond**.
+
+### 1. Générer un secret
+
+```bash
+openssl rand -hex 32
+```
+
+Vous obtenez une chaîne de 64 caractères hexadécimaux, soit 256 bits d'entropie. Impossible à deviner par force brute à l'échelle d'Internet.
+
+Gardez-le sous la main pour les étapes 2 et 3 — c'est le même secret des deux côtés.
+
+### 2. Créer la règle WAF Cloudflare
+
+Direction **Security → WAF → Custom rules → Create rule**.
+
+**Expression** :
+
+```
+(http.request.headers["x-ci-bypass"][0] eq "<votre_secret>")
+```
+
+**Action** : `Skip`, et cochez **à minima** :
+
+- All remaining custom rules
+- Rate limiting rules
+- User Agent Blocking rules
+- Browser Integrity Check
+- Managed Rules
+- Bot Fight Mode
+
+C'est ceinture et bretelles, mais c'est ce qui permet à vos scénarios de traverser sans qu'un des étages de protection ne se réveille au dernier moment sur une requête XHR.
+
+### 3. Envoyer le header depuis vos scénarios
+
+PrestaFlow lit une variable d'environnement `PRESTAFLOW_EXTRA_HEADERS` qui contient du JSON. Chaque paire clé/valeur est posée sur toutes les requêtes de la connexion navigateur — même mécanisme que `PRESTAFLOW_BASIC_*` de l'annexe précédente, mais générique.
+
+```env
+PRESTAFLOW_EXTRA_HEADERS={"X-CI-Bypass":"<votre_secret>"}
+```
+
+Rien à changer côté scénarios. Vos suites tournent comme si la boutique était accessible sans Cloudflare.
+
+<Info title="Le nom du header est libre. X-CI-Bypass, X-Preflight, X-LcdN-CI — choisissez ce que vous voulez. Il faut simplement que la règle WAF (côté Cloudflare) et la variable d'environnement (côté CI) utilisent le même nom." />
+
+## En CI : passer par des secrets
+
+Standard GitHub Actions. Ajoutez `CLOUDFLARE_BYPASS_TOKEN` en secret du dépôt (Settings → Secrets and variables → Actions), puis dans votre workflow :
+
+```yaml
+- name: Run PrestaFlow (preprod protégée par Cloudflare)
+  env:
+    PRESTAFLOW_FO_URL: https://preprod.example.com/
+    PRESTAFLOW_BO_URL: https://preprod.example.com/admin-dev/
+    PRESTAFLOW_EXTRA_HEADERS: '{"X-CI-Bypass":"${{ secrets.CLOUDFLARE_BYPASS_TOKEN }}"}'
+  run: ./vendor/bin/prestaflow run tests/prestaflow
+```
+
+<Warning title="Nommez explicitement votre secret CLOUDFLARE_BYPASS_TOKEN, pas BYPASS ou WAF_SECRET. Un secret au nom explicite ne se retrouve pas par erreur dans un workflow qui n'en a pas besoin, et il apparaît clairement dans les audits." />
+
+<Warning title="Ne pas commiter le secret. Le principe est qu'il ne vit qu'à deux endroits : la règle WAF Cloudflare et le secret GitHub. Il n'apparaît jamais dans le code, jamais dans un .env versionné, jamais dans les logs de workflow (GitHub Actions masque automatiquement les secrets dans les logs, à condition de les passer via ${{ secrets.* }})." />
+
+## Le cache : à traiter séparément
+
+Même avec le WAF passé, un cache Cloudflare agressif peut vous rendre des pages figées — vos assertions passent alors que la boutique est cassée en réalité, ou l'inverse.
+
+Deux options :
+
+- **Désactiver le cache sur les URL testées** — via une Page Rule ou une Cache Rule qui matche votre preprod, action « Bypass cache ». Le plus propre, si la preprod est un domaine dédié.
+- **Purger le cache avant chaque run** — via l'API Cloudflare, une étape avant `prestaflow run`. Utile si vous partagez le domaine entre preprod et prod (ce que vous ne devriez pas faire, mais ça arrive).
+
+Le choix dépend de votre setup — la seule règle universelle : **ne laissez pas Cloudflare cacher des pages que vos tests visent**, sinon vous testez le cache, pas l'application.
+
+## Combiner les couches d'auth
+
+Les annexes précédentes ont introduit deux autres mécanismes qui se cumulent avec le bypass Cloudflare :
+
+- **[Cloudflare header](/blog/prestaflow-preprod-cloudflare/)** (cette annexe) — l'accès au **domaine** protégé par WAF
+- **[HTTP Basic (htpasswd)](/blog/prestaflow-preprod-htpasswd/)** — l'accès au **domaine** protégé par Basic Auth
+- **[Cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/)** — la **session BO** déjà ouverte
+- **`login()` dans un `it`** — le login programmatique classique
+
+Ordre dans lequel PrestaFlow les applique :
+
+1. `before()` pose les headers de connexion (`X-CI-Bypass`, `Authorization: Basic …`) **avant** toute navigation
+2. `before()` pose ensuite les cookies **avant** toute navigation
+3. Vos scénarios peuvent choisir de faire un `login()` ou pas
+
+Les couches cohabitent. Cas pratique : une preprod protégée par Cloudflare **et** par un htpasswd, avec un cookie de session admin déjà valide → vos suites vont directement à l'action métier, sans challenge Cloudflare, sans htpasswd form, sans login form.
+
+## Rotation du secret
+
+Contrairement aux cookies de session PS qui expirent, le secret Cloudflare est stable — vous le rotez à la demande, pas sur un cycle.
+
+Le geste :
+
+1. Générez un nouveau secret (`openssl rand -hex 32`).
+2. Éditez la règle WAF Cloudflare, remplacez la valeur.
+3. Mettez à jour le secret GitHub (`gh secret set CLOUDFLARE_BYPASS_TOKEN --repo owner/repo`).
+
+Une fenêtre de quelques secondes où l'ancien secret ne marche plus et le nouveau n'est pas encore déployé — sans importance en pratique, un run qui tombe en plein milieu retente au prochain déclenchement.
+
+Quand roter ? Sur suspicion de fuite (contributeur qui part, secret aperçu dans une capture, etc.), et par hygiène tous les 6-12 mois.
+
+## Notes
+
+<Info title="Vérifiez que le bypass est bien exclusif. Dans Cloudflare, l'ordre des Custom Rules compte : votre règle Skip doit être en tête, avant toute autre règle susceptible de bloquer. Sinon une Managed Challenge listée avant votre bypass peut déclencher un challenge avant même que Cloudflare n'évalue votre règle." />
+
+<Info title="Best-effort silencieux : si Cloudflare renvoie une page HTML de challenge (Bot Fight, Managed Challenge), PrestaFlow verra une page qui répond en 200 mais dont le contenu n'est pas celui attendu. Au premier setup, lancez avec PRESTAFLOW_HEADLESS=false et vérifiez que Chrome charge bien la vraie boutique, pas une intermédiaire Cloudflare." />
+
+<Warning title="Ce bypass n'est pas de la sécurité applicative, c'est un couloir CI. Il permet à vos runners d'atteindre la boutique sans être filtrés — il ne remplace pas l'auth Basic ou le login BO. Cumulez les couches selon la sensibilité de la preprod." />
+
+<Info title="Prochaine annexe potentielle : purger le cache Cloudflare depuis le workflow avant un run PrestaFlow, pour garantir qu'on teste bien la dernière version déployée." />
