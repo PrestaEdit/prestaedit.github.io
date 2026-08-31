@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : écrire le scénario avant le fix, en faire le garde-fou"
+title: 'PrestaFlow : écrire le scénario avant le fix, en faire le garde-fou'
 date: 2026-08-31
 tags:
   - Outils
@@ -7,12 +7,17 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-31-prestaflow-tdd-scenario-avant-fix.svg'
-summary: "Un bug est remonté → au lieu de plonger dans le code, on écrit d'abord le scénario PrestaFlow qui le reproduit. Il tombe rouge. On fixe. Il passe vert. Le scénario reste, gratuit."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-31-prestaflow-tdd-scenario-avant-fix.svg
+summary: >-
+  Un bug est remonté → au lieu de plonger dans le code, on écrit d'abord le
+  scénario PrestaFlow qui le reproduit. Il tombe rouge. On fixe. Il passe vert.
+  Le scénario reste, gratuit.
+draft: false
 ---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ».">
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+</Info>
 
 ## Le workflow habituel, et son défaut
 
@@ -140,30 +145,38 @@ C'est votre **mémoire institutionnelle** — encodée en tests exécutables, pa
 
 Les scénarios end-to-end sont excellents pour les bugs qui touchent :
 
-- **Le rendu front** — un CSS qui casse un alignement, un JS qui n'exécute pas, un template qui échappe mal
-- **Un enchaînement d'écrans** — un tunnel de commande qui se bloque à une étape précise
-- **Un état persisté** — un panier qui se vide sous certaines conditions, une config qui n'est pas sauvée
+* **Le rendu front** — un CSS qui casse un alignement, un JS qui n'exécute pas, un template qui échappe mal
+* **Un enchaînement d'écrans** — un tunnel de commande qui se bloque à une étape précise
+* **Un état persisté** — un panier qui se vide sous certaines conditions, une config qui n'est pas sauvée
 
 Ce sont **les bugs qui exigent qu'on parcoure l'app comme un utilisateur** pour être reproduits. C'est exactement le terrain de PrestaFlow.
 
 ## Quand un autre outil est plus pertinent
 
-- **Bug de logique pure** (calcul, format de sortie) — PHPUnit reste plus rapide, plus focus, plus lisible.
-- **Bug de performance** — un scénario E2E ne mesure pas la perf, il ne fait que passer/échouer. Autres outils (`ab`, `k6`, profiling PHP).
-- **Bug de sécurité complexe** — un scénario TDD **aide** à documenter et régresser une vulnérabilité connue (comme l'XSS ci-dessus), mais ne remplace pas un audit sécurité complet.
+* **Bug de logique pure** (calcul, format de sortie) — PHPUnit reste plus rapide, plus focus, plus lisible.
+* **Bug de performance** — un scénario E2E ne mesure pas la perf, il ne fait que passer/échouer. Autres outils (`ab`, `k6`, profiling PHP).
+* **Bug de sécurité complexe** — un scénario TDD **aide** à documenter et régresser une vulnérabilité connue (comme l'XSS ci-dessus), mais ne remplace pas un audit sécurité complet.
 
 ## Interaction avec les autres annexes
 
-- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — le bug affecte le rendu ? Ajoutez un `visualCheckpoint` en plus du `Expect::that` fonctionnel. La capture rouge devient une preuve visuelle du bug.
-- **[Multi-versions PS](/blog/prestaflow-multi-versions-prestashop/)** — bug reproductible sur v8 mais pas v9 ? Le scénario tourne sur les deux en matrice CI. Vous voyez immédiatement le périmètre du problème et pouvez fixer conditionnellement.
-- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — quand votre scénario tombe rouge la première fois, la capture d'erreur montre l'état exact. C'est la meilleure documentation de bug qui existe : le lecteur du ticket voit précisément la page problématique.
+* [**Régressions visuelles**](/blog/prestaflow-regressions-visuelles/) — le bug affecte le rendu ? Ajoutez un `visualCheckpoint` en plus du `Expect::that` fonctionnel. La capture rouge devient une preuve visuelle du bug.
+* [**Multi-versions PS**](/blog/prestaflow-multi-versions-prestashop/) — bug reproductible sur v8 mais pas v9 ? Le scénario tourne sur les deux en matrice CI. Vous voyez immédiatement le périmètre du problème et pouvez fixer conditionnellement.
+* [**Debug**](/blog/prestaflow-debug-un-scenario-qui-casse/) — quand votre scénario tombe rouge la première fois, la capture d'erreur montre l'état exact. C'est la meilleure documentation de bug qui existe : le lecteur du ticket voit précisément la page problématique.
 
 ## Notes
 
-<Info title="Nommez explicitement l'intention. Regression\NoXssInBlockTitle est plus lisible que UpdateTitleWithHtml. Un lecteur qui tombe sur le nom de la suite dans un CI rouge comprend immédiatement pourquoi elle existe." />
+<Info title="Nommez explicitement l'intention. Regression\NoXssInBlockTitle est plus lisible que UpdateTitleWithHtml. Un lecteur qui tombe sur le nom de la suite dans un CI rouge comprend immédiatement pourquoi elle existe.">
 
-<Info title="Référencez l'issue GitHub dans un commentaire de tête de suite (issue #142). Six mois plus tard, quand quelqu'un se demande pourquoi ce scénario existe, l'historique complet est à un clic." />
+</Info>
 
-<Warning title="Ne retirez jamais un scénario de régression une fois le bug fixé. C'est là, précisément, qu'il gagne sa valeur — il coûte 3 secondes au run pour vous éviter un jour de dette technique." />
+<Info title="Référencez l'issue GitHub dans un commentaire de tête de suite (issue #142). Six mois plus tard, quand quelqu'un se demande pourquoi ce scénario existe, l'historique complet est à un clic.">
 
-<Info title="Assumez qu'un scénario TDD peut avoir l'air artificiel. Il rejoue exactement le contexte du bug, pas un cas d'usage général. Ce n'est pas un défaut, c'est le but — un cas d'usage général est déjà couvert par les suites métier, un cas de régression cible précisément la faille rebouchée." />
+</Info>
+
+<Warning title="Ne retirez jamais un scénario de régression une fois le bug fixé. C'est là, précisément, qu'il gagne sa valeur — il coûte 3 secondes au run pour vous éviter un jour de dette technique.">
+
+</Warning>
+
+<Info title="Assumez qu'un scénario TDD peut avoir l'air artificiel. Il rejoue exactement le contexte du bug, pas un cas d'usage général. Ce n'est pas un défaut, c'est le but — un cas d'usage général est déjà couvert par les suites métier, un cas de régression cible précisément la faille rebouchée.">
+
+</Info>
