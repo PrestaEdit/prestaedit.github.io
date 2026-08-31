@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : gérer les scénarios sur plusieurs locales"
+title: 'PrestaFlow : gérer les scénarios sur plusieurs locales'
 date: 2026-08-28
 tags:
   - Outils
@@ -7,19 +7,24 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-08-28-prestaflow-scenarios-multi-locales.svg'
-summary: "Écrire des assertions robustes à la langue de la boutique, s'appuyer sur les traductions livrées avec PrestaFlow, ajouter les siennes pour ses Pages custom, tester la même suite contre plusieurs locales."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-08-28-prestaflow-scenarios-multi-locales.svg
+summary: >-
+  Écrire des assertions robustes à la langue de la boutique, s'appuyer sur les
+  traductions livrées avec PrestaFlow, ajouter les siennes pour ses Pages
+  custom, tester la même suite contre plusieurs locales.
+draft: false
 ---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ».">
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+</Info>
 
 ## Le problème
 
 Plusieurs annexes de cette série ont contourné un même sujet en le repoussant à plus tard :
 
-- Dans [*Tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/), l'assertion `contains('subscription')` a été volontairement affaiblie en `isNotEmpty()` — parce que sur une boutique française le message contient *« inscription »*, pas *« subscription »*, et qu'aucune assertion en dur ne peut couvrir les deux.
-- Dans [*Un scénario qui tient de PS 1.7 à 9*](/blog/prestaflow-multi-versions-prestashop/), on a noté que multi-versions rime souvent avec multi-locale et qu'il faudrait *"paramétrer le texte attendu selon la locale du run"*.
+* Dans [*Tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/), l'assertion `contains('subscription')` a été volontairement affaiblie en `isNotEmpty()` — parce que sur une boutique française le message contient *« inscription »*, pas *« subscription »*, et qu'aucune assertion en dur ne peut couvrir les deux.
+* Dans [*Un scénario qui tient de PS 1.7 à 9*](/blog/prestaflow-multi-versions-prestashop/), on a noté que multi-versions rime souvent avec multi-locale et qu'il faudrait *"paramétrer le texte attendu selon la locale du run"*.
 
 Dès qu'une boutique existe en plusieurs langues — ou qu'on la teste en anglais aujourd'hui puis dans sa version localisée demain — l'assertion en dur casse. Il faut un mécanisme.
 
@@ -27,8 +32,8 @@ Il en existe deux dans PrestaFlow, distincts et complémentaires : **URLs friend
 
 ## Deux mécanismes, deux dossiers
 
-- **`src/Urls/{locale}.json`** — mappe les slugs canoniques (anglais) vers leur variante localisée. Un `goToPage('login')` sait aller sur `/login` en anglais et sur `/connexion` en français.
-- **`src/Translations/{locale}.json`** — mappe les messages canoniques (anglais) vers leur traduction. `$this->translate('The employee does not exist...')` retourne la version française si la locale courante est `fr`.
+* **`src/Urls/{locale}.json`** — mappe les slugs canoniques (anglais) vers leur variante localisée. Un `goToPage('login')` sait aller sur `/login` en anglais et sur `/connexion` en français.
+* **`src/Translations/{locale}.json`** — mappe les messages canoniques (anglais) vers leur traduction. `$this->translate('The employee does not exist...')` retourne la version française si la locale courante est `fr`.
 
 Les deux systèmes sont pilotés par la même variable d'environnement : **`PRESTAFLOW_LOCALE`**.
 
@@ -53,7 +58,9 @@ $frontOfficeCartPage->goToPage('cart');
 
 atterrit sur `/cart` avec `PRESTAFLOW_LOCALE=en` et sur `/panier?action=show` avec `PRESTAFLOW_LOCALE=fr`. Rien à faire côté scénario.
 
-<Info title="Si votre module custom expose une URL friendly propre (un contrôleur front avec un slug), vous pouvez fournir votre propre catalogue dans Tests/Urls/{locale}.json à la racine du projet — voir plus bas la note sur ce chemin. La lib le mergera avec le sien." />
+<Info title="Si votre module custom expose une URL friendly propre (un contrôleur front avec un slug), vous pouvez fournir votre propre catalogue dans Tests/Urls/{locale}.json à la racine du projet — voir plus bas la note sur ce chemin. La lib le mergera avec le sien.">
+
+</Info>
 
 ## Traductions : le vrai travail
 
@@ -81,8 +88,8 @@ public function defineMessages(): array
 
 `translate('You have successfully subscribed')` consulte le catalogue de la locale courante et retourne :
 
-- `"You have successfully subscribed"` si `PRESTAFLOW_LOCALE=en` (ou si aucun catalogue ne connaît cette clé — c'est l'identité)
-- `"Vous êtes bien abonné à la newsletter."` si `PRESTAFLOW_LOCALE=fr` **et** que ce message est dans le catalogue français.
+* `"You have successfully subscribed"` si `PRESTAFLOW_LOCALE=en` (ou si aucun catalogue ne connaît cette clé — c'est l'identité)
+* `"Vous êtes bien abonné à la newsletter."` si `PRESTAFLOW_LOCALE=fr` **et** que ce message est dans le catalogue français.
 
 Les messages résolus sont pré-calculés au chargement de la Page et disponibles via `getMessage('successText')`.
 
@@ -136,9 +143,13 @@ Le fichier `en.json` peut rester `{}` (l'identité) ou vous permettre d'override
 
 La lib merge les catalogues dans cet ordre : **default → major → minor → patch → custom**. Vos traductions gagnent toujours sur celles de la lib, ce qui vous permet aussi bien de compléter que de corriger.
 
-<Warning title="Attention à la casse et à l'emplacement. Le code PHP de vos Pages vit dans tests/prestaflow/ (minuscule, autoloadé PSR-4 via le composer.json de l'article 1). Les catalogues JSON de traductions, eux, sont chargés par la lib au filesystem, avec un chemin en dur qui cherche à la RACINE du projet, sous un dossier Tests/ MAJUSCULE (Tests/Translations/{locale}.json, Tests/Urls/{locale}.json). Les deux dossiers coexistent, l'un pour le code, l'autre pour les catalogues." />
+<Warning title="Attention à la casse et à l'emplacement. Le code PHP de vos Pages vit dans tests/prestaflow/ (minuscule, autoloadé PSR-4 via le composer.json de l'article 1). Les catalogues JSON de traductions, eux, sont chargés par la lib au filesystem, avec un chemin en dur qui cherche à la RACINE du projet, sous un dossier Tests/ MAJUSCULE (Tests/Translations/{locale}.json, Tests/Urls/{locale}.json). Les deux dossiers coexistent, l'un pour le code, l'autre pour les catalogues.">
 
-<Info title="En cas de doute sur le chargement effectif, un dump temporaire de $this->translationsCatalog dans une méthode de Page vous montre exactement ce qui a été mergé, dans l'ordre." />
+</Warning>
+
+<Info title="En cas de doute sur le chargement effectif, un dump temporaire de $this->translationsCatalog dans une méthode de Page vous montre exactement ce qui a été mergé, dans l'ordre.">
+
+</Info>
 
 ## Tester la même suite contre plusieurs locales, en local
 
@@ -171,10 +182,18 @@ Quatre combinaisons parallèles.
 
 ## Notes
 
-<Warning title="Traduction manquante : translate() retourne silencieusement la clé anglaise si aucun catalogue ne connaît le message. Une assertion sur getMessage('successText') tombera alors sur un contains() qui compare une chaîne française à une chaîne anglaise — et cassera sans que la cause soit évidente. Loggez ou audit régulièrement votre catalog custom." />
+<Warning title="Traduction manquante : translate() retourne silencieusement la clé anglaise si aucun catalogue ne connaît le message. Une assertion sur getMessage('successText') tombera alors sur un contains() qui compare une chaîne française à une chaîne anglaise — et cassera sans que la cause soit évidente. Loggez ou audit régulièrement votre catalog custom.">
 
-<Info title="Contexte : PrestaShop traduit certains messages différemment selon le contexte (BO vs front, role admin vs client). Un même wording anglais peut avoir plusieurs traductions selon la clé de traduction PS. Quand vous copiez un texte depuis l'interface pour votre catalogue custom, vérifiez qu'il vient bien du contexte que votre scénario visite." />
+</Warning>
 
-<Warning title="Emails et notifications transactionnels : les messages envoyés par email par un module tombent souvent hors du système de traduction PS (hard-codés en anglais dans le PHP, ou dans un template que le module a oublié de rendre traduisible). Testez votre assertion sur un vrai envoi avant de vous fier à getMessage()." />
+<Info title="Contexte : PrestaShop traduit certains messages différemment selon le contexte (BO vs front, role admin vs client). Un même wording anglais peut avoir plusieurs traductions selon la clé de traduction PS. Quand vous copiez un texte depuis l'interface pour votre catalogue custom, vérifiez qu'il vient bien du contexte que votre scénario visite.">
 
-<Info title="Prochaine annexe : debugger un scénario qui casse — lire un rapport, rejouer localement l'étape fautive, isoler le vrai problème du bruit d'environnement." />
+</Info>
+
+<Warning title="Emails et notifications transactionnels : les messages envoyés par email par un module tombent souvent hors du système de traduction PS (hard-codés en anglais dans le PHP, ou dans un template que le module a oublié de rendre traduisible). Testez votre assertion sur un vrai envoi avant de vous fier à getMessage().">
+
+</Warning>
+
+<Info title="Prochaine annexe : debugger un scénario qui casse — lire un rapport, rejouer localement l'étape fautive, isoler le vrai problème du bruit d'environnement.">
+
+</Info>
