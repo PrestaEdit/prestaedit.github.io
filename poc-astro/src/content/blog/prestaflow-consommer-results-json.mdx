@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : consommer le results.json"
+title: 'PrestaFlow : consommer le results.json'
 date: 2026-09-09
 tags:
   - Outils
@@ -7,12 +7,17 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-09-09-prestaflow-consommer-results-json.svg'
-summary: "Le fichier JSON produit par PrestaFlow n'est pas qu'un artefact CI — c'est une source structurée. Quatre usages concrets : notification Slack riche, badge README, dashboard maison, création automatique de ticket."
-draft: true
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-09-09-prestaflow-consommer-results-json.svg
+summary: >-
+  Le fichier JSON produit par PrestaFlow n'est pas qu'un artefact CI — c'est une
+  source structurée. Quatre usages concrets : notification Slack riche, badge
+  README, dashboard maison, création automatique de ticket.
+draft: false
 ---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario » et « Automatiser ses scénarios en CI ».">
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario » et « Automatiser ses scénarios en CI »." />
+</Info>
 
 ## Le fichier oublié de la boucle CI
 
@@ -30,8 +35,8 @@ Une seule commande :
 ./vendor/bin/prestaflow run --output=JSON --file tests/prestaflow
 ```
 
-- **`--output=JSON`** — remplace le rapport CLI par du JSON structuré.
-- **`--file`** — écrit sur le disque plutôt que sur `stdout`. Le fichier atterrit à un chemin standard sous `tests/prestaflow/reports/`.
+* **`--output=JSON`** — remplace le rapport CLI par du JSON structuré.
+* **`--file`** — écrit sur le disque plutôt que sur `stdout`. Le fichier atterrit à un chemin standard sous `tests/prestaflow/reports/`.
 
 C'est très exactement ce que fait le script Composer `prestaflow:json:file` (visible dans le smoke workflow de l'Action officielle) :
 
@@ -82,13 +87,13 @@ Un tableau JSON, une entrée par suite exécutée dans le run. Chaque entrée co
 
 Les champs qui comptent en pratique :
 
-- **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
-- **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/).
-- **`tests[].expect`** — le message d'assertion en cas d'échec, du style *"Expected 'inscription' to be contained in 'You have successfully subscribed'"*. Non-null uniquement si `state:fail`.
-- **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`.
-- **`tests[].time`** — durée en millisecondes.
-- **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)).
-- **`tests[].visual`** — bloc de résultats de régressions visuelles pour ce `it`, si `visualCheckpoint` a été appelé.
+* **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
+* **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/).
+* **`tests[].expect`** — le message d'assertion en cas d'échec, du style *"Expected 'inscription' to be contained in 'You have successfully subscribed'"*. Non-null uniquement si `state:fail`.
+* **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`.
+* **`tests[].time`** — durée en millisecondes.
+* **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)).
+* **`tests[].visual`** — bloc de résultats de régressions visuelles pour ce `it`, si `visualCheckpoint` a été appelé.
 
 Le reste (`code`, `attachments`, `warnings`, `screens`) est du bonus utile en debug mais rarement consommé par un script.
 
@@ -160,11 +165,11 @@ Quand vous maintenez 10 modules ou plus, un tableau agrégé qui montre l'état 
 
 Pattern :
 
-- Chaque projet CI, après son run, `POST` son `results.json` (ou juste le `stats` extrait) vers un endpoint interne
-- Un backend léger (Node/PHP/Python, une table SQL) stocke l'entrée avec `project_id + timestamp + stats`
-- Un frontend HTML minimal affiche la table avec un statut vert / rouge par projet, dernière date de run, taux de succès sur 7 jours
+* Chaque projet CI, après son run, `POST` son `results.json` (ou juste le `stats` extrait) vers un endpoint interne
+* Un backend léger (Node/PHP/Python, une table SQL) stocke l'entrée avec `project_id + timestamp + stats`
+* Un frontend HTML minimal affiche la table avec un statut vert / rouge par projet, dernière date de run, taux de succès sur 7 jours
 
-C'est ce que la plateforme prestaflow.io fait déjà pour vous, mais un dashboard maison a l'avantage de la personnalisation (filtres, groupements, KPI custom, intégration avec vos autres outils internes).
+C'est ce que la plateforme prestaflow\.io fait déjà pour vous, mais un dashboard maison a l'avantage de la personnalisation (filtres, groupements, KPI custom, intégration avec vos autres outils internes).
 
 ## Cas d'usage 4 : auto-création d'issue GitHub
 
@@ -193,10 +198,18 @@ Sur la branche `main`, une régression PrestaFlow devrait automatiquement créer
 
 ## Notes
 
-<Warning title="Le fichier peut grossir vite. Le champ code inclut le source des closures via Reflection, ce qui gonfle results.json quand vous avez beaucoup de suites. Pour la consommation CI, jq 'map(del(.tests[].code))' produit une version allégée qui fait 5 à 10× moins de poids, avec toutes les infos utiles conservées." />
+<Warning title="Le fichier peut grossir vite. Le champ code inclut le source des closures via Reflection, ce qui gonfle results.json quand vous avez beaucoup de suites. Pour la consommation CI, jq 'map(del(.tests[].code))' produit une version allégée qui fait 5 à 10× moins de poids, avec toutes les infos utiles conservées.">
 
-<Info title="Les captures référencées par tests[].screen vivent dans prestaflow/screens/errors/. Elles ne sont PAS embarquées dans le JSON — c'est un chemin relatif. Si vous consommez le JSON hors du contexte du run (upload vers un dashboard distant, par exemple), pensez à uploader aussi le dossier des captures." />
+</Warning>
 
-<Info title="Ne parsez pas le JSON avec des regex bash. L'ordre des clés n'est pas garanti entre versions de la lib, et un champ optionnel qui apparaît/disparaît casse tout. Utilisez jq (dans un workflow CI) ou json_decode (dans un script PHP)." />
+<Info title="Les captures référencées par tests[].screen vivent dans prestaflow/screens/errors/. Elles ne sont PAS embarquées dans le JSON — c'est un chemin relatif. Si vous consommez le JSON hors du contexte du run (upload vers un dashboard distant, par exemple), pensez à uploader aussi le dossier des captures.">
 
-<Info title="Champs qui apparaissent sous condition : dataset et datasets uniquement si le it était dans un ->with(), visual uniquement si visualCheckpoint appelé, expect et screen uniquement si state:fail. Vos scripts doivent gérer l'absence de ces champs sans lever d'exception (// null en jq, ?? [] en PHP)." />
+</Info>
+
+<Info title="Ne parsez pas le JSON avec des regex bash. L'ordre des clés n'est pas garanti entre versions de la lib, et un champ optionnel qui apparaît/disparaît casse tout. Utilisez jq (dans un workflow CI) ou json_decode (dans un script PHP).">
+
+</Info>
+
+<Info title="Champs qui apparaissent sous condition : dataset et datasets uniquement si le it était dans un ->with(), visual uniquement si visualCheckpoint appelé, expect et screen uniquement si state:fail. Vos scripts doivent gérer l'absence de ces champs sans lever d'exception (// null en jq, ?? [] en PHP).">
+
+</Info>
