@@ -1,5 +1,5 @@
 ---
-title: "PrestaFlow : tester un thème PrestaShop"
+title: 'PrestaFlow : tester un thème PrestaShop'
 date: 2026-09-04
 tags:
   - Outils
@@ -7,12 +7,16 @@ tags:
   - PrestaFlow
 author: PrestaEdit
 series: prestaflow
-featuredimg: 'https://prestaedit.github.io/head/2026-09-04-prestaflow-tester-un-theme.svg'
-summary: "L'angle spécifique aux intégrateurs de thèmes : quels gabarits couvrir systématiquement, comment structurer une suite par écran, gérer le responsive et les locales dans les mêmes captures."
-draft: true
+featuredimg: https://prestaedit.github.io/head/2026-09-04-prestaflow-tester-un-theme.svg
+summary: >-
+  L'angle spécifique aux intégrateurs de thèmes : quels gabarits couvrir
+  systématiquement, comment structurer une suite par écran, gérer le responsive
+  et les locales dans les mêmes captures.
+draft: false
 ---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow », l'annexe « Régressions visuelles » et l'annexe « Scénarios multi-locales ».">
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow », l'annexe « Régressions visuelles » et l'annexe « Scénarios multi-locales »." />
+</Info>
 
 ## Décor
 
@@ -24,17 +28,17 @@ Cette annexe traite ce cas — quels écrans systématiquement couvrir, comment 
 
 Un thème PrestaShop doit rendre correctement **au minimum** les templates suivants — la check-list à laquelle tout thème publié doit se plier :
 
-- **Home** — bloc images, carrousel, mise en avant, footer
-- **Catégorie** — grille produits, filtres à facettes, pagination
-- **Produit** — galerie, ajout au panier, variantes, description, avis
-- **Panier** — vide, avec produit, avec code promo
-- **Checkout** — adresse, transporteur, paiement, confirmation
-- **Compte client** — login, register, mes commandes, mes adresses
-- **CMS** — page à propos, mentions légales
-- **Contact** — formulaire, avec/sans fichier joint
-- **Recherche** — résultats, vide
-- **404** — page introuvable
-- **Maintenance** — la page publique quand PS est en mode maintenance
+* **Home** — bloc images, carrousel, mise en avant, footer
+* **Catégorie** — grille produits, filtres à facettes, pagination
+* **Produit** — galerie, ajout au panier, variantes, description, avis
+* **Panier** — vide, avec produit, avec code promo
+* **Checkout** — adresse, transporteur, paiement, confirmation
+* **Compte client** — login, register, mes commandes, mes adresses
+* **CMS** — page à propos, mentions légales
+* **Contact** — formulaire, avec/sans fichier joint
+* **Recherche** — résultats, vide
+* **404** — page introuvable
+* **Maintenance** — la page publique quand PS est en mode maintenance
 
 C'est **la base**. Un thème complet ajoute ses templates spécifiques (page catalogue custom, page marque, wishlist si intégrée). Mais si un des templates ci-dessus casse, le thème n'est pas livrable.
 
@@ -205,10 +209,18 @@ Cette boucle prend 10 à 30 secondes selon l'écran. C'est plus rapide que de re
 
 ## Notes
 
-<Warning title="Un baseline de thème est intrinsèquement fragile. La moindre update PS mineure peut faire bouger un pixel dans le layout global sans que le thème en soit responsable. Ajustez le threshold (voir annexe régressions visuelles, valeur par défaut 0.98) sur les captures full-page, gardez le pixel-parfait pour les checkpoints d'éléments isolés (logo, icônes)." />
+<Warning title="Un baseline de thème est intrinsèquement fragile. La moindre update PS mineure peut faire bouger un pixel dans le layout global sans que le thème en soit responsable. Ajustez le threshold (voir annexe régressions visuelles, valeur par défaut 0.98) sur les captures full-page, gardez le pixel-parfait pour les checkpoints d'éléments isolés (logo, icônes).">
 
-<Info title="Fonts custom : Chrome headless peut prendre le screenshot avant que les web fonts soient totalement chargées, ce qui produit des baselines qui « clignotent » entre les runs. Waitez sur un élément que la font finale a rendu (title, headline) plutôt que sur DOMContentLoaded seul." />
+</Warning>
 
-<Info title="Ordre de grandeur pour un thème publié : comptez 60 à 200 baselines selon la combinatoire (gabarits × breakpoints × locales × états). C'est un investissement de setup, pas un coût récurrent — une fois figés, les baselines vieillissent lentement." />
+<Info title="Fonts custom : Chrome headless peut prendre le screenshot avant que les web fonts soient totalement chargées, ce qui produit des baselines qui « clignotent » entre les runs. Waitez sur un élément que la font finale a rendu (title, headline) plutôt que sur DOMContentLoaded seul.">
 
-<Info title="Prochaines annexes potentielles : migration depuis un autre framework E2E (Playwright, Cypress), déclenchement cloud-native (quand la feature existera côté plateforme)." />
+</Info>
+
+<Info title="Ordre de grandeur pour un thème publié : comptez 60 à 200 baselines selon la combinatoire (gabarits × breakpoints × locales × états). C'est un investissement de setup, pas un coût récurrent — une fois figés, les baselines vieillissent lentement.">
+
+</Info>
+
+<Info title="Prochaines annexes potentielles : migration depuis un autre framework E2E (Playwright, Cypress), déclenchement cloud-native (quand la feature existera côté plateforme).">
+
+</Info>
