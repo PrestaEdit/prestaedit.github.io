@@ -1,0 +1,41 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getPublishedPosts } from '../lib/posts';
+
+// Sans ce fichier, Cloudflare Pages sert index.html en 200 sur toute URL
+// inconnue (fallback SPA). La présence de dist/404.html rétablit un vrai 404.
+const recent = (await getPublishedPosts())
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
+  .slice(0, 5);
+---
+<BaseLayout title="Page introuvable" description="Cette page n'existe pas ou a été déplacée.">
+  <section class="mx-auto max-w-3xl px-4 py-24">
+    <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">Erreur 404</p>
+    <h1 class="mt-2 text-4xl font-bold tracking-tight text-gray-900">Cette page n'existe pas.</h1>
+    <p class="mt-6 text-lg text-gray-600">
+      L'adresse est peut-être erronée, ou l'article a été déplacé. Les anciennes URLs
+      datées sont redirigées automatiquement — si vous arrivez ici depuis un lien
+      externe, il pointe sans doute vers une page supprimée.
+    </p>
+
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a href="/" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+        Retour à l'accueil
+      </a>
+      <a href="/tags" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        Parcourir par tag
+      </a>
+    </div>
+
+    <h2 class="mt-16 text-sm font-semibold uppercase tracking-wider text-gray-500">Derniers articles</h2>
+    <ul class="mt-4 divide-y divide-gray-200 border-t border-gray-200">
+      {recent.map((p) => (
+        <li class="py-3">
+          <a href={`/blog/${p.id}`} class="font-medium text-gray-900 hover:text-blue-600">
+            {p.data.title}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+</BaseLayout>
