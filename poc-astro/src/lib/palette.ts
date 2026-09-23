@@ -42,6 +42,19 @@ export function chipClass(tag: string): string {
  * Chooses the dominant family for a set of tags.
  * Priority order matches the visual identity: outillage > plateforme > format > meta > default.
  */
+/** Accents par famille, pour les surfaces plus grandes que les chips (cartes, bandeaux). */
+const ACCENTS: Record<Family, { dot: string; bar: string; text: string; hover: string }> = {
+  outillage: { dot: 'bg-emerald-500', bar: 'bg-emerald-500', text: 'text-emerald-700', hover: 'hover:border-emerald-500/50' },
+  plateforme: { dot: 'bg-orange-500', bar: 'bg-orange-500', text: 'text-orange-700', hover: 'hover:border-orange-500/50' },
+  meta: { dot: 'bg-slate-500', bar: 'bg-slate-500', text: 'text-slate-700', hover: 'hover:border-slate-500/50' },
+  format: { dot: 'bg-violet-500', bar: 'bg-violet-500', text: 'text-violet-700', hover: 'hover:border-violet-500/50' },
+  default: { dot: 'bg-blue-500', bar: 'bg-blue-500', text: 'text-blue-700', hover: 'hover:border-blue-500/50' },
+};
+
+export function accentFor(tag: string) {
+  return ACCENTS[familyFor(tag)];
+}
+
 export function primaryFamily(tags: string[]): Family {
   const priority: Family[] = ['outillage', 'plateforme', 'format', 'meta'];
   const seen = new Set(tags.map((t) => familyFor(t)));
