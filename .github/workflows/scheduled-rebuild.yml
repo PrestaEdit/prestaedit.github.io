@@ -1,0 +1,31 @@
+name: Rebuild programmé
+
+# Le site est statique : `getPublishedPosts()` compare la date de l'article à
+# l'instant du build. Sans rebuild régulier, les articles datés dans le futur
+# ne sortent jamais. Ce cron redéclenche un déploiement Cloudflare Pages.
+
+on:
+  schedule:
+    # 04:00 UTC = 06:00 Paris (CEST) / 05:00 (CET)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  trigger-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher le deploy hook Cloudflare Pages
+        env:
+          DEPLOY_HOOK: ${{ secrets.CF_PAGES_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::error::Secret CF_PAGES_DEPLOY_HOOK manquant."
+            exit 1
+          fi
+          status=$(curl -sS -X POST -o response.txt -w '%{http_code}' "$DEPLOY_HOOK")
+          echo "HTTP $status"
+          cat response.txt
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Le deploy hook a répondu $status."
+            exit 1
+          fi
