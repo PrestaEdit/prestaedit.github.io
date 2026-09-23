@@ -6,6 +6,7 @@ import { chipClass, placeholderFor } from '../lib/palette';
 import { getCollection } from 'astro:content';
 import { getPublishedPosts } from '../lib/posts';
 import type { GetStaticPathsOptions } from 'astro';
+import { seriesLabel } from '../lib/series';
 
 export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
   const PAGE_SIZE = 12;
@@ -57,7 +58,7 @@ const cards = isFirstPage ? page.data.slice(1) : page.data;
               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/>
               </svg>
-              Série {featured.data.series.charAt(0).toUpperCase() + featured.data.series.slice(1)}
+              Série {seriesLabel(featured.data.series)}
               {featured.seriesIndex && featured.seriesTotal && <span class="opacity-80"> · {featured.seriesIndex}/{featured.seriesTotal}</span>}
             </span>
           )}

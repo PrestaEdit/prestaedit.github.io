@@ -9,6 +9,7 @@ import Tip from '../../components/Tip.astro';
 import Danger from '../../components/Danger.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
 import { chipClass, placeholderFor } from '../../lib/palette';
+import { seriesLabel as seriesLabelFor } from '../../lib/series';
 
 const mdxComponents = { Info, Warning, Note, Tip, Danger };
 
@@ -35,7 +36,7 @@ const seriesIndex = post.data.series
   : 0;
 const seriesTotal = seriesPosts.length;
 const seriesLabel = post.data.series
-  ? post.data.series.charAt(0).toUpperCase() + post.data.series.slice(1)
+  ? seriesLabelFor(post.data.series)
   : '';
 
 const related = all

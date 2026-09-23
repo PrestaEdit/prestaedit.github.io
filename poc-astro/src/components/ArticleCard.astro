@@ -17,6 +17,7 @@ const {
   series, seriesIndex, seriesTotal, draft,
 } = Astro.props;
 import { chipClass, placeholderFor } from '../lib/palette';
+import { seriesLabel } from '../lib/series';
 
 const formatted = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 const fallback = placeholderFor(tags);
@@ -42,7 +43,7 @@ const metaName = `meta-${slug}`;
         <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/>
         </svg>
-        Série {series.charAt(0).toUpperCase() + series.slice(1)}
+        Série {seriesLabel(series)}
         {seriesIndex && seriesTotal && <span class="opacity-80"> · {seriesIndex}/{seriesTotal}</span>}
       </span>
     )}
