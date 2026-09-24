@@ -25,7 +25,7 @@ C'est ce cas qu'on couvre ici, avec un module fil rouge que tout le monde a sous
 
 Trois emplacements possibles, dont un seul est raisonnable :
 
-* **Dans le module** — non. Un `composer update` ou un upgrade de module écrase vos tests.
+* **Dans le module** — non. La prochaine mise à jour du module (ZIP ou Composer) écrase vos tests.
 * **Dans un module PS séparé qu'on écrit pour ça** — trop de cérémonie pour un dossier de tests.
 * **Dans un repo dédié**, à côté de votre projet PrestaShop.
 
@@ -33,7 +33,7 @@ C'est la troisième option qu'on retient. Concrètement, un repo `qa-boutique` (
 
 ```
 qa-boutique/
-├─ composer.json         ← require prestaflow/php-library
+├─ composer.json         ← require-dev prestaflow/php-library
 ├─ .env                  ← URLs et credentials de votre boutique de recette
 └─ tests/
    └─ prestaflow/
@@ -75,13 +75,15 @@ class Page extends BasePage
 {
     public function defineSelectors(): array
     {
-        // Classes du thème Classic. Un thème custom peut renommer .block_newsletter :
-        // à valider sur votre thème avant de vous fier à ce sélecteur.
+        // Balisage du thème Classic. Un thème custom peut surcharger le template
+        // du module : à valider sur votre thème avant de vous fier à ces sélecteurs.
         return [
             'block' => '.block_newsletter',
             'emailInput' => '.block_newsletter input[name="email"]',
-            'submitButton' => '.block_newsletter button[type="submit"]',
-            'message' => '.block_newsletter .alert, .block_newsletter p.alert-success, .block_newsletter p.alert-danger',
+            'actionInput' => '.block_newsletter input[name="action"]',
+            'submitButton' => '.block_newsletter input[name="submitNewsletter"]',
+            'message' => '.block_newsletter .alert-success, .block_newsletter .alert-danger',
+            'successMessage' => '.block_newsletter .alert-success',
         ];
     }
 
@@ -92,23 +94,41 @@ class Page extends BasePage
 
     public function subscribe(string $email): void
     {
-        $this->setValue($this->getSelector('emailInput'), $email);
-        $this->click($this->getSelector('submitButton'));
-        $this->waitForPageReload();
+        $this->submitNewsletterForm($email, 0);
+    }
+
+    public function unsubscribe(string $email): void
+    {
+        $this->submitNewsletterForm($email, 1);
     }
 
     public function getResultMessage(): string
     {
-        return trim($this->getTextContent($this->getSelector('message')));
+        return trim((string) $this->getTextContent($this->getSelector('message')));
+    }
+
+    public function hasSucceeded(): bool
+    {
+        return $this->isVisible($this->getSelector('successMessage'));
+    }
+
+    private function submitNewsletterForm(string $email, int $action): void
+    {
+        $this->setValue($this->getSelector('emailInput'), $email);
+        // Champ caché du module : 0 = inscription, 1 = désinscription.
+        $this->setValueByJs($this->getSelector('actionInput'), (string) $action);
+        $this->click($this->getSelector('submitButton'));
+        // Le module répond en AJAX, sans recharger la page : on attend le message.
+        $this->waitVisible($this->getSelector('message'), 10000);
     }
 }
 ```
 
 Deux règles de survie s'appliquent quand vous testez un module que vous ne contrôlez pas :
 
-**Sélecteurs les plus stables possibles.** L'auteur peut refactorer son template sans prévenir. Un `id` ou une classe manifestement conçue par lui (`.block_newsletter`, `#psflowdemo-block`) survivra mieux qu'une position DOM (`div > form > input:nth-child(2)`). Le sélecteur `message` ci-dessus liste explicitement les variantes possibles (`alert-success`, `alert-danger`) plutôt que de parier sur une seule.
+**Sélecteurs les plus stables possibles.** L'auteur peut refactorer son template sans prévenir. Un `id`, un attribut `name` ou une classe manifestement conçus par lui (`.block_newsletter`, `input[name="submitNewsletter"]`) survivront mieux qu'une position DOM (`div > form > input:nth-child(2)`). Le sélecteur `message` ci-dessus liste explicitement les deux variantes possibles (`alert-success`, `alert-danger`) plutôt que de parier sur une seule.
 
-**API sémantique large, pas granulaire.** N'exposez pas `fillEmail()` + `clickSubmit()` + `readMessage()` séparément. Exposez l'*intention* : `subscribe($email)`, `getResultMessage()`. Le jour où l'auteur remplace le formulaire par un modal ou passe en AJAX sans reload, seul le corps de `subscribe()` change — les scénarios qui en dépendent tiennent.
+**API sémantique large, pas granulaire.** N'exposez pas `fillEmail()` + `clickSubmit()` + `readMessage()` séparément. Exposez l'*intention* : `subscribe($email)`, `unsubscribe($email)`, `getResultMessage()`. Aujourd'hui, le module envoie le formulaire en AJAX et insère le message sans recharger la page ; le jour où l'auteur remplace le formulaire par une modale ou revient à un rechargement complet, seul le corps de `submitNewsletterForm()` change — les scénarios qui en dépendent tiennent.
 
 ## Un scénario
 
@@ -126,7 +146,6 @@ class NewsletterSubscribe extends TestsSuite
 {
     public function init()
     {
-        $this->importPage('FrontOffice\Home');
         $this->importPage('Modules\PsEmailsubscription\NewsletterBlock', domain: 'Tests');
 
         extract($this->pages);
@@ -141,14 +160,15 @@ class NewsletterSubscribe extends TestsSuite
             Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->isBlockVisible())
                 ->isTheSameAs(true);
         })
-        ->it('accepte une nouvelle adresse', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage) use ($email) {
+        ->it('accepte une nouvelle adresse', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage, $email) {
             $modulesPsEmailsubscriptionNewsletterBlockPage->subscribe($email);
-            // Assertion volontairement large : le texte exact du message dépend de la locale
-            // de la boutique (« subscription » en EN, « inscription » en FR). On se contente
-            // de vérifier qu'un message est bien retourné — l'i18n des assertions fera l'objet
-            // d'une autre annexe.
+            // Le texte exact du message dépend de la locale de la boutique : on vérifie
+            // qu'un message est bien retourné, puis que c'est le message de succès
+            // (classe alert-success) et pas une erreur (alert-danger).
             Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->getResultMessage())
                 ->isNotEmpty();
+            Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->hasSucceeded())
+                ->isTheSameAs(true);
         });
     }
 }
@@ -160,15 +180,18 @@ Vous n'avez touché à aucun fichier de `ps_emailsubscription`. Le module reste 
 
 Un test qui pollue la base est un test qui devient flaky. Deux stratégies suivant les cas :
 
-**Suffixe unique par run.** L'exemple ci-dessus utilise `qa+' . time() . '@example.test`. Chaque exécution crée un abonnement différent, aucun conflit d'unicité, la base grossit lentement mais sans jamais faire échouer un test à cause d'un doublon.
+**Suffixe unique par run.** L'exemple ci-dessus utilise `'qa+' . time() . '@example.test'`. Chaque exécution crée un abonnement différent, aucun conflit d'unicité, la base grossit lentement mais sans jamais faire échouer un test à cause d'un doublon.
 
-**Cleanup en fin de suite.** Quand le module expose une manière propre de retirer ce qu'on a créé (désabonnement via un lien, suppression via BO), on ajoute un dernier `it` qui remet à zéro :
+**Cleanup en fin de suite.** Quand le module expose une manière propre de retirer ce qu'on a créé (désabonnement via un lien, suppression via BO), on ajoute un dernier `it` qui remet à zéro. Pour `ps_emailsubscription`, c'est le même formulaire : le module lit un champ caché `action` (`0` pour inscrire, `1` pour désinscrire) et retire l'adresse de sa table quand il reçoit `1`. C'est ce que fait `unsubscribe()` dans la Page :
 
 ```php
-->it('désabonne l\'adresse de test', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage) use ($email) {
-    $modulesPsEmailsubscriptionNewsletterBlockPage->subscribe($email);
+->it('désabonne l\'adresse de test', function () use ($modulesPsEmailsubscriptionNewsletterBlockPage, $email) {
+    // Page fraîche : pas de message résiduel de l'étape précédente.
+    $modulesPsEmailsubscriptionNewsletterBlockPage->goToPage('home');
+    $modulesPsEmailsubscriptionNewsletterBlockPage->unsubscribe($email);
+    // Libellé d'une boutique en anglais : adaptez-le à la langue de votre recette.
     Expect::that($modulesPsEmailsubscriptionNewsletterBlockPage->getResultMessage())
-        ->contains('unsubscription');
+        ->contains('Unsubscription successful');
 })
 ```
 
@@ -178,7 +201,7 @@ Attention : si l'étape principale échoue, l'étape de cleanup peut ne pas s'ex
 
 ## Pinner la version du module
 
-Dimension nouvelle par rapport à un module dont vous êtes l'auteur : **le module tiers évolue indépendamment de vos tests**. Si votre Page repose sur `.block_newsletter` en version 3.5.1 et que la 3.6 renomme la classe, vos tests tombent sans que vous ayez touché à quoi que ce soit.
+Dimension nouvelle par rapport à un module dont vous êtes l'auteur : **le module tiers évolue indépendamment de vos tests**. Si votre Page repose sur `.block_newsletter` dans la version installée aujourd'hui et que la suivante renomme la classe, vos tests tombent sans que vous ayez touché à quoi que ce soit.
 
 Deux garde-fous à mettre en place :
 
@@ -189,7 +212,7 @@ Quand la mise à jour du module arrive, vous relancez la suite de tests sur la n
 
 ## Plusieurs modules dans le même projet de QA
 
-Quand vous couvrez cinq à dix modules d'une même boutique, l'organisation qui tient est un dossier par module sous `tests/prestaflow/Modules/`, avec Pages et Suites côte à côte :
+Quand vous couvrez cinq à dix modules d'une même boutique, l'organisation qui tient est un dossier de Pages par module sous `tests/prestaflow/Pages/v8/Modules/`, et une ou plusieurs suites par module dans `tests/prestaflow/Suites/` :
 
 ```
 tests/prestaflow/
@@ -213,4 +236,4 @@ Chaque module vit dans sa bulle, les suites s'exécutent indépendamment, un mod
 
 <Info title="Modules qui altèrent la home ou une page transverse : leur activation peut casser d'autres scénarios sans lien apparent. Une bonne pratique est d'exécuter chaque suite de module sur une boutique de recette dans un état contrôlé — quitte à recréer l'état via Flashlight à chaque run (voir l'article 2)." />
 
-<Info title="Prochaine annexe : exploiter les régressions visuelles de PrestaFlow — screenshots de référence, diffs pixel-à-pixel, revue humaine des changements attendus." />
+<Info title="Prochaine annexe : PrestaFlow en CI hors GitHub Actions — GitLab, Bitbucket, CircleCI, Jenkins." />

@@ -35,18 +35,21 @@ prestaflow-pages/
    ├─ Pages/
    │  ├─ Common/
    │  │  ├─ Modules/Crosssell/Widget/Page.php
-   │  │  └─ Theme/Home/Page.php
+   │  │  ├─ Theme/Home/Page.php
+   │  │  └─ Theme/Product/Page.php
    │  ├─ v8/
    │  │  ├─ Modules/Crosssell/Widget/Page.php
-   │  │  └─ Theme/Home/Page.php
+   │  │  ├─ Theme/Home/Page.php
+   │  │  └─ Theme/Product/Page.php
    │  └─ v9/
    │     ├─ Modules/Crosssell/Widget/Page.php
-   │     └─ Theme/Home/Page.php
+   │     ├─ Theme/Home/Page.php
+   │     └─ Theme/Product/Page.php
    └─ Support/
       └─ AgencyFrontOfficeUrl.php
 ```
 
-Le dossier `Common/` porte la logique métier et les sélecteurs stables. Les dossiers `v8/`, `v9/` étendent le parent commun avec les spécificités de chaque majeure PrestaShop, exactement comme décrit dans l'annexe [Multi-versions PrestaShop](/blog/prestaflow-multi-versions-prestashop/).
+Le dossier `Common/` porte la logique métier et les sélecteurs stables. Les dossiers `v8/`, `v9/` étendent le parent commun — ce sont eux que `importPage()` charge, selon la version de la boutique — avec les spécificités de chaque majeure PrestaShop, exactement comme décrit dans l'annexe [Multi-versions PrestaShop](/blog/prestaflow-multi-versions-prestashop/).
 
 Le `composer.json` du package est minimal :
 
@@ -93,7 +96,7 @@ Dans le `composer.json` de chaque projet client, on déclare le package et son d
 Le `autoload-dev` du projet reste en place — il porte toujours les Pages projet-spécifiques et les suites. Les deux namespaces cohabitent : `Tests\Pages\...` pour ce qui est propre au client, `MyOrg\PrestaFlowPages\Pages\...` pour ce qui est mutualisé.
 
 <Info title="Où publier le package">
-Trois options selon la taille de l'équipe. Un dépôt Git privé (GitHub, GitLab, Bitbucket) référencé en `type: vcs` suffit dès le début — zéro infra. GitHub Packages ou un Satis auto-hébergé donnent une URL de type Packagist et un peu plus de cache, pour un setup léger. Packagist Private est le service commercial ; il vaut le coup à partir d'une dizaine de développeurs actifs, quand le nombre de projets consommateurs justifie sa facturation par équipe.
+Trois options selon la taille de l'équipe. Un dépôt Git privé (GitHub, GitLab, Bitbucket) référencé en `type: vcs` suffit dès le début — zéro infra. Un Satis auto-hébergé, ou le registre de paquets Composer de GitLab, donne un dépôt de type `composer` : les résolutions sont plus rapides qu'en `vcs`, pour un setup léger. GitHub Packages, en revanche, ne gère pas Composer. Private Packagist est le service commercial : il se justifie quand le nombre de développeurs et de projets consommateurs rend la maintenance d'un Satis plus coûteuse que l'abonnement.
 </Info>
 
 ## Importer une Page partagée dans une suite
@@ -106,22 +109,41 @@ $this->importPage('Modules\Crosssell\Widget', domain: 'MyOrg\PrestaFlowPages');
 
 résout `MyOrg\PrestaFlowPages\Pages\v8\Modules\Crosssell\Widget\Page` sur une boutique 8.x. Le nom de variable exposée dans `$this->pages` reste construit à partir du chemin — ici `$modulesCrosssellWidgetPage`. Le préfixe de namespace n'y entre pas.
 
-Concrètement dans une suite :
+Concrètement, dans `tests/prestaflow/Suites/CrosssellOnProduct.php` :
 
 ```php
-public function testCrosssellAppearsOnProduct(): void
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class CrosssellOnProduct extends TestsSuite
 {
-    $this->importPage('Theme\Product', domain: 'MyOrg\PrestaFlowPages');
-    $this->importPage('Modules\Crosssell\Widget', domain: 'MyOrg\PrestaFlowPages');
+    public function init()
+    {
+        $this->importPage('Theme\Product', domain: 'MyOrg\PrestaFlowPages');
+        $this->importPage('Modules\Crosssell\Widget', domain: 'MyOrg\PrestaFlowPages');
 
-    extract($this->pages);
+        extract($this->pages);
 
-    $themeProductPage->visit(1);
-    $this->assertTrue($modulesCrosssellWidgetPage->hasProducts());
+        $this
+        ->describe('Cross-sell maison sur la fiche produit')
+        ->it('affiche des produits suggérés', function () use ($themeProductPage, $modulesCrosssellWidgetPage) {
+            // {index}-product.html → 1-product.html, que PrestaShop redirige vers l'URL canonique.
+            $themeProductPage->goToPage('product', ['index' => 1]);
+
+            Expect::that($modulesCrosssellWidgetPage->hasProducts())
+                ->isTheSameAs(true);
+        });
+    }
 }
 ```
 
-La même suite peut mélanger les deux domains sans problème :
+Les deux Pages pilotent le même onglet Chrome : l'une navigue, l'autre inspecte le bloc du module sur la page affichée.
+
+La même suite peut mélanger les deux valeurs de `domain` sans problème :
 
 ```php
 $this->importPage('Theme\Product', domain: 'MyOrg\PrestaFlowPages');
@@ -144,6 +166,8 @@ Les fixtures et les scripts d'init sont projet-spécifiques : le client A a beso
 Le client X a ajouté un bloc `.client-x-custom-bloc` sur la Home. Sa Page projet étend celle du package :
 
 ```php
+<?php
+
 // tests/prestaflow/Pages/v8/Theme/Home/Page.php
 namespace Tests\Pages\v8\Theme\Home;
 
@@ -160,7 +184,7 @@ class Page extends SharedHome
 
     public function hasClientBloc(): bool
     {
-        return $this->isVisible('clientBloc');
+        return $this->isVisible($this->getSelector('clientBloc'));
     }
 }
 ```
@@ -181,12 +205,10 @@ Le package suit SemVer, et c'est ce qui permet à dix projets de le consommer sa
 - **MINOR** (1.x.0) — nouvelles Pages, nouvelles méthodes publiques. Les existantes ne bougent pas.
 - **MAJOR** (x.0.0) — signature de méthode modifiée, Page renommée, méthode supprimée. À documenter dans un `CHANGELOG.md` avec la marche à suivre. Chaque projet migre à son rythme.
 
-Chaque projet pin selon sa tolérance dans son `composer.json` :
+Chaque projet fixe la contrainte selon sa tolérance dans son `composer.json` :
 
-```json
-"myorg/prestaflow-pages": "^1.0"   // toutes les 1.x
-"myorg/prestaflow-pages": "~1.2.0" // que les patchs de 1.2
-```
+- `"myorg/prestaflow-pages": "^1.0"` accepte toutes les 1.x ;
+- `"myorg/prestaflow-pages": "~1.2.0"` n'accepte que les correctifs de la 1.2.
 
 <Info title="Tests unitaires du package">
 Le package peut avoir sa propre suite PHPUnit qui vérifie la cohérence formelle de ses Pages : chaque sélecteur déclaré est bien une chaîne non vide, chaque méthode `hasX()` retourne un booléen, chaque classe `v8/v9` est bien un descendant du parent `Common/`. Ces tests tournent en isolation, sans Chrome, sans PrestaShop — juste un `phpunit` qui charge les classes et introspecte. Le vrai test fonctionnel, c'est chaque projet client qui le fait en exécutant ses suites contre sa boutique.
