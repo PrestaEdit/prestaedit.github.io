@@ -35,7 +35,7 @@ Le plus simple, souvent suffisant. Un step CI avant `prestaflow run` qui `mysqld
   run: mysqldump -u root prestashop > /tmp/snapshot.sql
 
 - name: Run PrestaFlow
-  run: ./vendor/bin/prestaflow run
+  run: composer prestaflow -- run
 
 - name: Restore DB
   if: always()

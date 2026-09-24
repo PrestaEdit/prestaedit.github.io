@@ -79,7 +79,7 @@ jobs:
 
 Quatre points de vigilance dans ce snippet :
 
-- **Checkout, PHP et Composer d'abord.** L'Action ne fait qu'exécuter le script Composer `prestaflow:json:file` (décrit dans l'article 2) et en pousser le résultat : sans le dépôt, PHP et `vendor/`, il n'y a rien à lancer.
+- **Checkout, PHP et Composer d'abord.** L'Action ne fait qu'exécuter le script Composer `prestaflow:json:file` (décrit dans l'article 2) et en pousser le résultat : sans le dépôt, PHP et `vendor-dev/`, il n'y a rien à lancer.
 - **Pas de Flashlight.** L'input `flashlight` vaut `false` par défaut : sans rien préciser, l'Action ne démarre aucune boutique et les scénarios visent l'URL passée dans `PRESTAFLOW_FO_URL`. Ne l'activez pas ici : l'Action démarrerait son propre Flashlight et remplacerait `PRESTAFLOW_FO_URL` par l'URL de celui-ci.
 - **Les variables passent par `env:`, plus `variables_order=EGPCS`.** PrestaFlow v1.7.1 lit ses variables dans `$_ENV`, que le `php.ini` de production installé par `setup-php` ne remplit pas. Sans la ligne `ini-values`, la lib ignorerait ces variables et viserait ses valeurs par défaut (`https://localhost/`, `demo@prestashop.com`). `PRESTAFLOW_PS_VERSION` doit correspondre à la version déployée par la preview, et `admin-dev` au dossier d'administration de votre boutique.
 - **L'attente échoue franchement.** Le PaaS peut répondre avant que la boutique ne soit prête, ou pas du tout si le déploiement a raté. `timeout` borne l'attente à cinq minutes et arrête le job si la preview ne répond toujours pas, au lieu de lancer les scénarios contre une URL morte.

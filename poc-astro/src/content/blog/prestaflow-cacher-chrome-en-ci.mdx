@@ -155,7 +155,7 @@ jobs:
           projectId: 'pk_01ABC...'
           flashlight: true
           ps-version: '9.0.0'
-          flashlight-init-scripts: .flashlight/init-scripts
+          flashlight-init-scripts: tests/flashlight-init
 ```
 
 `actions/cache` restaure le tool cache de `setup-chrome` avant que l'action ne s'exécute : elle y trouve la version demandée et ne télécharge plus rien. Au premier run après une montée de version, la clé change, le téléchargement se paie une fois, et le cache est sauvegardé en fin de job.
@@ -199,7 +199,7 @@ test:
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer install --prefer-dist --no-progress
   script:
-    - ./vendor/bin/prestaflow run tests/prestaflow
+    - composer prestaflow -- run tests/prestaflow
 ```
 
 GitLab n'accepte en cache que des chemins situés dans le dossier du projet, d'où `.cache/apt` et l'option `dir::cache::archives` qui y redirige apt. Ce cache évite les téléchargements, pas l'installation elle-même : copier seulement `/usr/bin/chromium` ne suffirait pas, car sous Debian ce n'est qu'un script de lancement, qui s'appuie sur `/usr/lib/chromium/` et sur des dizaines de bibliothèques.
@@ -238,5 +238,5 @@ Trois disciplines qui verrouillent ça :
 </Info>
 
 <Info title="Chrome qui ne démarre pas">
-Si `./vendor/bin/prestaflow run` échoue avec « Chrome process stopped before startup completed », lisez la suite du message (« Additional info ») : `exec: chrome: not found` signale un binaire introuvable (installez Chrome ou fixez `CHROME_PATH`), « Running as root without --no-sandbox is not supported » un conteneur en root (ajoutez `CHROME_NO_SANDBOX=1`). Dans la grande majorité des cas, la suite n'y est pour rien.
+Si `composer prestaflow -- run` échoue avec « Chrome process stopped before startup completed », lisez la suite du message (« Additional info ») : `exec: chrome: not found` signale un binaire introuvable (installez Chrome ou fixez `CHROME_PATH`), « Running as root without --no-sandbox is not supported » un conteneur en root (ajoutez `CHROME_NO_SANDBOX=1`). Dans la grande majorité des cas, la suite n'y est pour rien.
 </Info>

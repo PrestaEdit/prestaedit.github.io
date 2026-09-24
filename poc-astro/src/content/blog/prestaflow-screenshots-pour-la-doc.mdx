@@ -134,7 +134,7 @@ class PsflowdemoQuickstart extends TestsSuite
 Lancez-la seule :
 
 ```sh
-./vendor/bin/prestaflow run tests/documentation
+composer prestaflow -- run tests/documentation
 ```
 
 Le run génère les trois PNG dans `docs-screenshots/`. Vous les référencez ensuite depuis votre Markdown de doc :
@@ -202,7 +202,7 @@ Deux patterns qui marchent bien en pratique :
 ```json
 {
     "scripts": {
-        "docs:screenshots": "./vendor/bin/prestaflow run tests/documentation"
+        "docs:screenshots": "./vendor-dev/prestaflow/php-library/bin/prestaflow run tests/documentation"
     }
 }
 ```

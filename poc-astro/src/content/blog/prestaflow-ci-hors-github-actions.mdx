@@ -43,9 +43,9 @@ Le workflow niveau 1 fait six choses, dans l'ordre :
 3. `composer install`
 4. Démarrer une base MariaDB puis Flashlight, **en y montant le module**
 5. Installer le module au démarrage de Flashlight (init-script), puis attendre que le back office réponde
-6. Lancer `./vendor/bin/prestaflow run tests/prestaflow` avec les variables d'environnement qui pointent sur la boutique
+6. Lancer `composer prestaflow -- run tests/prestaflow` avec les variables d'environnement qui pointent sur la boutique
 
-Le point 4 conditionne le reste. Pour que PrestaShop voie le module, il faut monter le dépôt cloné dans `modules/psflowdemo` du conteneur, puis l'installer : c'est l'init-script `.flashlight/init-scripts/10-install-module.sh` de l'article 2, qui lance `php /var/www/html/bin/console prestashop:module install psflowdemo` au premier démarrage.
+Le point 4 conditionne le reste. Pour que PrestaShop voie le module, il faut monter le dépôt cloné dans `modules/psflowdemo` du conteneur, puis l'installer : c'est l'init-script `tests/flashlight-init/10-install-module.sh` de l'article 2, qui lance `php /var/www/html/bin/console prestashop:module install psflowdemo` au premier démarrage.
 
 Or les side-cars déclaratifs (`services:` de GitLab ou de Bitbucket) ne permettent pas de monter le checkout dans le conteneur. Flashlight sait aussi installer des zips placés dans le dossier `INSTALL_MODULES_DIR`, mais ce dossier doit exister dans le conteneur, et on n'y a pas accès non plus. La solution qui marche : piloter un démon Docker depuis le job et lancer MariaDB et Flashlight avec `docker run`, exactement comme dans l'article 2. Chaque plateforme fournit ce démon à sa façon.
 
@@ -101,11 +101,11 @@ e2e:
       docker run -d --name ps --network prestashop -p 80:80
       -e PS_DOMAIN=docker -e MYSQL_HOST=mysql
       -v "$CI_PROJECT_DIR":/var/www/html/modules/psflowdemo
-      -v "$CI_PROJECT_DIR/.flashlight/init-scripts":/tmp/init-scripts:ro
+      -v "$CI_PROJECT_DIR/tests/flashlight-init":/tmp/init-scripts:ro
       prestashop/prestashop-flashlight:$PS_VERSION
     - timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://docker/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }
   script:
-    - ./vendor/bin/prestaflow run tests/prestaflow
+    - composer prestaflow -- run tests/prestaflow
   artifacts:
     when: on_failure
     paths:
@@ -138,7 +138,7 @@ include:
       project_id: pk_01ABCDEF
       flashlight: "true"
       ps_version: "9.0.0"
-      flashlight_init_scripts: .flashlight/init-scripts
+      flashlight_init_scripts: tests/flashlight-init
       mr_comment: "true"
 ```
 
@@ -193,7 +193,7 @@ pipelines:
             docker run -d --name ps --network prestashop -p 80:80
             -e PS_DOMAIN=localhost -e MYSQL_HOST=mysql
             -v "$BITBUCKET_CLONE_DIR":/var/www/html/modules/psflowdemo
-            -v "$BITBUCKET_CLONE_DIR/.flashlight/init-scripts":/tmp/init-scripts:ro
+            -v "$BITBUCKET_CLONE_DIR/tests/flashlight-init":/tmp/init-scripts:ro
             prestashop/prestashop-flashlight:8.1.7
           - timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }
           - export PRESTAFLOW_PS_VERSION=8.1.7
@@ -204,7 +204,7 @@ pipelines:
           - export PRESTAFLOW_BO_PASSWD=prestashop
           - export PRESTAFLOW_HEADLESS=true
           - export CHROME_NO_SANDBOX=1
-          - ./vendor/bin/prestaflow run tests/prestaflow
+          - composer prestaflow -- run tests/prestaflow
         artifacts:
           - prestaflow/screens/errors/**
 ```
@@ -242,7 +242,7 @@ pipelines:
                 PROJECT_ID: pk_01ABC...
                 FLASHLIGHT: 'true'
                 PS_VERSION: '9.0.0'
-                FLASHLIGHT_INIT_SCRIPTS: '.flashlight/init-scripts'
+                FLASHLIGHT_INIT_SCRIPTS: 'tests/flashlight-init'
                 BITBUCKET_ACCESS_TOKEN: $PRESTAFLOW_BITBUCKET_TOKEN
 
       - step:
@@ -282,7 +282,7 @@ workflows:
           project_id: pk_01ABCDEFGHIJKLMNOPQR10
           flashlight: true
           ps_version: "9.0.0"
-          flashlight_init_scripts: .flashlight/init-scripts
+          flashlight_init_scripts: tests/flashlight-init
           context: prestaflow
 ```
 
@@ -337,14 +337,14 @@ pipeline {
         stage('Start Flashlight') {
             steps {
                 sh 'docker run -d --rm --name mysql --network host -e MARIADB_ROOT_PASSWORD=prestashop -e MARIADB_DATABASE=prestashop -e MARIADB_USER=prestashop -e MARIADB_PASSWORD=prestashop mariadb:11'
-                sh 'docker run -d --rm --name ps --network host -e PS_DOMAIN=localhost -e MYSQL_HOST=127.0.0.1 -v "$WORKSPACE":/var/www/html/modules/psflowdemo -v "$WORKSPACE/.flashlight/init-scripts":/tmp/init-scripts:ro prestashop/prestashop-flashlight:8.1.7'
+                sh 'docker run -d --rm --name ps --network host -e PS_DOMAIN=localhost -e MYSQL_HOST=127.0.0.1 -v "$WORKSPACE":/var/www/html/modules/psflowdemo -v "$WORKSPACE/tests/flashlight-init":/tmp/init-scripts:ro prestashop/prestashop-flashlight:8.1.7'
                 sh '''timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }'''
             }
         }
 
         stage('Run PrestaFlow') {
             steps {
-                sh './vendor/bin/prestaflow run tests/prestaflow'
+                sh 'composer prestaflow -- run tests/prestaflow'
             }
         }
     }
@@ -393,7 +393,7 @@ Ce second cas justifierait à lui seul un article dédié (idempotence, retries,
 
 ## Notes
 
-<Info title="Cache Composer : sur tous les CI cités, mettre vendor/ ou le cache Composer en cache évite de tout retélécharger à chaque job. GitLab (cache: paths), Bitbucket (caches: composer, intégré), CircleCI (save_cache / restore_cache), Jenkins (plugin de cache ou stash). C'est souvent l'optimisation la plus rentable." />
+<Info title="Cache Composer : sur tous les CI cités, mettre vendor-dev/ ou le cache Composer en cache évite de tout retélécharger à chaque job. GitLab (cache: paths), Bitbucket (caches: composer, intégré), CircleCI (save_cache / restore_cache), Jenkins (plugin de cache ou stash). C'est souvent l'optimisation la plus rentable." />
 
 <Info title="Matrice multi-versions PS : disponible en syntaxe native sur GitLab (parallel: matrix:, montré plus haut), sur CircleCI (matrix: sous un job du workflow) et, sur Bitbucket, via des steps parallel: (les ancres YAML évitent de répéter le step). Elle est moins directe sur Jenkins (bloc matrix du pipeline déclaratif, ou pipelines paramétrés). Voir l'article 2 pour le pattern sur GitHub Actions." />
 

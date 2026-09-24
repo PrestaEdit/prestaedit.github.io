@@ -52,11 +52,18 @@ Le `composer.json` :
         "psr-4": {
             "Tests\\": "tests/prestaflow/"
         }
+    },
+    "config": {
+        "vendor-dir": "vendor-dev",
+        "process-timeout": 0
+    },
+    "scripts": {
+        "prestaflow": "./vendor-dev/prestaflow/php-library/bin/prestaflow"
     }
 }
 ```
 
-Rien de neuf par rapport à l'article 1 — on déplace juste le point d'ancrage : le repo qui héberge PrestaFlow n'est plus le module testé, c'est votre projet de QA.
+Rien de neuf par rapport à l'[article 1](/blog/ecrire-son-premier-scenario-prestaflow/) (même `vendor-dev/`, même script `prestaflow`, donc même commande `composer prestaflow -- run tests/prestaflow`) — on déplace juste le point d'ancrage : le repo qui héberge PrestaFlow n'est plus le module testé, c'est votre projet de QA.
 
 <Warning title="Le .env doit pointer sur une boutique de recette, pas sur votre boutique de production. Un test qui souscrit à la newsletter avec un email jetable, c'est OK sur la recette ; en prod, c'est du spam à votre propre base." />
 

@@ -89,11 +89,18 @@ Dans le `composer.json` de chaque projet client, on déclare le package et son d
         "psr-4": {
             "Tests\\": "tests/prestaflow/"
         }
+    },
+    "config": {
+        "vendor-dir": "vendor-dev",
+        "process-timeout": 0
+    },
+    "scripts": {
+        "prestaflow": "./vendor-dev/prestaflow/php-library/bin/prestaflow"
     }
 }
 ```
 
-Le `autoload-dev` du projet reste en place — il porte toujours les Pages projet-spécifiques et les suites. Les deux namespaces cohabitent : `Tests\Pages\...` pour ce qui est propre au client, `MyOrg\PrestaFlowPages\Pages\...` pour ce qui est mutualisé.
+Les blocs `config` et `scripts` sont ceux de l'[article 1](/blog/ecrire-son-premier-scenario-prestaflow/) : dépendances de dev dans `vendor-dev/`, commande `composer prestaflow -- …`. Le `autoload-dev` du projet reste en place — il porte toujours les Pages projet-spécifiques et les suites. Les deux namespaces cohabitent : `Tests\Pages\...` pour ce qui est propre au client, `MyOrg\PrestaFlowPages\Pages\...` pour ce qui est mutualisé.
 
 <Info title="Où publier le package">
 Trois options selon la taille de l'équipe. Un dépôt Git privé (GitHub, GitLab, Bitbucket) référencé en `type: vcs` suffit dès le début — zéro infra. Un Satis auto-hébergé, ou le registre de paquets Composer de GitLab, donne un dépôt de type `composer` : les résolutions sont plus rapides qu'en `vcs`, pour un setup léger. GitHub Packages, en revanche, ne gère pas Composer. Private Packagist est le service commercial : il se justifie quand le nombre de développeurs et de projets consommateurs rend la maintenance d'un Satis plus coûteuse que l'abonnement.

@@ -28,7 +28,7 @@ PrestaFlow expose deux mécaniques pour ça, orthogonales, qui répondent à des
 - **Partition par dossier** : on découpe l'arborescence `tests/prestaflow/Suites/` en sous-dossiers thématiques et chaque job CI passe un sous-dossier différent en argument à la CLI.
 - **Partition par groupe** : chaque suite déclare une propriété PHP `$groups`, et la CLI filtre avec l'option `--group`.
 
-Les deux exploitent le même fait : `./vendor/bin/prestaflow run` accepte un dossier positionnel (défaut `tests`) et une option `--group X` (raccourci `-g X`, défaut `all`, cumulable via plusieurs `-g`). Ces deux paramètres sont les seules poignées de sélection. Tout le reste (la matrice CI, l'orchestration, la remontée des artefacts) se construit autour.
+Les deux exploitent le même fait : `composer prestaflow -- run` accepte un dossier positionnel (défaut `tests`) et une option `--group X` (raccourci `-g X`, défaut `all`, cumulable via plusieurs `-g`). Ces deux paramètres sont les seules poignées de sélection. Tout le reste (la matrice CI, l'orchestration, la remontée des artefacts) se construit autour.
 
 <Warning title="Pas encore via l'input suites de l'Action">
 L'Action `PrestaFlow/github-action@v2` a un input `suites`, qui pose la variable `PRESTAFLOW_SUITES`. PrestaFlow v1.7.1 ne lit pas cette variable : l'input n'a aucun effet, toutes les suites tournent. La prochaine version de la bibliothèque le fera respecter, comme une liste de sous-dossiers du dossier de tests. D'ici là, on partitionne avec la CLI, dans des étapes écrites à la main, comme ci-dessous.
@@ -51,9 +51,9 @@ tests/prestaflow/Suites/
     ImportCatalog.php
 ```
 
-Un job local qui veut tout faire tourner lance `./vendor/bin/prestaflow run tests/prestaflow/Suites`. Un job CI qui ne cible que le panier lance `./vendor/bin/prestaflow run tests/prestaflow/Suites/Cart`.
+Un job local qui veut tout faire tourner lance `composer prestaflow -- run tests/prestaflow/Suites`. Un job CI qui ne cible que le panier lance `composer prestaflow -- run tests/prestaflow/Suites/Cart`.
 
-Le workflow GitHub Actions reprend le niveau 1 de l'article 2 (MariaDB, Flashlight avec le module monté et installé par l'init-script `.flashlight/init-scripts/10-install-module.sh`), et ajoute une matrice sur la partition :
+Le workflow GitHub Actions reprend le niveau 1 de l'article 2 (MariaDB, Flashlight avec le module monté et installé par l'init-script `tests/flashlight-init/10-install-module.sh`), et ajoute une matrice sur la partition :
 
 ```yaml
 jobs:
@@ -92,7 +92,7 @@ jobs:
             -e PS_DOMAIN=localhost \
             -e MYSQL_HOST=mysql \
             -v "$PWD":/var/www/html/modules/psflowdemo \
-            -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
+            -v "$PWD/tests/flashlight-init":/tmp/init-scripts:ro \
             prestashop/prestashop-flashlight:8.1.7
 
       - name: Wait for PrestaShop to be ready
@@ -108,7 +108,7 @@ jobs:
           PRESTAFLOW_BO_URL: http://localhost/admin-dev/
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
           PRESTAFLOW_BO_PASSWD: prestashop
-        run: ./vendor/bin/prestaflow run tests/prestaflow/Suites/${{ matrix.partition }}
+        run: composer prestaflow -- run tests/prestaflow/Suites/${{ matrix.partition }}
 
       - name: Upload error screenshots
         if: failure()
@@ -163,9 +163,9 @@ class AddToCart extends TestsSuite
 Côté CLI :
 
 ```bash
-./vendor/bin/prestaflow run tests --group cart
-./vendor/bin/prestaflow run tests -g cart -g checkout
-./vendor/bin/prestaflow run tests --group fast
+composer prestaflow -- run tests --group cart
+composer prestaflow -- run tests -g cart -g checkout
+composer prestaflow -- run tests --group fast
 ```
 
 Le filtrage se fait par intersection : PrestaFlow ne lance que les suites dont `getGroups()` contient au moins un des groupes demandés. Ne pas passer `--group` du tout (ou passer `--group all`, la valeur par défaut) revient à tout faire tourner.
@@ -187,7 +187,7 @@ Le workflow GitHub Actions est le même que plus haut, à deux endroits près : 
           PRESTAFLOW_BO_URL: http://localhost/admin-dev/
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
           PRESTAFLOW_BO_PASSWD: prestashop
-        run: ./vendor/bin/prestaflow run tests/prestaflow/Suites -g ${{ matrix.group }}
+        run: composer prestaflow -- run tests/prestaflow/Suites -g ${{ matrix.group }}
 ```
 
 Avantage : une même suite peut appartenir à `['cart', 'fast']` : elle tournera aussi bien dans le job « panier » que dans un futur job « smoke rapide sur toutes les versions ». Rééquilibrer une partition, c'est éditer une propriété, pas déplacer un fichier.
@@ -208,7 +208,7 @@ Deux, trois, quatre partitions couvrent la majorité des cas. Au-delà, on paie 
 
 Chaque job CI est un environnement indépendant. Il télécharge le dépôt, démarre son Flashlight, monte sa boutique. Deux conséquences pratiques :
 
-- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs, comme l'init-script qui installe le module. Elles font partie de la config du conteneur, pas d'une suite.
+- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs, comme l'init-script qui installe le module. Elles font partie de la config du conteneur, pas d'une suite. C'est aussi là qu'il faut activer un moyen de paiement : une boutique Flashlight neuve n'en propose aucun, et les suites de la partition `Checkout` s'arrêteraient à l'étape de paiement.
 - Les **baselines visuelles** (cf. versionner les baselines visuelles) doivent être accessibles à tous les jobs qui font de la comparaison visuelle. Si elles sont committées dans le dépôt, le `checkout` initial les récupère : pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
 
 Ce qui reste **spécifique** à chaque job : la boutique, les cookies, l'état runtime. Rien ne fuit d'un job à l'autre, et c'est ce qui rend le partitionnement sûr.

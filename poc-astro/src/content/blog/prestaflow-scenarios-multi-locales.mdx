@@ -157,7 +157,7 @@ La lib fusionne les catalogues dans cet ordre : **default → major → minor �
 
 Même approche que le script de l'[annexe multi-versions](/blog/prestaflow-multi-versions-prestashop/) : une boucle shell qui change une variable d'environnement, la suite ne change pas.
 
-Un détail compte : la version 1.7.1 de la lib lit `PRESTAFLOW_LOCALE` dans `$_ENV`, qui reste vide quand PHP est configuré sans le `E` de `variables_order` (le réglage des `php.ini` fournis avec PHP). Un simple `PRESTAFLOW_LOCALE=fr ./vendor/bin/prestaflow …` peut donc être ignoré sans message. Le plus sûr est de passer par un fichier que la lib charge. Elle lit `.env.local` à la place de `.env` quand il existe : le script en génère un à chaque tour, à partir de votre `.env`, et le supprime à la fin.
+Un détail compte : la version 1.7.1 de la lib lit `PRESTAFLOW_LOCALE` dans `$_ENV`, qui reste vide quand PHP est configuré sans le `E` de `variables_order` (le réglage des `php.ini` fournis avec PHP). Un simple `PRESTAFLOW_LOCALE=fr composer prestaflow -- …` peut donc être ignoré sans message. Le plus sûr est de passer par un fichier que la lib charge. Elle lit `.env.local` à la place de `.env` quand il existe : le script en génère un à chaque tour, à partir de votre `.env`, et le supprime à la fin.
 
 ```sh
 #!/usr/bin/env bash
@@ -174,7 +174,7 @@ for locale in fr en; do
 
     # Copie du .env + la locale du tour (la dernière valeur d'une clé l'emporte).
     { cat .env; echo; echo "PRESTAFLOW_LOCALE=$locale"; } > .env.local
-    ./vendor/bin/prestaflow run tests/prestaflow
+    composer prestaflow -- run tests/prestaflow
 done
 ```
 
@@ -216,7 +216,7 @@ jobs:
           } >> .env
 
       - name: Run PrestaFlow
-        run: ./vendor/bin/prestaflow run tests/prestaflow
+        run: composer prestaflow -- run tests/prestaflow
 ```
 
 Deux jobs parallèles, un par locale, contre la même preprod. Si elle est protégée, ajoutez les variables des annexes [htpasswd](/blog/prestaflow-preprod-htpasswd/) ou [Cloudflare](/blog/prestaflow-preprod-cloudflare/) dans la même étape.

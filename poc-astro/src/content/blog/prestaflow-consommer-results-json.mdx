@@ -30,7 +30,7 @@ Ce fichier `results.json` est la sortie machine de PrestaFlow. Il contient ce qu
 Une seule commande :
 
 ```sh
-./vendor/bin/prestaflow run --output=JSON --file tests/prestaflow
+composer prestaflow -- run --output=JSON --file tests/prestaflow
 ```
 
 * **`--output=JSON`** (ou `-o json`) — remplace le rapport CLI par du JSON structuré.
@@ -40,7 +40,8 @@ C'est très exactement ce que fait le script Composer `prestaflow:json:file`, ce
 
 ```json
 "scripts": {
-    "prestaflow:json:file": "./vendor/prestaflow/php-library/bin/prestaflow run --output=JSON ./tests --file"
+    "prestaflow": "./vendor-dev/prestaflow/php-library/bin/prestaflow",
+    "prestaflow:json:file": "@prestaflow run --output=JSON ./tests --file"
 }
 ```
 
@@ -56,7 +57,7 @@ Voici un extrait d'un vrai `results.json` produit par PrestaFlow v1.7.1 (champ `
 
 ```json
 {
-  "suite": "Tests\\Suites\\EditTitle",
+  "suite": "Tests\\Suites\\UpdateTitle",
   "title": "Modification du titre depuis le BO",
   "stats": {
     "passes": 1,
@@ -91,7 +92,7 @@ Voici un extrait d'un vrai `results.json` produit par PrestaFlow v1.7.1 (champ `
       "attachments": [],
       "expect": {
         "pass": [],
-        "fail": ["expected 'Bienvenue par défaut' to contain 'Titre mis à jour'"]
+        "fail": ["expected 'Bienvenue sur notre boutique' to contain 'Titre mis à jour'"]
       },
       "debug": [],
       "time": 1108,
@@ -121,7 +122,7 @@ Les champs qui comptent en pratique :
 
 * **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
 * **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/). Après un échec, les `it` suivants de la suite passent en `skipped` (comportement par défaut, désactivable avec `->skipWhenFailed(false)`).
-* **`tests[].expect`** — un objet par état : `pass` liste les assertions réussies, `fail` contient le message de l'échec, du style *"expected 'Bienvenue par défaut' to contain 'Titre mis à jour'"*. La langue du message suit la locale de la suite. Quand aucune assertion n'a tourné (`skipped`, `todo`), c'est un tableau vide `[]`.
+* **`tests[].expect`** — un objet par état : `pass` liste les assertions réussies, `fail` contient le message de l'échec, du style *"expected 'Bienvenue sur notre boutique' to contain 'Titre mis à jour'"*. La langue du message suit la locale de la suite. Quand aucune assertion n'a tourné (`skipped`, `todo`), c'est un tableau vide `[]`.
 * **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`. Présent seulement pour un `it` en `fail`.
 * **`tests[].time`** — durée en millisecondes.
 * **`tests[].dataset` / `tests[].datasets`** — le numéro du jeu de données (à partir de 1) et ses valeurs, quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)). Sans `->with()`, `dataset` vaut `1` et `datasets` est vide.
@@ -168,7 +169,7 @@ Rendu Slack :
 ❌ 1 suite(s) PrestaFlow en échec
 
 • Modification du titre depuis le BO — affiche le nouveau titre sur la home
-  ↳ expected 'Bienvenue par défaut' to contain 'Titre mis à jour'
+  ↳ expected 'Bienvenue sur notre boutique' to contain 'Titre mis à jour'
 ```
 
 Bien plus utile que le lien vers l'onglet Actions. On sait quoi débugger avant même d'ouvrir le job.
