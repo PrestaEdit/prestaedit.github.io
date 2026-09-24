@@ -15,29 +15,69 @@ summary: "->scenario() prend un scénario réutilisable et le colle dans une sui
 
 Une suite PrestaFlow décrit un flow métier : loguer, ajouter au panier, checkout, retrouver la commande en BO, changer son statut. En pratique on retape la même **séquence de préambule** dans dix suites : login, panier, checkout — puis on assert la seule chose qui varie. C'est du boilerplate.
 
-La bibliothèque expose depuis la [1.5.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.5.0) le concept de **scénario réutilisable** : une classe qui empile des `it()` et qu'on colle dans une suite avec `->scenario(::class)`. Deux scénarios se chaînent sur la même suite, et l'état passe de l'un à l'autre via `->store()` / `->retrieve()`. Le boilerplate disparaît.
+La bibliothèque expose depuis la [1.0.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.0.0) le concept de **scénario réutilisable** : une classe qui empile des `it()` et qu'on colle dans une suite avec `->scenario(::class)`. Deux scénarios se chaînent sur la même suite, et, depuis la [1.3.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.3.0), l'état passe de l'un à l'autre via `->store()` / `->retrieve()`. Les scénarios prêts à l'emploi `CheckoutOrder` et `ManageOrder` sont arrivés avec la [1.5.0](https://github.com/PrestaFlow/php-library/releases/tag/v1.5.0). Le boilerplate disparaît.
 
 ## La primitive : `->scenario()`
 
 Signature côté suite :
 
 ```php
-public function scenario(string $class, array $params = []): static
+public function scenario($class, array $params = [])
+{
+    // …
+}
 ```
 
 Trois choses qui se passent quand on l'appelle :
 
 1. Une instance de `$class` est créée avec `$this` (la suite courante) + `$params`.
-2. Le constructeur du scénario merge les params, propage locale/version, puis appelle `steps($testSuite)`.
+2. Le constructeur du scénario fusionne les params avec ses défauts, règle sa propre locale et sa version (celles du scénario, pas celles de la suite), puis appelle `steps($testSuite)`. La suite garde au passage les params fusionnés, que `getParam()` lira pendant l'exécution.
 3. Dans `steps()`, chaque `$testSuite->it(...)` **s'ajoute à la suite courante** — le scénario ne crée pas une suite parallèle, il alimente celle qu'on lui passe.
 
-Retour chaînable, donc plusieurs `->scenario()` s'empilent dans le même flow.
+`scenario()` renvoie la suite : l'appel est chaînable, donc plusieurs `->scenario()` s'empilent dans le même flow.
 
 ## Écrire un scénario réutilisable
 
-Un scénario est une classe qui étend `PrestaFlow\Library\Scenarios\Scenario` et redéfinit `steps($testSuite)`. Convention : quelques params par défaut, tout `it()` va sur `$testSuite`, l'état à partager va dans `$this->store()`.
+Un scénario est une classe qui étend `PrestaFlow\Library\Scenarios\Scenario` et redéfinit `steps($testSuite)`. Convention : quelques params par défaut, tout `it()` va sur `$testSuite`, l'état à partager va dans `$this->store()`, appelé depuis les closures `it()`.
 
-Exemple minimal : un scénario qui crée un client de test et retient son `id` et son email pour la suite.
+Exemple minimal : un scénario qui crée un client de test en BO et retient son email et son mot de passe pour la suite. La lib ne fournit pas de méthode de création de client (sa Page `BackOffice\Customer` ne définit que deux sélecteurs) : on s'appuie sur une **Page du projet**, `tests/prestaflow/Pages/v9/BackOffice/CustomerForm/Page.php`, qui l'étend.
+
+```php
+<?php
+
+namespace Tests\Pages\v9\BackOffice\CustomerForm;
+
+use PrestaFlow\Library\Pages\v9\BackOffice\Customer\Page as BasePage;
+
+class Page extends BasePage
+{
+    public function defineSelectors()
+    {
+        return [
+            // emailInput et saveButton viennent de la Page de la lib
+            ...parent::defineSelectors(),
+            'firstNameInput' => 'input[name="customer[first_name]"]',
+            'lastNameInput' => 'input[name="customer[last_name]"]',
+            'passwordInput' => 'input[name="customer[password]"]',
+        ];
+    }
+
+    /**
+     * À appeler sur le formulaire « Ajouter un client » du BO.
+     */
+    public function create(array $customer): void
+    {
+        $this->waitVisible($this->getSelector('firstNameInput'));
+        $this->setValue($this->getSelector('firstNameInput'), $customer['firstname']);
+        $this->setValue($this->getSelector('lastNameInput'), $customer['lastname']);
+        $this->setValue($this->getSelector('emailInput'), $customer['email']);
+        $this->setValue($this->getSelector('passwordInput'), $customer['password']);
+        $this->clickAndWaitReload($this->getSelector('saveButton'));
+    }
+}
+```
+
+Le scénario, dans `tests/prestaflow/Scenarios/CreateTestCustomer.php` (le namespace `Tests\Scenarios` est résolu par le même autoload PSR-4 `Tests\\` → `tests/prestaflow/` que vos Pages) :
 
 ```php
 <?php
@@ -58,6 +98,7 @@ class CreateTestCustomer extends Scenario
     {
         $testSuite->importPage('BackOffice\Login');
         $testSuite->importPage('BackOffice\Customers');
+        $testSuite->importPage('BackOffice\CustomerForm', domain: 'Tests');
 
         extract($testSuite->pages);
 
@@ -68,8 +109,11 @@ class CreateTestCustomer extends Scenario
             $backOfficeLoginPage->goToPage('index');
             $backOfficeLoginPage->login();
         })
-        ->it('crée le client', function () use ($backOfficeCustomersPage, $email) {
-            $backOfficeCustomersPage->createCustomer([
+        ->it('crée le client', function () use ($backOfficeCustomersPage, $backOfficeCustomerFormPage, $email) {
+            $backOfficeCustomersPage->goTo();
+            $backOfficeCustomersPage->clickAndWaitReload($backOfficeCustomersPage->getSelector('newCustomerButton'));
+
+            $backOfficeCustomerFormPage->create([
                 'firstname' => $this->getParam('firstname'),
                 'lastname'  => $this->getParam('lastname'),
                 'email'     => $email,
@@ -79,7 +123,7 @@ class CreateTestCustomer extends Scenario
             // $this ici = TestsSuite (closures rebindées à l'exécution),
             // donc store() / retrieve() sont accessibles pour la suite.
             $this->store('CreateTestCustomer.email', $email);
-            $this->store('CreateTestCustomer.id', $backOfficeCustomersPage->getCreatedCustomerId());
+            $this->store('CreateTestCustomer.password', $this->getParam('password'));
         });
 
         return $testSuite;
@@ -89,9 +133,9 @@ class CreateTestCustomer extends Scenario
 
 Trois idées à retenir :
 
-- **`$this->getParam('name')`** dans `steps()` (contexte scénario) lit le param passé au compose, ou la valeur par défaut de `$params`.
+- **`$this->getParam('name')`** dans les closures `it()` lit le param passé au compose, ou la valeur par défaut de `$params`. Dans le corps de `steps()`, `$this` est le scénario, qui n'a pas de `getParam()` : on y lit `$this->params['name']`.
 - **`$this->store('key', $val)`** dans les closures `it()` (contexte suite, rebindé par `.call($this)` côté runner) empile de l'état accessible plus tard.
-- **Namespacing des clés `store` par nom de scénario** (`CreateTestCustomer.email`) — évite les collisions quand deux scénarios composés stockent chacun leur `email` ou leur `id`.
+- **Namespacing des clés `store` par nom de scénario** (`CreateTestCustomer.email`) — évite les collisions quand deux scénarios composés stockent chacun leur `email` ou leur `password`.
 
 ## Composer deux scénarios avec passage d'état
 
@@ -114,8 +158,9 @@ class LoginAsTestCustomer extends Scenario
 
         $testSuite
         ->it('log en FO avec le client créé', function () use ($frontOfficeLoginPage) {
+            // Le mot de passe vient aussi du store : il suit le param passé à CreateTestCustomer.
             $email = $this->retrieve('CreateTestCustomer.email');
-            $password = 'PrestaFlow2026!';
+            $password = $this->retrieve('CreateTestCustomer.password');
 
             $frontOfficeLoginPage->goToPage('login');
             $frontOfficeLoginPage->login($email, $password);
@@ -126,7 +171,7 @@ class LoginAsTestCustomer extends Scenario
 }
 ```
 
-Et la suite qui les compose fait tenir la logique en 4 lignes utiles :
+Et la suite qui les compose fait tenir la logique en quelques lignes utiles :
 
 ```php
 <?php
@@ -142,12 +187,17 @@ class NewCustomerJourney extends TestsSuite
 {
     public function init()
     {
+        $this->importPage('FrontOffice\Login');
+
+        extract($this->pages);
+
         $this
         ->describe('Nouveau client — création BO puis login FO')
         ->scenario(CreateTestCustomer::class)
         ->scenario(LoginAsTestCustomer::class)
-        ->it('accède à son espace client', function () {
-            Expect::that()->customerIsLogged('.user-info a.account');
+        ->it('est connecté à son compte', function () use ($frontOfficeLoginPage) {
+            // Le lien de déconnexion n'apparaît qu'une fois connecté
+            Expect::that()->customerIsLogged($frontOfficeLoginPage->getSelector('logoutLink'));
         });
     }
 }
@@ -157,7 +207,7 @@ Deux `->scenario()` chaînés, une assertion propre à ce test, et c'est tout. L
 
 ## Passer des params au compose
 
-Le second argument de `->scenario()` override les défauts déclarés dans `$params` du scénario. Utile pour piloter le même scénario dans plusieurs suites avec des variations.
+Le second argument de `->scenario()` remplace les défauts déclarés dans `$params` du scénario. Utile pour piloter le même scénario dans plusieurs suites avec des variations.
 
 ```php
 $this
@@ -169,11 +219,11 @@ $this
 ->scenario(LoginAsTestCustomer::class);
 ```
 
-Le scénario lit ses params via `$this->getParam('firstname')` — jamais en accédant directement à `$this->params[…]`, pour rester compatible avec les datasets (cf. [scénarios paramétrés & chaînage](/blog/prestaflow-scenarios-parametres-chainage/)).
+Grâce au store, `LoginAsTestCustomer` se connecte avec `AutreMdp2026!` sans rien savoir de ce param. Dans ses closures `it()`, le scénario lit ses params via `$this->getParam('firstname')` plutôt que par une variable capturée : `getParam()` se rabat sur le dataset courant quand le param n'est pas défini, ce qui garde le scénario compatible avec les datasets (cf. [scénarios paramétrés & chaînage](/blog/prestaflow-scenarios-parametres-chainage/)).
 
 ## Le cas d'école livré avec la lib : `OrderLifecycle`
 
-C'est exactement le pattern derrière la suite [`OrderLifecycle`](https://github.com/PrestaFlow/php-library/blob/main/src/Tests/Suites/Scenarios/OrderLifecycle.php) fournie par la lib :
+C'est exactement le pattern derrière la suite [`OrderLifecycle`](https://github.com/PrestaFlow/php-library/blob/v1.7.1/src/Tests/Suites/Scenarios/OrderLifecycle.php) fournie par la lib (namespace `PrestaFlow\Library\Tests\Suites\Scenarios`) :
 
 ```php
 class OrderLifecycle extends TestsSuite
@@ -181,14 +231,14 @@ class OrderLifecycle extends TestsSuite
     public function init()
     {
         $this
-        ->describe('Créer une commande puis piloter son cycle de vie en BO')
+        ->describe('Create an order then manage its lifecycle in the BackOffice')
         ->scenario(\PrestaFlow\Library\Scenarios\CheckoutOrder::class)
         ->scenario(\PrestaFlow\Library\Scenarios\ManageOrder::class);
     }
 }
 ```
 
-- `CheckoutOrder` fait le tunnel FO → confirmation → contrôle en BO, et **stocke** l'`orderReference` en fin de parcours.
+- `CheckoutOrder` fait le tunnel FO → confirmation → contrôle en BO, et **stocke** l'`orderReference` dès la page de confirmation.
 - `ManageOrder` **retrouve** cette référence, la filtre en BO, change le statut, ajoute une note, pose un tracking.
 
 Zéro glue entre les deux, sinon le contrat de clé `orderReference` que les deux honorent. C'est la vraie promesse du pattern : découpler la mécanique du flow métier de la variation qu'on veut tester.
@@ -202,10 +252,18 @@ Zéro glue entre les deux, sinon le contrat de clé `orderReference` que les deu
 
 ## Notes
 
-<Warning title="`$this` dans une closure `it()` est rebindé à TestsSuite au moment de l'exécution (via Closure::call), pas à l'écriture. Ne comptez pas sur les propriétés du scénario dans une closure `it()` : elles ne seront pas là. Passez les données par `use ($var)` (capture à l'écriture) ou par `store/retrieve` (transport runtime)." />
+<Warning title="$this dans une closure it()">
+`$this` dans une closure `it()` est rebindé à `TestsSuite` au moment de l'exécution (via `Closure::call`), pas à l'écriture. Ne comptez pas sur les propriétés du scénario dans une closure `it()` : elles ne seront pas là. Passez les données par `use ($var)` (capture à l'écriture), par `$this->getParam()` (params du compose) ou par `store`/`retrieve` (transport à l'exécution).
+</Warning>
 
-<Info title="Le param `locale` est propagé automatiquement du scénario à la suite au tout début du steps() — c'est ce qui fait que CheckoutOrder résout ses URLs friendly (connexion / panier / commande) en français sur la boutique de démo. Pour tester un flow multi-locales, override le param `locale` à chaque compose : ->scenario(CheckoutOrder::class, ['locale' => 'en'])." />
+<Info title="La locale n'est pas propagée toute seule">
+`importPage()` lit la locale dans `$testSuite->params['locale']`, pas dans les params du scénario. Les scénarios de la lib la recopient eux-mêmes en tête de `steps()` : `$testSuite->params['locale'] = $this->params['locale'] ?? 'fr';`. C'est ce qui fait que `CheckoutOrder` résout ses URLs friendly en français par défaut. Un scénario maison qui doit suivre une locale fait de même. Attention, la valeur reste ensuite posée sur la suite : les Pages importées après, y compris par le scénario suivant, en héritent. Pour tester un flow multi-locales, passez le param à chaque compose : `->scenario(CheckoutOrder::class, ['locale' => 'en'])`.
+</Info>
 
-<Info title="Un scénario n'est pas une suite : il n'a ni describe() ni exécution autonome. Pour lancer un scénario seul, il faut une suite bidon qui ne contient qu'un ->scenario(). C'est le pattern des Tests\Suites\Scenarios\CheckoutOrder livrés par la lib — un wrapper 3-lignes qui permet de lancer le scénario en isolation depuis le CLI." />
+<Info title="Lancer un scénario seul">
+Un scénario n'est pas une suite : il n'a ni `describe()` ni exécution autonome. Pour lancer un scénario seul, il faut une suite qui ne contient qu'un `->scenario()`. C'est le pattern de `PrestaFlow\Library\Tests\Suites\Scenarios\CheckoutOrder`, livré par la lib : un wrapper de trois lignes qui permet de lancer le scénario en isolation depuis le CLI.
+</Info>
 
-<Info title="Nommer les clés `store` avec un préfixe scénario (`CreateTestCustomer.email` plutôt que `email`) prend 5 caractères de plus et évite un debug de 20 minutes le jour où deux scénarios composés stockent chacun un `email`. Convention à poser dès la première suite composée." />
+<Info title="Préfixer les clés du store">
+Nommer les clés `store` avec un préfixe scénario (`CreateTestCustomer.email` plutôt que `email`) coûte quelques caractères et évite un long débogage le jour où deux scénarios composés stockent chacun un `email`. Convention à poser dès la première suite composée.
+</Info>
