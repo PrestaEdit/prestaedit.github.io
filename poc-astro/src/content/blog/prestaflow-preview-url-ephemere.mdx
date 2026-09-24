@@ -15,72 +15,78 @@ Annexe de la série PrestaFlow. Prérequis : avoir lu [« Automatiser ses scéna
 
 ## Décor
 
-L'article 2 supposait un backend stable : Flashlight qui boote à la demande, ou une préprod permanente sur `recette.monshop.fr`. Cible fixe, `PRESTAFLOW_FO_URL` hardcodée dans les secrets.
+L'article 2 supposait un backend stable : Flashlight qui boote à la demande, ou une préprod permanente sur `recette.monshop.fr`. Cible fixe, `PRESTAFLOW_FO_URL` écrite en dur dans le workflow ou dans les secrets.
 
-Depuis quelques années, un autre pattern s'est imposé : la **preview URL éphémère**. À chaque ouverture de PR, le PaaS déploie une instance isolée à une URL unique. On peut cliquer dessus depuis la PR, la faire valider par un PO, l'exposer à un client — et lui balancer PrestaFlow dessus.
+Depuis quelques années, un autre pattern s'est imposé : la **preview URL éphémère**. À chaque ouverture de PR, le PaaS déploie une instance isolée à une URL unique. On peut cliquer dessus depuis la PR, la faire valider par un PO, l'exposer à un client, et lui lancer PrestaFlow dessus.
 
-Sur le front, ce sont Vercel et Netlify qui ont normalisé le pattern. Pour un stack PrestaShop complet (PHP + MySQL), c'est plus récent mais dispo : Fly.io déploie via `flyctl`, Coolify auto-hébergé le fait aussi, Sliplane commence à se positionner sur ce créneau.
+Sur le front, ce sont Vercel et Netlify qui ont popularisé le pattern. Pour un stack PrestaShop complet (PHP + MySQL), c'est plus récent mais possible : Fly.io s'y prête, piloté depuis GitHub Actions avec `flyctl`, et Coolify, auto-hébergé, propose des déploiements de preview par PR.
 
 L'intérêt côté tests : on ne double pas le déploiement. Pas de Flashlight en plus de la preview. La preview EST la cible.
 
 ## Le pattern général
 
-Trois briques dans le workflow GHA :
+Trois briques dans le workflow GitHub Actions :
 
-1. Un déclencheur qui **déploie** la preview. C'est presque toujours le PaaS qui s'en charge, branché via son propre webhook GitHub. Le workflow n'a rien à faire de ce côté.
-2. Un step qui **récupère l'URL** de la preview. C'est la partie qui varie : Vercel expose une API, Fly.io répond via `flyctl apps list`, certains PaaS postent l'URL en commentaire de PR.
+1. Un déclencheur qui **déploie** la preview. C'est souvent le PaaS qui s'en charge, branché via sa propre intégration GitHub, ou un workflow de déploiement séparé. Le workflow de tests n'a rien à faire de ce côté.
+2. Un step qui **récupère l'URL** de la preview. C'est la partie qui varie : certains PaaS exposent une API, d'autres postent l'URL en commentaire de PR, d'autres encore suivent une convention de nommage qui permet de la calculer.
 3. Un step qui **lance PrestaFlow** en injectant cette URL dans `PRESTAFLOW_FO_URL`.
 
 Aucune API PrestaFlow spécifique. C'est de l'orchestration de workflow qui pousse les bonnes env vars au bon moment.
 
 ## Cas concret : Fly.io + PrestaShop
 
-Fly.io déploie une app PS complète, base MySQL incluse, en une PR. Chaque PR obtient un hostname `pr-{N}-myshop.fly.dev`, calculable côté workflow.
+Fly.io peut héberger une app PrestaShop complète, base MySQL comprise. Si votre workflow de déploiement crée une app par PR selon une convention de nom, par exemple `pr-{N}-myshop`, son hostname `pr-{N}-myshop.fly.dev` se calcule directement dans le workflow de tests.
 
 ```yaml
 jobs:
   prestaflow-preview:
     runs-on: ubuntu-latest
     steps:
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@v4
 
-      - name: Get Fly preview URL
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: gd
+          tools: composer:v2
+          ini-values: variables_order=EGPCS
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Compute preview URL
         id: preview
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          URL=$(flyctl apps list --json \
-            | jq -r ".[] | select(.Name == \"pr-${{ github.event.number }}-myshop\") | .Hostname")
-          echo "url=https://$URL" >> $GITHUB_OUTPUT
+        run: echo "url=https://pr-${{ github.event.number }}-myshop.fly.dev" >> "$GITHUB_OUTPUT"
 
       - name: Wait for preview to be ready
         run: |
-          for i in $(seq 1 60); do
-            curl -sf ${{ steps.preview.outputs.url }} > /dev/null && break
-            sleep 5
-          done
+          timeout 300 sh -c 'until curl -sf -o /dev/null "$0"; do sleep 5; done' \
+            "${{ steps.preview.outputs.url }}" || { echo "Preview injoignable"; exit 1; }
 
       - name: Run PrestaFlow against preview
         uses: PrestaFlow/github-action@v2
         with:
           token: ${{ secrets.PRESTAFLOW_TOKEN }}
           projectId: 'pk_01ABCDEFGHIJKLMNOP'
-          flashlight: false
         env:
+          PRESTAFLOW_PS_VERSION: '8.1.7'
           PRESTAFLOW_FO_URL: ${{ steps.preview.outputs.url }}/
           PRESTAFLOW_BO_URL: ${{ steps.preview.outputs.url }}/admin-dev/
           PRESTAFLOW_BO_EMAIL: ${{ secrets.PREVIEW_BO_EMAIL }}
           PRESTAFLOW_BO_PASSWD: ${{ secrets.PREVIEW_BO_PASSWD }}
 ```
 
-Deux points de vigilance dans ce snippet :
+Quatre points de vigilance dans ce snippet :
 
-- `flashlight: false` — c'est là qu'on bascule vraiment le mode. Sans ce flag, l'action bootera Flashlight en parallèle et vos scénarios taperont sur `localhost:8001` au lieu de la preview.
-- La boucle `curl` — Fly retourne le hostname avant que l'app ne réponde en HTTP. 60 tentatives × 5s = 5 min max, ce qui couvre un cold boot PS confortablement.
+- **Checkout, PHP et Composer d'abord.** L'Action ne fait qu'exécuter le script Composer `prestaflow:json:file` (décrit dans l'article 2) et en pousser le résultat : sans le dépôt, PHP et `vendor/`, il n'y a rien à lancer.
+- **Pas de Flashlight.** L'input `flashlight` vaut `false` par défaut : sans rien préciser, l'Action ne démarre aucune boutique et les scénarios visent l'URL passée dans `PRESTAFLOW_FO_URL`. Ne l'activez pas ici : l'Action démarrerait son propre Flashlight et remplacerait `PRESTAFLOW_FO_URL` par l'URL de celui-ci.
+- **Les variables passent par `env:`, plus `variables_order=EGPCS`.** PrestaFlow v1.7.1 lit ses variables dans `$_ENV`, que le `php.ini` de production installé par `setup-php` ne remplit pas. Sans la ligne `ini-values`, la lib ignorerait ces variables et viserait ses valeurs par défaut (`https://localhost/`, `demo@prestashop.com`). `PRESTAFLOW_PS_VERSION` doit correspondre à la version déployée par la preview, et `admin-dev` au dossier d'administration de votre boutique.
+- **L'attente échoue franchement.** Le PaaS peut répondre avant que la boutique ne soit prête, ou pas du tout si le déploiement a raté. `timeout` borne l'attente à cinq minutes et arrête le job si la preview ne répond toujours pas, au lieu de lancer les scénarios contre une URL morte.
 
 ## Preview URL protégée par htpasswd
 
-Par défaut, Vercel, Netlify et la plupart des PaaS collent une protection Basic Auth sur les previews : éviter l'indexation, bloquer les accès accidentels d'un client curieux. L'annexe [htpasswd](/blog/prestaflow-preprod-htpasswd/) s'applique tel quel.
+Beaucoup d'équipes protègent leurs previews, pour éviter l'indexation et les accès accidentels d'un client curieux : Basic Auth devant le serveur web, ou protection propre au PaaS. Pour une Basic Auth, l'annexe [htpasswd](/blog/prestaflow-preprod-htpasswd/) s'applique telle quelle.
 
 ```yaml
         env:
@@ -91,32 +97,32 @@ Par défaut, Vercel, Netlify et la plupart des PaaS collent une protection Basic
 
 Même chose pour un bandeau RGPD injecté par le PaaS ou un cookie de bypass Cloudflare : l'annexe [cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/) via `PRESTAFLOW_COOKIES` reste la bonne réponse.
 
-## Chaque preview a son état — attention aux hypothèses
+## Chaque preview a son état : attention aux hypothèses
 
 Deux différences essentielles par rapport à Flashlight :
 
-**La preview vit plus longtemps qu'un run.** Plusieurs runs peuvent taper dessus (push successifs sur la même PR). Un scénario qui crée un produit laisse ce produit pour le run suivant. Sur Flashlight, chaque run repart d'un état vierge — pas ici.
+**La preview vit plus longtemps qu'un run.** Plusieurs runs peuvent taper dessus (push successifs sur la même PR). Un scénario qui crée un produit laisse ce produit pour le run suivant. Sur Flashlight, chaque run repart d'un état vierge ; pas ici.
 
-La bonne pratique : coupler avec l'annexe [snapshot/restore DB](/blog/prestaflow-snapshot-restore-db/), mais uniquement si la preview vous donne un accès `mysqldump` (Fly.io oui via `flyctl ssh`, Netlify non parce qu'il n'y a pas de DB, Coolify oui). Sinon, écrire des scénarios idempotents, ou nettoyer explicitement en fin de test.
+La bonne pratique : coupler avec l'annexe [snapshot/restore DB](/blog/prestaflow-snapshot-restore-db/), mais uniquement si la preview vous donne un accès `mysqldump` (Fly.io oui via `flyctl ssh`, Coolify oui ; Netlify n'a pas de base). Sinon, écrire des scénarios idempotents, ou nettoyer explicitement en fin de test.
 
-**L'état initial dépend du seed du PaaS.** Fly.io « fresh install » ne contient rien qui ne soit dans votre Dockerfile. Coolify peut restaurer un backup au boot. Netlify sert un build statique — pas de BO à tester. Adapter les fixtures selon ce que la preview livre.
+**L'état initial dépend du seed du PaaS.** Une installation fraîche sur Fly.io ne contient rien qui ne soit dans votre image. Coolify peut restaurer une sauvegarde au boot. Netlify sert un build statique : pas de BO à tester. Adaptez les fixtures selon ce que la preview livre.
 
 <Warning title="Le catalogue de la preview n'est pas celui de la prod">
-Un scénario qui suppose qu'un produit d'ID 12 existe passera sur la prod et cassera sur une preview vierge. Utiliser les fixtures documentées dans l'article 1, ou ajouter un step de seed avant le run PrestaFlow.
+Un scénario qui suppose qu'un produit d'ID 12 existe passera sur la prod et cassera sur une preview vierge. Utilisez les fixtures décrites dans l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/), ou ajoutez un step de seed avant le run PrestaFlow.
 </Warning>
 
 ## Cleanup en fin de PR
 
-La preview elle-même est détruite par le PaaS quand la PR ferme — rien à faire là-dessus. En revanche, ce que **votre workflow** a poussé hors du PaaS survit : baselines visuelles remontées vers la plateforme PrestaFlow, `results.json` archivé en artifact GitHub, éventuelles issues auto-créées.
+La preview elle-même est détruite par le PaaS (ou par votre workflow de déploiement) quand la PR se ferme. En revanche, ce que **votre workflow de tests** a poussé hors du PaaS survit : captures et diffs visuels remontés vers la plateforme PrestaFlow, `results.json` archivé en artifact GitHub, éventuelles issues auto-créées.
 
 Deux points d'attention :
 
-- **Les baselines de la branche PR ne doivent pas devenir les baselines de main.** Une régression visuelle introduite par la PR ne doit pas se transformer en nouveau référentiel. Isoler les baselines par branche (préfixe dans le nom de projet, ou espace de projet distinct côté plateforme).
-- **Les issues auto-créées par le pattern de l'annexe [consommer results.json](/blog/prestaflow-consommer-results-json/) ne doivent pas se déclencher sur PR.** Sur main c'est logique, sur PR ça pollue. Vérifier la garde `if: github.ref == 'refs/heads/main'` sur le step de création d'issue — inversée par rapport à ce qu'on veut ici.
+- **Les baselines de la branche PR ne deviennent pas les baselines de main.** La plateforme les isole déjà par branche : l'Action envoie la référence du run (`GITHUB_REF_NAME`, qui vaut `<numéro>/merge` sur une PR), une baseline validée sur une PR reste rattachée à cette référence, et les runs de `main` ne voient que les baselines de `main` (ou celles sans branche). L'approbation automatique des baselines, quand elle est activée sur le projet, ne concerne que la branche par défaut. Rien à configurer : une régression visuelle introduite par la PR ne devient pas le référentiel de `main` sans une approbation explicite.
+- **Les issues auto-créées par le pattern de l'annexe [consommer results.json](/blog/prestaflow-consommer-results-json/) ne doivent pas se déclencher sur PR.** Sur `main` c'est logique, sur PR ça pollue. La garde `if: failure() && github.ref == 'refs/heads/main'` de cette annexe fait déjà le travail : sur un événement `pull_request`, `github.ref` vaut `refs/pull/<numéro>/merge`, et le step est sauté. Gardez-la telle quelle si vous copiez le step dans ce workflow.
 
 ## Interaction avec la matrice multi-versions
 
-Une preview URL déploie **une** version de PrestaShop — celle qui est buildée par la PR. La matrice multi-versions PS n'a de sens que sur main ou sur les branches release, pas sur PR.
+Une preview URL déploie **une** version de PrestaShop : celle qui est buildée par la PR. La matrice multi-versions PS n'a de sens que sur main ou sur les branches release, pas sur PR.
 
 Structurer les workflows en conséquence :
 
@@ -127,12 +133,12 @@ Mélanger les deux dans le même fichier `.github/workflows/prestaflow.yml` avec
 
 ## Notes
 
-**Temps de déploiement.** Une preview PS complète met 2 à 5 minutes à être prête. Flashlight boote en 30 à 60 secondes. Ce n'est pas un défaut de la preview, c'est le coût d'avoir un vrai stack complet — mais ça compte pour dimensionner les timeouts et pour décider si on lance PrestaFlow sur **chaque** push ou uniquement sur les PR étiquetées « ready-for-review ».
+**Temps de déploiement.** Une preview PS complète met souvent plusieurs minutes à être prête (build de l'image, déploiement, installation), là où un Flashlight démarre en général plus vite. Ce n'est pas un défaut de la preview, c'est le coût d'avoir un vrai stack complet, mais ça compte pour dimensionner les timeouts et pour décider si on lance PrestaFlow sur **chaque** push ou uniquement sur les PR étiquetées « ready-for-review ».
 
-**Facturation.** Fly.io et Coolify facturent au temps d'exécution machine. Une preview qui reste ouverte 24h après qu'on ait cessé de la tester coûte plus qu'un Flashlight qui ne tourne que le temps du run. Configurer un auto-stop côté PaaS (Fly.io le fait via `auto_stop_machines = true` dans `fly.toml`) et laisser le PaaS re-booter au premier hit HTTP suivant.
+**Facturation.** Fly.io et Coolify consomment des ressources machine tant que la preview tourne. Une preview qui reste ouverte 24 h après qu'on a cessé de la tester coûte plus qu'un Flashlight qui ne tourne que le temps du run. Configurez un arrêt automatique côté PaaS (sur Fly.io, `auto_stop_machines = "stop"` et `auto_start_machines = true` dans `fly.toml`) et laissez le PaaS redémarrer la machine à la requête HTTP suivante.
 
 <Warning title="Ne jamais utiliser les creds BO de production sur une preview">
-Techniquement, une preview URL fraîchement installée redemandera les mêmes email/mot de passe BO que ceux passés au moment du seed. Tentation : réutiliser `PRESTAFLOW_BO_EMAIL` de la prod. Ne pas le faire. Une preview a des logs plus verbeux, des captures d'écran archivées comme artefacts GitHub, un accès HTTP moins restreint — chaque canal est un vecteur de fuite. Un secret `PREVIEW_BO_EMAIL` / `PREVIEW_BO_PASSWD` distinct coûte trente secondes à créer.
+Techniquement, une preview fraîchement installée demandera les email et mot de passe BO définis au moment du seed. Tentation : réutiliser ceux de la prod. Ne le faites pas. Une preview a des logs plus verbeux, des captures d'écran archivées comme artefacts GitHub, un accès HTTP moins restreint : chaque canal est un vecteur de fuite. Des secrets `PREVIEW_BO_EMAIL` / `PREVIEW_BO_PASSWD` distincts coûtent trente secondes à créer.
 </Warning>
 
-Le reste du workflow — récupération des résultats, upload d'artefacts, garde sur les issues — se recolle à l'identique de l'article 2. La preview URL n'est qu'une cible parmi d'autres, pilotée par les mêmes `PRESTAFLOW_FO_URL` et `PRESTAFLOW_BO_URL`. Ce qui change, c'est le moment où vous connaissez leur valeur : à runtime dans un `$GITHUB_OUTPUT`, pas dans un secret figé.
+Le reste du workflow (récupération des résultats, upload d'artefacts, garde sur les issues) se recolle à l'identique de l'article 2. La preview URL n'est qu'une cible parmi d'autres, pilotée par les mêmes `PRESTAFLOW_FO_URL` et `PRESTAFLOW_BO_URL`. Ce qui change, c'est le moment où vous connaissez leur valeur : à l'exécution, dans un `$GITHUB_OUTPUT`, pas dans un secret figé.

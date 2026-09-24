@@ -6,7 +6,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-09-16-prestaflow-partitionner-ci-parallele.svg'
-summary: "Une suite qui prend 15 minutes en un seul job peut prendre 5 minutes sur 3 jobs parallèles. Deux mécaniques : partitionnement par dossier ou via --group. Trois patterns concrets sur GitHub Actions."
+summary: "Une suite qui prend 15 minutes en un seul job peut descendre vers 5 minutes sur 3 jobs parallèles. Deux mécaniques : partitionnement par dossier ou via --group, chacune avec son workflow GitHub Actions."
 ---
 
 <Info title="Prérequis">
@@ -19,20 +19,24 @@ Un module démarre avec cinq suites PrestaFlow. Le job CI prend deux minutes. On
 
 Six mois plus tard, le module a cinquante suites. Le job prend quinze minutes. Sur **chaque push**. Sur **chaque cellule** de la matrice multi-versions PrestaShop. Un CI qui bloque un merge pendant un quart d'heure devient un coût social : on arrête de le regarder, on merge en aveugle, la boucle de feedback est cassée.
 
-Le moyen de sortie n'est pas de raccourcir les scénarios — ce sont eux le contrat métier. C'est de **partitionner** : découper l'exécution sur N jobs qui tournent en parallèle. Chaque job démarre son propre conteneur Flashlight, exécute sa part, remonte ses résultats.
+Le moyen d'en sortir n'est pas de raccourcir les scénarios : ce sont eux, le contrat métier. C'est de **partitionner** : découper l'exécution sur N jobs qui tournent en parallèle. Chaque job démarre son propre conteneur Flashlight, exécute sa part, remonte ses résultats.
 
 PrestaFlow expose deux mécaniques pour ça, orthogonales, qui répondent à des goûts d'organisation différents.
 
 ## Deux mécaniques, un même résultat
 
-- **Partition par dossier** : on découpe l'arborescence `tests/prestaflow/Suites/` en sous-dossiers thématiques et chaque job CI passe un sous-dossier différent en argument au CLI.
-- **Partition par groupe** : chaque suite déclare une propriété PHP `$groups`, et le CLI filtre avec l'option `--group`.
+- **Partition par dossier** : on découpe l'arborescence `tests/prestaflow/Suites/` en sous-dossiers thématiques et chaque job CI passe un sous-dossier différent en argument à la CLI.
+- **Partition par groupe** : chaque suite déclare une propriété PHP `$groups`, et la CLI filtre avec l'option `--group`.
 
-Les deux exploitent le même fait : `./vendor/bin/prestaflow run` accepte un dossier positionnel (défaut `tests`) et une option `--group X` (raccourci `-g X`, défaut `all`, cumulable via plusieurs `-g`). Ces deux paramètres sont les seules poignées de sélection. Tout le reste — la matrice CI, l'orchestration, la remontée des artefacts — se construit autour.
+Les deux exploitent le même fait : `./vendor/bin/prestaflow run` accepte un dossier positionnel (défaut `tests`) et une option `--group X` (raccourci `-g X`, défaut `all`, cumulable via plusieurs `-g`). Ces deux paramètres sont les seules poignées de sélection. Tout le reste (la matrice CI, l'orchestration, la remontée des artefacts) se construit autour.
+
+<Warning title="Pas encore via l'input suites de l'Action">
+L'Action `PrestaFlow/github-action@v2` a un input `suites`, qui pose la variable `PRESTAFLOW_SUITES`. PrestaFlow v1.7.1 ne lit pas cette variable : l'input n'a aucun effet, toutes les suites tournent. La prochaine version de la bibliothèque le fera respecter, comme une liste de sous-dossiers du dossier de tests. D'ici là, on partitionne avec la CLI, dans des étapes écrites à la main, comme ci-dessous.
+</Warning>
 
 ## Mécanique 1 : partition par dossier
 
-C'est la version zéro-code : on range physiquement les suites dans des sous-dossiers.
+C'est la version sans code : on range physiquement les suites dans des sous-dossiers.
 
 ```
 tests/prestaflow/Suites/
@@ -47,13 +51,14 @@ tests/prestaflow/Suites/
     ImportCatalog.php
 ```
 
-Un job local qui veut tout faire tourne `./vendor/bin/prestaflow run tests/prestaflow/Suites`. Un job CI qui ne cible que le panier tourne `./vendor/bin/prestaflow run tests/prestaflow/Suites/Cart`.
+Un job local qui veut tout faire tourner lance `./vendor/bin/prestaflow run tests/prestaflow/Suites`. Un job CI qui ne cible que le panier lance `./vendor/bin/prestaflow run tests/prestaflow/Suites/Cart`.
 
-Le workflow GitHub Actions ressemble à ça :
+Le workflow GitHub Actions reprend le niveau 1 de l'article 2 (MariaDB, Flashlight avec le module monté et installé par l'init-script `.flashlight/init-scripts/10-install-module.sh`), et ajoute une matrice sur la partition :
 
 ```yaml
 jobs:
   prestaflow:
+    name: PrestaFlow — ${{ matrix.partition }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,36 +66,99 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: PrestaFlow — ${{ matrix.partition }}
-        uses: prestaflow/action-run@main
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
         with:
-          folder: tests/prestaflow/Suites/${{ matrix.partition }}
-          ps-version: 8.1.7
+          php-version: '8.2'
+          extensions: gd
+          tools: composer:v2
+          ini-values: variables_order=EGPCS
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Start MariaDB and PrestaShop (Flashlight)
+        run: |
+          docker network create prestashop
+          docker run -d --name mysql --network prestashop \
+            -e MARIADB_ROOT_PASSWORD=prestashop \
+            -e MARIADB_DATABASE=prestashop \
+            -e MARIADB_USER=prestashop \
+            -e MARIADB_PASSWORD=prestashop \
+            mariadb:11
+          docker run -d --name ps --network prestashop \
+            -p 80:80 \
+            -e PS_DOMAIN=localhost \
+            -e MYSQL_HOST=mysql \
+            -v "$PWD":/var/www/html/modules/psflowdemo \
+            -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
+            prestashop/prestashop-flashlight:8.1.7
+
+      - name: Wait for PrestaShop to be ready
+        run: |
+          timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost/admin-dev/)" = "302" ]; do sleep 2; done' \
+            || { docker logs ps; exit 1; }
+
+      - name: Run PrestaFlow — ${{ matrix.partition }}
+        env:
+          PRESTAFLOW_PS_VERSION: 8.1.7
+          PRESTAFLOW_LOCALE: en
+          PRESTAFLOW_FO_URL: http://localhost/
+          PRESTAFLOW_BO_URL: http://localhost/admin-dev/
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
+        run: ./vendor/bin/prestaflow run tests/prestaflow/Suites/${{ matrix.partition }}
+
+      - name: Upload error screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prestaflow-errors-${{ matrix.partition }}
+          path: prestaflow/screens/errors/
 ```
 
 Trois jobs démarrent en parallèle. Chacun a son propre Flashlight, sa propre boutique, son propre run PrestaFlow qui n'exécute que le sous-dossier ciblé. Le wall-clock du plus lent des trois remplace la somme des trois.
 
-Avantage : rien à modifier dans les suites PHP. La structure disque **est** le partitionnement, elle est visible dans le repo, on la comprend en cinq secondes.
+Deux détails de ce workflow. `ini-values: variables_order=EGPCS` est nécessaire parce que PrestaFlow v1.7.1 lit ses variables dans `$_ENV`, que le `php.ini` de production installé par `setup-php` ne remplit pas : sans cette ligne, les variables du bloc `env:` seraient ignorées et la lib retomberait sur ses valeurs par défaut. Et l'attente échoue franchement au bout de cinq minutes, logs de Flashlight à l'appui, au lieu de laisser les scénarios tourner contre une boutique qui ne répond pas.
 
-Limite : rigide. Rebalancer, c'est déplacer des fichiers — et parfois casser des chemins d'import ou des namespaces. Une suite qui touche à la fois panier et back-office doit choisir un dossier, arbitrairement.
+Avantage : rien à modifier dans les suites PHP. La structure disque **est** le partitionnement, elle est visible dans le dépôt, on la comprend en cinq secondes.
+
+Limite : rigide. Rééquilibrer, c'est déplacer des fichiers, et donc changer leur namespace (la CLI déduit le nom de la classe du `namespace` et du nom du fichier, l'autoload Composer fait le reste). Une suite qui touche à la fois le panier et le back-office doit choisir un dossier, arbitrairement.
 
 ## Mécanique 2 : partition par `--group`
 
 Le partitionnement se fait ici au niveau du code PHP. Chaque suite déclare à quels groupes elle appartient :
 
 ```php
-class AddToCartSuite extends \Prestaflow\Suite
+<?php
+
+namespace Tests\Suites\Cart;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class AddToCart extends TestsSuite
 {
     protected $groups = ['cart', 'fast'];
 
-    public function scenarios(): array
+    public function init()
     {
-        return [/* ... */];
+        $this->importPage('FrontOffice\Home');
+
+        extract($this->pages);
+
+        $this
+            ->describe('Ajout au panier')
+            ->it('la boutique répond', function () use ($frontOfficeHomePage) {
+                $frontOfficeHomePage->goToPage('home');
+                Expect::that()->shopIsVisible($frontOfficeHomePage);
+            });
     }
 }
 ```
 
-`$groups` accepte une string (`'all'` par défaut) ou un array. Une suite peut appartenir à plusieurs groupes, ce qui est le point clé de cette mécanique.
+`$groups` accepte une string (`'all'` par défaut) ou un tableau. Une suite peut appartenir à plusieurs groupes, ce qui est le point clé de cette mécanique.
 
 Côté CLI :
 
@@ -102,63 +170,63 @@ Côté CLI :
 
 Le filtrage se fait par intersection : PrestaFlow ne lance que les suites dont `getGroups()` contient au moins un des groupes demandés. Ne pas passer `--group` du tout (ou passer `--group all`, la valeur par défaut) revient à tout faire tourner.
 
-Le workflow GitHub Actions devient :
+Le workflow GitHub Actions est le même que plus haut, à deux endroits près : la matrice porte sur les groupes, et l'étape PrestaFlow passe le dossier complet avec `-g`.
 
 ```yaml
-jobs:
-  prestaflow:
     strategy:
       fail-fast: false
       matrix:
         group: [cart, checkout, backoffice]
-    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: PrestaFlow — group ${{ matrix.group }}
-        uses: prestaflow/action-run@main
-        with:
-          folder: tests/prestaflow/Suites
-          extra-args: --group ${{ matrix.group }}
-          ps-version: 8.1.7
+      # ... mêmes étapes : checkout, setup-php, composer install, MariaDB + Flashlight, attente ...
+      - name: Run PrestaFlow — group ${{ matrix.group }}
+        env:
+          PRESTAFLOW_PS_VERSION: 8.1.7
+          PRESTAFLOW_LOCALE: en
+          PRESTAFLOW_FO_URL: http://localhost/
+          PRESTAFLOW_BO_URL: http://localhost/admin-dev/
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
+        run: ./vendor/bin/prestaflow run tests/prestaflow/Suites -g ${{ matrix.group }}
 ```
 
-Avantage : une même suite peut appartenir à `['cart', 'fast']` — elle tournera aussi bien dans le job « panier » que dans un futur job « smoke rapide sur toutes les versions ». Rebalancer une partition, c'est éditer une propriété, pas déplacer un fichier.
+Avantage : une même suite peut appartenir à `['cart', 'fast']` : elle tournera aussi bien dans le job « panier » que dans un futur job « smoke rapide sur toutes les versions ». Rééquilibrer une partition, c'est éditer une propriété, pas déplacer un fichier.
 
-Limite : il faut de la discipline pour annoter chaque suite. Une suite oubliée reste au groupe `all` et ne tombe dans aucun bucket ciblé — donc, selon la stratégie, soit elle tourne partout, soit elle est ignorée.
+Limite : il faut de la discipline pour annoter chaque suite. Une suite oubliée reste dans le groupe `all`, et le comportement est déterministe : dès qu'un `--group` autre que `all` est passé, elle est écartée. Elle ne tourne donc dans aucun des jobs partitionnés. Pour la rattraper, ajoutez un job sans `--group`, ou vérifiez en revue que chaque nouvelle suite déclare ses groupes.
 
 ## Choisir combien de partitions
 
-Il n'y a pas de règle magique. Une empirique qui fonctionne : **le nombre de partitions doit approcher le nombre de suites lentes qui dominent le temps total**.
+Il n'y a pas de règle magique. Une règle empirique qui fonctionne : **le nombre de partitions doit approcher le nombre de suites lentes qui dominent le temps total**.
 
-Concrètement, si trois suites de checkout pèsent 8 minutes chacune et que quarante autres suites pèsent 20 secondes chacune, trois partitions suffisent — l'objectif est d'isoler les trois grosses, le reste se répartit sans effort.
+Concrètement, si trois suites de checkout pèsent 8 minutes chacune et que quarante autres suites pèsent 20 secondes chacune, trois partitions suffisent : l'objectif est d'isoler les trois grosses, le reste se répartit sans effort.
 
-Découper trop fin est contre-productif. Chaque job CI doit démarrer un conteneur Flashlight, ce qui prend typiquement quarante secondes à une minute. Dix jobs pour dix suites d'une minute donnent dix fois quarante secondes d'overhead : le wall-clock ne baisse plus, il stagne.
+Découper trop fin est contre-productif. Chaque job CI doit installer ses dépendances et démarrer un conteneur Flashlight, ce qui se compte typiquement en dizaines de secondes, parfois en minutes. Dix jobs pour dix suites d'une minute paient dix fois ce démarrage : le wall-clock ne baisse plus, il stagne.
 
-Deux, trois, quatre partitions couvrent la majorité des cas. Au-delà, on paye l'orchestration sans gagner de temps.
+Deux, trois, quatre partitions couvrent la majorité des cas. Au-delà, on paie l'orchestration sans gagner de temps.
 
 ## Ce qu'il faut partager entre les jobs
 
-Chaque job CI est un environnement indépendant. Il télécharge le repo, démarre son Flashlight, monte sa boutique. Deux conséquences pratiques :
+Chaque job CI est un environnement indépendant. Il télécharge le dépôt, démarre son Flashlight, monte sa boutique. Deux conséquences pratiques :
 
-- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs. Elles font partie de la config du conteneur, pas d'une suite.
-- Les **baselines visuelles** (cf. versionner les baselines visuelles) doivent être accessibles à tous les jobs qui font du visual matching. Elles sont committées dans le repo, donc le `checkout` initial les récupère — pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
+- Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs, comme l'init-script qui installe le module. Elles font partie de la config du conteneur, pas d'une suite.
+- Les **baselines visuelles** (cf. versionner les baselines visuelles) doivent être accessibles à tous les jobs qui font de la comparaison visuelle. Si elles sont committées dans le dépôt, le `checkout` initial les récupère : pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
 
 Ce qui reste **spécifique** à chaque job : la boutique, les cookies, l'état runtime. Rien ne fuit d'un job à l'autre, et c'est ce qui rend le partitionnement sûr.
 
-## Le cas particulier des tests inter-dépendants
+## Le cas particulier des tests interdépendants
 
 Un scénario `CreateOrder` qui crée une commande, suivi d'un scénario `RefundOrder` qui la rembourse : ces deux-là ne peuvent pas vivre sur des jobs différents. La commande créée par le premier n'existe pas dans la boutique du second.
 
 Deux façons de gérer :
 
 1. **Regrouper**. Mettre `CreateOrder` et `RefundOrder` dans le même dossier (mécanique 1) ou leur donner un groupe commun `order-lifecycle` (mécanique 2). Le partitionnement respecte la dépendance.
-2. **Casser la dépendance**. Utiliser `store()`/`retrieve()` limité à la même suite, comme décrit dans l'annexe [scénarios paramétrés et chaînage](/blog/prestaflow-scenarios-parametres-chainage/), pour rendre chaque scénario autoportant. Plus de travail au départ, plus de liberté ensuite.
+2. **Casser la dépendance**. Utiliser `store()`/`retrieve()`, limités à la même suite, comme décrit dans l'annexe [scénarios paramétrés et chaînage](/blog/prestaflow-scenarios-parametres-chainage/), pour rendre chaque suite autoportante. Plus de travail au départ, plus de liberté ensuite.
 
 Le choix dépend du volume : si trois scénarios se chaînent, on regroupe. Si quinze scénarios forment une chaîne, il vaut mieux investir dans l'autonomie pour ne pas se retrouver avec une partition géante qui domine le wall-clock.
 
 ## Notes
 
-- **Gain typique** : trois jobs parallèles réduisent le wall-clock de 60 à 70 %, pas 66 %. L'overhead de boot Flashlight rogne les gains. Cinq jobs et au-delà, les rendements deviennent décroissants — chaque conteneur coûte le même temps de démarrage pour de moins en moins de travail utile.
-- **Coût CI** : sur GitHub Actions gratuit, les jobs parallèles consomment N minutes de facturation où N est le nombre de jobs. Trois jobs de cinq minutes = quinze minutes facturées, contre quinze minutes pour un seul job de quinze minutes. Le wall-clock chute, la facture ne change pas — sauf sur runners auto-hébergés ou plans où c'est la durée sérielle qui compte. À vérifier avant d'industrialiser.
-- **Combiner partition et matrice multi-versions** : matrice `ps-version × partition` = N×M jobs. Avec trois versions PrestaShop et trois partitions, on atteint neuf jobs. Vite explosif. Un compromis usuel : un smoke rapide (un seul groupe `smoke`) sur toutes les versions PrestaShop supportées, plus un run complet partitionné sur la version pivot. On garde une couverture large sur la matrice sans la faire exploser.
-- Les deux mécaniques décrites ici sont **transposables** aux autres CI. GitLab CI (`parallel: matrix:`), Bitbucket Pipelines (`parallel:`), CircleCI (`parallelism:`) offrent tous une matrice équivalente à `strategy.matrix` de GitHub Actions. L'annexe [PrestaFlow en CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/) détaille les équivalents ligne par ligne.
+- **Gain typique** : trois jobs parallèles ne divisent pas le wall-clock par trois. Le démarrage de chaque job (dépendances, boot Flashlight) et le déséquilibre entre partitions rognent le gain théorique de 66 %. Au-delà de cinq jobs, les rendements deviennent nettement décroissants : chaque conteneur coûte le même temps de démarrage pour de moins en moins de travail utile.
+- **Coût CI** : sur un dépôt privé, GitHub Actions facture les minutes de chaque job. Trois jobs de cinq minutes font quinze minutes facturées, autant qu'un seul job de quinze minutes, plus le démarrage payé trois fois. Le wall-clock chute, la facture ne baisse pas. À vérifier avant d'industrialiser.
+- **Combiner partition et matrice multi-versions** : une matrice `ps-version × partition` donne N×M jobs. Avec trois versions PrestaShop et trois partitions, on atteint neuf jobs. Vite explosif. Un compromis usuel : un smoke rapide (un seul groupe `smoke`) sur toutes les versions PrestaShop supportées, plus un run complet partitionné sur la version pivot. On garde une couverture large sur la matrice sans la faire exploser.
+- Les deux mécaniques décrites ici sont **transposables** aux autres CI : GitLab CI (`parallel: matrix:`), Bitbucket Pipelines (steps `parallel:`) et CircleCI (`matrix:` sur un job du workflow) savent lancer plusieurs jobs avec un paramètre différent. L'annexe [PrestaFlow en CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/) donne les gabarits de chaque plateforme.

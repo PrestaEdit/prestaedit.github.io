@@ -8,10 +8,10 @@ series: prestaflow
 featuredimg: >-
   https://prestaedit.github.io/head/2026-08-19-prestaflow-ci-hors-github-actions.svg
 summary: >-
-  L'article 2 a couvert GitHub Actions. Le niveau 2 n'est plus GitHub-only :
-  GitLab a un Component, Bitbucket un Pipe, CircleCI un Orb. Cette annexe
-  donne les gabarits niveau 1 et niveau 2 pour chaque plateforme, plus Jenkins
-  qui reste au niveau 1.
+  L'article 2 a couvert GitHub Actions. Cette annexe donne le niveau 1 (la CLI
+  seule) pour GitLab CI, Bitbucket Pipelines et Jenkins, et fait le point sur
+  le niveau 2 hors GitHub : un Component GitLab, un Pipe Bitbucket et un Orb
+  CircleCI sont en préparation, mais pas encore publiés.
 ---
 <Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Automatiser ses scénarios PrestaFlow en CI » (article 2), qui pose les niveaux 1 et 2 et sert de gabarit à cette annexe." />
 
@@ -20,35 +20,45 @@ summary: >-
 L'[article 2 de la série](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a posé deux niveaux de CI :
 
 * **Niveau 1** — la CLI PrestaFlow dans un workflow, sans compte prestaflow\.io, avec Docker pour lancer Flashlight à la main.
-* **Niveau 2** — l'intégration officielle qui gère Flashlight, la matrice, le commentaire PR/MR, et la synchro plateforme (report URL, historique, régressions visuelles).
+* **Niveau 2** — l'intégration officielle qui gère Flashlight, le commentaire PR/MR, et la synchro plateforme (report URL, historique, régressions visuelles).
 
-Au moment où l'article 2 est paru, le niveau 2 n'existait que pour GitHub Actions. Ce n'est plus le cas : trois nouvelles intégrations officielles sont disponibles, chacune avec ses propres inputs et sa mécanique.
+Le niveau 2 n'existe aujourd'hui que pour GitHub Actions. Trois portages sont en préparation, avec les mêmes inputs et le même endpoint côté plateforme, mais aucun n'est encore publié : leurs dépôts GitHub n'ont qu'un tag `v0.1.0`, et ni le registre GitLab, ni Docker Hub, ni le registre des orbs CircleCI ne les connaissent.
 
-| Plateforme | Niveau 2 officiel | Référence |
-|---|---|---|
-| GitHub | Action | `PrestaFlow/github-action@v2` |
-| GitLab | CI/CD Component | `gitlab.com/prestaflow/ci/prestaflow@v0.1.0` |
-| Bitbucket | Pipe Docker | `prestaflow/pipe-push:1.0.0` |
-| CircleCI | Orb | `prestaflow/prestaflow@1.0.0` |
-| Jenkins | — (niveau 1 uniquement) | pipeline scripté |
+| Plateforme | Niveau 2 | Référence prévue | État |
+|---|---|---|---|
+| GitHub | Action | `PrestaFlow/github-action@v2` | publiée |
+| GitLab | CI/CD Component | `gitlab.com/prestaflow/ci/prestaflow@v0.1.0` | en préparation |
+| Bitbucket | Pipe Docker | `docker://prestaflow/pipe-push` | en préparation |
+| CircleCI | Orb | `prestaflow/prestaflow` | en préparation |
+| Jenkins | — | Jenkinsfile déclaratif | niveau 1 uniquement |
 
-Cette annexe donne les gabarits pour ces quatre plateformes, avec pour chacune le niveau 1 (autonome, sans compte) et le niveau 2 (intégration officielle) quand il existe.
+Cette annexe donne donc surtout le niveau 1 pour chaque plateforme, celui qui fonctionne aujourd'hui, et montre la syntaxe prévue du niveau 2 pour que vous sachiez à quoi vous attendre.
 
 ## Ce qui doit tourner, quel que soit le CI
 
-Le workflow niveau 1 fait cinq choses, dans l'ordre :
+Le workflow niveau 1 fait six choses, dans l'ordre :
 
 1. `git clone` du projet (implicite dans tout CI)
-2. Installer PHP (typiquement 8.2) et Composer
+2. Installer PHP (typiquement 8.2), Composer et Chromium
 3. `composer install`
-4. Démarrer une base MariaDB puis Flashlight en arrière-plan, attendre que le back office réponde
-5. Lancer `./vendor/bin/prestaflow run tests/prestaflow` avec les env vars pointant sur `http://localhost/`
+4. Démarrer une base MariaDB puis Flashlight, **en y montant le module**
+5. Installer le module au démarrage de Flashlight (init-script), puis attendre que le back office réponde
+6. Lancer `./vendor/bin/prestaflow run tests/prestaflow` avec les variables d'environnement qui pointent sur la boutique
 
-Toute la variation d'un CI à l'autre au niveau 1 concerne uniquement la syntaxe pour exprimer ces cinq étapes, plus les mécanismes de secrets et d'artifacts. Le niveau 2 remplace ces étapes par un appel à l'intégration officielle, qui les regroupe et ajoute la remontée vers la plateforme.
+Le point 4 conditionne le reste. Pour que PrestaShop voie le module, il faut monter le dépôt cloné dans `modules/psflowdemo` du conteneur, puis l'installer : c'est l'init-script `.flashlight/init-scripts/10-install-module.sh` de l'article 2, qui lance `php /var/www/html/bin/console prestashop:module install psflowdemo` au premier démarrage.
+
+Or les side-cars déclaratifs (`services:` de GitLab ou de Bitbucket) ne permettent pas de monter le checkout dans le conteneur. Flashlight sait aussi installer des zips placés dans le dossier `INSTALL_MODULES_DIR`, mais ce dossier doit exister dans le conteneur, et on n'y a pas accès non plus. La solution qui marche : piloter un démon Docker depuis le job et lancer MariaDB et Flashlight avec `docker run`, exactement comme dans l'article 2. Chaque plateforme fournit ce démon à sa façon.
+
+Deux réglages valent pour les trois plateformes ci-dessous :
+
+* **`CHROME_NO_SANDBOX=1`**. Les images `php:8.2-cli` tournent en root, et Chromium refuse de démarrer en root sans `--no-sandbox` (« Running as root without --no-sandbox is not supported »). PrestaFlow v1.7.1 ne passe pas cette option, mais chrome-php la lit dans cette variable d'environnement et ajoute alors `--no-sandbox`.
+* **Les variables `PRESTAFLOW_*` passent par l'environnement.** PrestaFlow v1.7.1 les lit dans `$_ENV`, rempli seulement si `variables_order` contient `E`. L'image officielle `php:8.2-cli` n'embarque pas de `php.ini` : la valeur par défaut `EGPCS` s'applique, donc tout va bien. Sur une image qui charge le `php.ini` de production (`GPCS`), ajoutez `-d variables_order=EGPCS` ou un `php.ini` adapté.
 
 ## GitLab CI
 
 ### Niveau 1 — CLI seule
+
+Sur GitLab, le démon Docker vient d'un service `docker:dind`. Il faut un runner qui accepte le mode privilégié : c'est le cas des runners Linux partagés de GitLab.com ; sur un runner auto-hébergé, activez `privileged = true`.
 
 Créez `.gitlab-ci.yml` à la racine :
 
@@ -60,55 +70,65 @@ e2e:
   stage: test
   image: php:8.2-cli
   services:
-    - name: mariadb:11
-      alias: mysql
-      variables:
-        MARIADB_ROOT_PASSWORD: prestashop
-        MARIADB_DATABASE: prestashop
-        MARIADB_USER: prestashop
-        MARIADB_PASSWORD: prestashop
-    - name: prestashop/prestashop-flashlight:8.1.7
-      alias: prestashop
-      variables:
-        PS_DOMAIN: prestashop
-        MYSQL_HOST: mysql
+    - name: docker:27-dind
+      alias: docker
+  parallel:
+    matrix:
+      - PS_VERSION: ["8.1.7", "9.0.0"]
   variables:
-    FF_NETWORK_PER_BUILD: "true"
-    PRESTAFLOW_PS_VERSION: "8.1.7"
-    PRESTAFLOW_LOCALE: fr
-    PRESTAFLOW_FO_URL: http://prestashop/
-    PRESTAFLOW_BO_URL: http://prestashop/admin-dev/
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    PRESTAFLOW_PS_VERSION: $PS_VERSION
+    PRESTAFLOW_LOCALE: en
+    PRESTAFLOW_FO_URL: http://docker/
+    PRESTAFLOW_BO_URL: http://docker/admin-dev/
     PRESTAFLOW_BO_EMAIL: admin@prestashop.com
     PRESTAFLOW_BO_PASSWD: prestashop
     PRESTAFLOW_HEADLESS: "true"
+    CHROME_NO_SANDBOX: "1"
   before_script:
-    - apt-get update && apt-get install -y curl chromium libgd-dev unzip git
+    - apt-get update && apt-get install -y --no-install-recommends curl chromium docker-cli libgd-dev unzip git
     - docker-php-ext-install gd
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer install --prefer-dist --no-progress
-    - for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://prestashop/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done
+    - docker network create prestashop
+    - >-
+      docker run -d --name mysql --network prestashop
+      -e MARIADB_ROOT_PASSWORD=prestashop -e MARIADB_DATABASE=prestashop
+      -e MARIADB_USER=prestashop -e MARIADB_PASSWORD=prestashop
+      mariadb:11
+    - >-
+      docker run -d --name ps --network prestashop -p 80:80
+      -e PS_DOMAIN=docker -e MYSQL_HOST=mysql
+      -v "$CI_PROJECT_DIR":/var/www/html/modules/psflowdemo
+      -v "$CI_PROJECT_DIR/.flashlight/init-scripts":/tmp/init-scripts:ro
+      prestashop/prestashop-flashlight:$PS_VERSION
+    - timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://docker/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }
   script:
     - ./vendor/bin/prestaflow run tests/prestaflow
   artifacts:
     when: on_failure
     paths:
-      - tests/prestaflow/reports/
       - prestaflow/screens/errors/
     expire_in: 1 week
 ```
 
-Trois particularités GitLab :
+Quatre particularités GitLab :
 
-* **`services:`** permet de lancer des conteneurs en side-car, accessibles par leur alias comme hostname (ici `prestashop` et `mysql`). Plus propre que le `docker run -d` manuel de GitHub Actions. Flashlight n'embarque pas MySQL : il lui faut la base en second service. Et comme la boutique doit joindre la base, **`FF_NETWORK_PER_BUILD`** est nécessaire : sans lui, les services ne se voient pas entre eux.
-* **`PS_DOMAIN: prestashop`** — obligatoire (sans lui, Flashlight s'arrête aussitôt), et égal au nom sous lequel le job joint la boutique. PrestaShop redirige vers son domaine configuré : un domaine qui ne correspond pas à l'URL de `PRESTAFLOW_FO_URL` renverrait chaque page ailleurs.
-* **`image:`** de niveau job = le conteneur qui exécute le script. On prend `php:8.2-cli` officiel et on y ajoute Chromium + composer.
-* **`artifacts:`** ne s'attache qu'`on_failure` — même pattern que le `if: failure()` de GitHub. Le rapport HTML et les captures d'erreur restent téléchargeables 7 jours.
+* **Le service `docker:dind`** fournit le démon, joignable sous l'alias `docker`. Les conteneurs lancés par `docker run` tournent dans ce service : un port publié avec `-p 80:80` se joint donc sur `http://docker/`, et non sur `localhost`. D'où `PS_DOMAIN=docker` : PrestaShop redirige vers son domaine configuré, qui doit correspondre à l'URL de `PRESTAFLOW_FO_URL`.
+* **Le montage du checkout fonctionne** : le dossier du projet (`$CI_PROJECT_DIR`, sous `/builds`) est partagé entre le job et ses services, ce qui permet au démon dind de le monter dans Flashlight. C'est ce qui rend l'installation du module possible.
+* **`parallel:matrix:`** duplique le job pour chaque valeur de `PS_VERSION` : deux jobs, deux boutiques, deux runs. La variable sert à la fois au tag de l'image Flashlight et à `PRESTAFLOW_PS_VERSION`.
+* **`artifacts:`** ne s'attache qu'`on_failure`, comme le `if: failure()` de GitHub. Les captures d'erreur (`prestaflow/screens/errors/`, prises à l'échec d'une assertion) restent téléchargeables 7 jours.
 
-<Info title="L'image php:8.2-cli n'a ni Chromium ni GD par défaut. On les installe dans le before_script — sur GitLab.com, ça ajoute ~30-40s au démarrage du job. Alternative : une image PHP custom déjà bâtie avec Chromium (par exemple mcopolo/php-chromium sur Docker Hub), qu'on référence directement et qui économise le apt-get." />
+L'attente sur `/admin-dev/` échoue franchement au bout de 5 minutes (`timeout` renvoie un code non nul, et le `|| { …; exit 1; }` affiche les logs de Flashlight avant d'arrêter le job) : une boucle `for` qui se contente de `break` laisserait le job continuer contre une boutique morte. La locale est `en` : l'image Flashlight n'installe que l'anglais.
 
-### Niveau 2 — CI/CD Component
+<Info title="Image PHP personnalisée">
+L'image `php:8.2-cli` n'a ni Chromium, ni GD, ni la CLI Docker. Le `before_script` les installe à chaque job, ce qui rallonge son démarrage. Pour l'éviter, construisez une fois votre propre image (un `Dockerfile` `FROM php:8.2-cli` qui reprend ces lignes), poussez-la dans le registre de conteneurs du projet GitLab, et référencez-la dans `image:`.
+</Info>
 
-Depuis la v0.1.0, PrestaFlow expose un component GitLab standard :
+### Niveau 2 — CI/CD Component (en préparation)
+
+Le portage GitLab de l'Action vit dans le dépôt GitHub `PrestaFlow/gitlab-component`. Il n'est pas encore publié : le projet `gitlab.com/prestaflow/ci` n'existe pas, donc la ligne `include` ci-dessous échoue aujourd'hui. Voici la syntaxe prévue par son README :
 
 ```yaml
 include:
@@ -118,98 +138,101 @@ include:
       project_id: pk_01ABCDEF
       flashlight: "true"
       ps_version: "9.0.0"
-      suites: "BackOffice,FrontOffice"
-      visual: "true"
+      flashlight_init_scripts: .flashlight/init-scripts
       mr_comment: "true"
 ```
 
-Les inputs clés : `token` (variable masquée), `project_id` (Product Key `pk_…`), `flashlight` (bootstrap PS via Docker), `ps_version`, `suites` (filtre), `visual` (baselines + diffs), `mr_comment`, `execute`, `upload_artifacts`.
+Les inputs du template : `token`, `project_id` (Product Key `pk_…`), `execute` (lance `composer run prestaflow:json:file`, le script Composer de l'article 2), `suites`, `flashlight`, `ps_version`, `flashlight_mount` (`auto`/`root`/`modules`/`themes`), `flashlight_init_scripts`, `mr_comment`, `upload_artifacts`, `visual`, ainsi que `image` (par défaut `composer:2`) et `stage`. Le job démarre lui-même un service `docker:24-dind` pour Flashlight.
 
-Deux env vars à configurer côté projet :
+Deux variables CI/CD, masquées, à définir côté projet :
 
-* **`PRESTAFLOW_TOKEN`** — variable CI/CD masquée pour l'API.
-* **`GITLAB_TOKEN`** — token GitLab avec scope `api` pour poster les notes MR. Le `CI_JOB_TOKEN` par défaut ne peut pas commenter les MR, c'est le piège classique.
+* **`PRESTAFLOW_TOKEN`** — pour l'API.
+* **`GITLAB_TOKEN`** — token GitLab avec le scope `api`, pour poster la note sur la MR. Le `CI_JOB_TOKEN` par défaut ne peut pas commenter les MR.
 
-Le component publie un artifact `prestaflow.env` (format dotenv) exposant `PRESTAFLOW_REPORT_ID`, `PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_PASSED/FAILED/SKIPPED/TOTAL`, `PRESTAFLOW_DURATION_MS`, `PRESTAFLOW_STATUS`. Un job downstream y accède via `needs: [{job: prestaflow, artifacts: true}]`.
+Le template publie un artifact `prestaflow.env` (format dotenv) avec `PRESTAFLOW_REPORT_ID`, `PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_PASSED`, `PRESTAFLOW_FAILED`, `PRESTAFLOW_SKIPPED`, `PRESTAFLOW_TOTAL`, `PRESTAFLOW_DURATION_MS` et `PRESTAFLOW_STATUS`. Un job en aval y accède via `needs: [{job: prestaflow, artifacts: true}]`.
 
-Matrice multi-versions PS avec `parallel:matrix:` :
-
-```yaml
-test-ps:
-  parallel:
-    matrix:
-      - PS_VERSION: ["8.1.7", "9.0.0"]
-  variables:
-    ps_version: $PS_VERSION
-```
+<Warning title="L'input suites n'a pas encore d'effet">
+Comme l'input `suites` de l'Action GitHub, il pose la variable `PRESTAFLOW_SUITES`, que PrestaFlow v1.7.1 ne lit pas : toutes les suites tournent. Le filtrage arrivera avec une prochaine version de la bibliothèque.
+</Warning>
 
 ## Bitbucket Pipelines
 
 ### Niveau 1 — CLI seule
+
+Sur Bitbucket, le démon vient du service `docker` intégré. Quand il est activé sur un step, la CLI `docker` est disponible dans le conteneur du build, et les ports publiés par `docker run -p` se joignent sur `localhost`, puisque les services partagent le réseau du step.
 
 Créez `bitbucket-pipelines.yml` :
 
 ```yaml
 image: php:8.2-cli
 
+definitions:
+  services:
+    docker:
+      memory: 3072
+
 pipelines:
   default:
     - step:
         name: E2E — PrestaShop 8.1.7
+        size: 2x
         services:
-          - mariadb
-          - flashlight
+          - docker
         script:
-          - apt-get update && apt-get install -y curl chromium libgd-dev unzip git
+          - apt-get update && apt-get install -y --no-install-recommends curl chromium libgd-dev unzip git
           - docker-php-ext-install gd
           - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
           - composer install --prefer-dist --no-progress
-          - for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done
+          - docker network create prestashop
+          - >-
+            docker run -d --name mysql --network prestashop
+            -e MARIADB_ROOT_PASSWORD=prestashop -e MARIADB_DATABASE=prestashop
+            -e MARIADB_USER=prestashop -e MARIADB_PASSWORD=prestashop
+            mariadb:11
+          - >-
+            docker run -d --name ps --network prestashop -p 80:80
+            -e PS_DOMAIN=localhost -e MYSQL_HOST=mysql
+            -v "$BITBUCKET_CLONE_DIR":/var/www/html/modules/psflowdemo
+            -v "$BITBUCKET_CLONE_DIR/.flashlight/init-scripts":/tmp/init-scripts:ro
+            prestashop/prestashop-flashlight:8.1.7
+          - timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }
+          - export PRESTAFLOW_PS_VERSION=8.1.7
+          - export PRESTAFLOW_LOCALE=en
           - export PRESTAFLOW_FO_URL=http://localhost/
           - export PRESTAFLOW_BO_URL=http://localhost/admin-dev/
           - export PRESTAFLOW_BO_EMAIL=admin@prestashop.com
           - export PRESTAFLOW_BO_PASSWD=prestashop
           - export PRESTAFLOW_HEADLESS=true
+          - export CHROME_NO_SANDBOX=1
           - ./vendor/bin/prestaflow run tests/prestaflow
         artifacts:
-          - tests/prestaflow/reports/**
           - prestaflow/screens/errors/**
-
-definitions:
-  services:
-    mariadb:
-      image: mariadb:11
-      variables:
-        MARIADB_ROOT_PASSWORD: prestashop
-        MARIADB_DATABASE: prestashop
-        MARIADB_USER: prestashop
-        MARIADB_PASSWORD: prestashop
-    flashlight:
-      image: prestashop/prestashop-flashlight:8.1.7
-      variables:
-        PS_DOMAIN: localhost
-        MYSQL_HOST: 127.0.0.1
 ```
 
-Deux particularités Bitbucket :
+Trois particularités Bitbucket :
 
-* La syntaxe `services:` se déclare dans un bloc `definitions:` séparé et se référence dans le `step:` par son nom. Les services partagent le réseau du step, donc on parle à Flashlight via `http://localhost/` — pas via un alias. Même chose entre services : Flashlight, qui n'embarque pas MySQL, joint le service MariaDB sur `127.0.0.1` (et non `localhost`, que le client MySQL interprète comme une socket locale).
-* **Les artefacts sont toujours produits**, il n'existe pas de conditionnel natif `on_failure` — on paie donc un peu plus de stockage. Alternative : `&& exit 0 || (tar cf reports.tgz tests/prestaflow/reports/ && exit 1)` pour un tar conditionnel dans le script.
+* **Les montages sont limités au dossier du clone.** Bitbucket n'accepte un `-v` que sous `$BITBUCKET_CLONE_DIR` : c'est justement là que se trouvent le module et ses init-scripts.
+* **La mémoire se règle sur le service et sur le step.** Le service `docker` dispose par défaut de 1024 Mo, trop peu pour MariaDB et Flashlight réunis. On lui en donne 3072 dans `definitions`, et `size: 2x` sur le step double la mémoire totale disponible, pour que Chromium et Composer gardent de la place dans le conteneur du build.
+* **Les artefacts ne sont pas conditionnels** : ils sont capturés à la fin du step, qu'il passe ou non. Quand tout passe, `prestaflow/screens/errors/` est simplement vide.
 
-<Warning title="Bitbucket Pipelines a une limite mémoire par service à 1024 MB par défaut, insuffisante pour Flashlight sur certaines versions PS. Si le conteneur crashe au boot, augmentez avec size: 2x sur le service (voir la doc Bitbucket) — ça double la RAM disponible et fait sauter la plupart des blocages." />
+### Niveau 2 — Pipe (en préparation)
 
-### Niveau 2 — Pipe officiel
-
-Depuis la 1.0.0, PrestaFlow publie un pipe Docker sur Docker Hub :
+Le pipe vit dans le dépôt GitHub `PrestaFlow/bitbucket-pipe`. Son image n'est pas encore sur Docker Hub : la référence ci-dessous, tirée de son README, ne se télécharge pas aujourd'hui.
 
 ```yaml
 image: php:8.3-cli
+
+definitions:
+  services:
+    docker:
+      memory: 3072
 
 pipelines:
   pull-requests:
     '**':
       - step:
           name: PrestaFlow
+          size: 2x
           services: [docker]
           artifacts: [prestaflow.env]
           script:
@@ -219,29 +242,32 @@ pipelines:
                 PROJECT_ID: pk_01ABC...
                 FLASHLIGHT: 'true'
                 PS_VERSION: '9.0.0'
+                FLASHLIGHT_INIT_SCRIPTS: '.flashlight/init-scripts'
                 BITBUCKET_ACCESS_TOKEN: $PRESTAFLOW_BITBUCKET_TOKEN
 
       - step:
           name: Notify
           script:
-            - . prestaflow.env
+            - . ./prestaflow.env
             - echo "Report → $PRESTAFLOW_REPORT_URL"
 ```
 
-Variables principales : `TOKEN`, `PROJECT_ID`, `FLASHLIGHT`, `PS_VERSION`, `SUITES`, `VISUAL` (défaut `true`), `PR_COMMENT` (auto), `EXECUTE`, `FLASHLIGHT_MOUNT` (`auto`/`root`/`modules`/`themes`), `BITBUCKET_ACCESS_TOKEN` pour les commentaires PR.
+Variables prévues : `TOKEN`, `PROJECT_ID`, `API_URL`, `EXECUTE`, `SUITES` (sans effet avec PrestaFlow v1.7.1, comme sur GitLab), `FLASHLIGHT`, `PS_VERSION`, `FLASHLIGHT_MOUNT` (`auto`/`root`/`modules`/`themes`), `FLASHLIGHT_INIT_SCRIPTS`, `PR_COMMENT` (automatique sur les builds de pull request), `UPLOAD_ARTIFACTS`, `VISUAL` (défaut `true`) et `BITBUCKET_ACCESS_TOKEN`, un token d'accès au dépôt avec `pullrequest:write` pour les commentaires.
 
 Deux points à noter :
 
-* **`services: [docker]` est obligatoire** dès que `FLASHLIGHT=true` — le pipe monte le sidecar MariaDB et le conteneur PS via le daemon Docker du runner.
-* **Commentaires PR idempotents** — le pipe insère un marqueur `<!-- prestaflow-run:<project-key> -->` dans la note, ce qui lui permet de mettre à jour un commentaire existant plutôt que d'en ajouter un à chaque run. Rien à faire côté config.
+* **`services: [docker]` est obligatoire** dès que `FLASHLIGHT=true` : le pipe démarre MariaDB et Flashlight avec `docker compose`, via le démon Docker du service.
+* **Commentaires PR idempotents** : le pipe insère un marqueur `<!-- prestaflow-run:<project-key> -->` dans son commentaire, ce qui lui permet de mettre à jour le commentaire existant plutôt que d'en ajouter un à chaque run.
 
-Le `prestaflow.env` produit contient les mêmes variables que le component GitLab (`PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_STATUS`, etc.) et se source dans un step suivant.
+Le `prestaflow.env` produit contient les mêmes variables que celui du component GitLab (`PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_STATUS`, etc.) et se source dans un step suivant.
 
 ## CircleCI
 
-CircleCI a longtemps été le grand absent de cet inventaire. Il a maintenant son orb officiel `prestaflow/prestaflow@1.0.0`, publié en canal stable (le canal `volatile` reste dispo pour les fixes non-taggés).
+### Niveau 2 — Orb (en préparation)
 
-L'orb expose un `push` all-in-one plus des commandes granulaires (`flashlight`, `run-tests`, `visual-download`, `upload`, `comment-pr`, `set-outputs`, `install-deps`) qu'on compose soi-même si besoin.
+Le portage CircleCI vit dans le dépôt GitHub `PrestaFlow/circleci-orb`. L'orb `prestaflow/prestaflow` n'est pas encore publié dans le registre CircleCI : la configuration ci-dessous, tirée de son README, sera refusée tant qu'il ne l'est pas.
+
+L'orb prévoit un job clé en main, `prestaflow/test`, et des commandes à composer soi-même : `push` (qui enchaîne tout), `flashlight`, `install-deps`, `run-tests`, `visual-download`, `visual-upload`, `upload`, `comment-pr` et `set-outputs`.
 
 `.circleci/config.yml` minimal :
 
@@ -256,20 +282,25 @@ workflows:
           project_id: pk_01ABCDEFGHIJKLMNOPQR10
           flashlight: true
           ps_version: "9.0.0"
+          flashlight_init_scripts: .flashlight/init-scripts
           context: prestaflow
 ```
 
 Trois particularités CircleCI :
 
-* **Exécuteur `machine` obligatoire** dès qu'on active Flashlight — `setup_remote_docker` ne permet pas les bind mounts dont Flashlight a besoin. L'orb bascule automatiquement, mais gardez-le en tête pour vos surcoûts crédits.
-* **`GITHUB_TOKEN` ou `BITBUCKET_ACCESS_TOKEN` à créer à la main** — CircleCI n'injecte pas de token VCS par défaut. Sans ça, pas de commentaire PR (mais le run remonte quand même côté plateforme).
-* **Outputs via `BASH_ENV`** — les variables (`PRESTAFLOW_REPORT_URL`, etc.) sont exportées dans `BASH_ENV` et dans un `prestaflow.env` artifact, plutôt qu'en outputs de step comme sur GitHub.
+* **Exécuteur `machine`** : le job `prestaflow/test` l'utilise par défaut, car Flashlight doit monter le checkout, ce que `setup_remote_docker` ne permet pas. Gardez-le en tête pour votre consommation de crédits.
+* **`GITHUB_TOKEN` ou `BITBUCKET_ACCESS_TOKEN` à créer à la main** : CircleCI n'injecte pas de token VCS. Sans lui, pas de commentaire PR, mais le run remonte quand même sur la plateforme.
+* **Sorties via `BASH_ENV`** : les variables (`PRESTAFLOW_REPORT_URL`, etc.) sont exportées dans `BASH_ENV` et écrites dans un fichier `prestaflow.env`, plutôt qu'en outputs de step comme sur GitHub.
 
-<Info title="Un niveau 1 CircleCI est trivial à écrire en démarrant Flashlight dans un `machine` executor puis en exécutant les mêmes étapes que sur GitHub. Mais dès qu'on a un compte prestaflow.io, l'orb économise 30 lignes de YAML et ajoute le comment PR et la synchro visuelle." />
+### Niveau 1
+
+<Info title="Un niveau 1 CircleCI, en attendant l'orb">
+Sur un exécuteur `machine`, Docker est disponible et le checkout se monte sans restriction : on démarre MariaDB et Flashlight avec les mêmes `docker run` que dans l'article 2, puis on lance la CLI. L'orb, une fois publié, remplacera ces étapes et ajoutera le commentaire PR et la synchro visuelle.
+</Info>
 
 ## Jenkins (déclaratif)
 
-Jenkins n'a pas d'intégration officielle — le niveau 2 y passe par un `sh curl` vers l'API prestaflow\.io depuis un pipeline scripté (voir la fin de l'article). Le niveau 1 reste donc la voie normale.
+Jenkins n'a pas d'intégration officielle, même en préparation. Le niveau 2 y passe par un `curl` vers l'API prestaflow\.io (voir la fin de l'article) ; le niveau 1 reste la voie normale.
 
 Créez `Jenkinsfile` à la racine :
 
@@ -278,24 +309,25 @@ pipeline {
     agent {
         docker {
             image 'php:8.2-cli'
-            args '--network host'
+            args '-u root --network host -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
 
     environment {
         PRESTAFLOW_PS_VERSION = '8.1.7'
-        PRESTAFLOW_LOCALE = 'fr'
+        PRESTAFLOW_LOCALE = 'en'
         PRESTAFLOW_FO_URL = 'http://localhost/'
         PRESTAFLOW_BO_URL = 'http://localhost/admin-dev/'
         PRESTAFLOW_BO_EMAIL = 'admin@prestashop.com'
         PRESTAFLOW_BO_PASSWD = credentials('prestashop-admin-passwd')
         PRESTAFLOW_HEADLESS = 'true'
+        CHROME_NO_SANDBOX = '1'
     }
 
     stages {
         stage('Prepare') {
             steps {
-                sh 'apt-get update && apt-get install -y curl chromium libgd-dev unzip git'
+                sh 'apt-get update && apt-get install -y --no-install-recommends curl chromium docker-cli libgd-dev unzip git'
                 sh 'docker-php-ext-install gd'
                 sh 'curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer'
                 sh 'composer install --prefer-dist --no-progress'
@@ -305,8 +337,8 @@ pipeline {
         stage('Start Flashlight') {
             steps {
                 sh 'docker run -d --rm --name mysql --network host -e MARIADB_ROOT_PASSWORD=prestashop -e MARIADB_DATABASE=prestashop -e MARIADB_USER=prestashop -e MARIADB_PASSWORD=prestashop mariadb:11'
-                sh 'docker run -d --rm --name ps --network host -e PS_DOMAIN=localhost -e MYSQL_HOST=127.0.0.1 prestashop/prestashop-flashlight:8.1.7'
-                sh '''for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done'''
+                sh 'docker run -d --rm --name ps --network host -e PS_DOMAIN=localhost -e MYSQL_HOST=127.0.0.1 -v "$WORKSPACE":/var/www/html/modules/psflowdemo -v "$WORKSPACE/.flashlight/init-scripts":/tmp/init-scripts:ro prestashop/prestashop-flashlight:8.1.7'
+                sh '''timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }'''
             }
         }
 
@@ -319,7 +351,7 @@ pipeline {
 
     post {
         failure {
-            archiveArtifacts artifacts: 'tests/prestaflow/reports/**,prestaflow/screens/errors/**', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'prestaflow/screens/errors/**', allowEmptyArchive: true
         }
         always {
             sh 'docker rm -f ps mysql 2>/dev/null || true'
@@ -328,39 +360,41 @@ pipeline {
 }
 ```
 
-Trois particularités Jenkins :
+Quatre particularités Jenkins :
 
-* **Docker-in-Docker requis** — l'agent est un conteneur PHP, mais on lance Flashlight via un `docker run` qui doit passer le socket Docker de l'host. C'est du DinD, à configurer côté Jenkins (mount de `/var/run/docker.sock`, sinon Cloud plugin type Kubernetes).
-* **`credentials()`** — Jenkins Credentials Store fournit les secrets sous forme de variables d'environnement quand on les référence via `credentials(...)`. Plus verbeux mais plus explicite que les secrets GitHub/GitLab.
-* **`post { always }`** garantit l'arrêt des conteneurs Flashlight et MariaDB même en cas d'échec, évitant les zombies sur le nœud.
+* **Le socket Docker de l'hôte, pas du Docker-in-Docker.** L'agent est un conteneur PHP ; pour qu'il lance Flashlight, on lui monte `/var/run/docker.sock` et on installe la CLI (`docker-cli`) dans le stage `Prepare`. Les conteneurs démarrés tournent alors sur le démon de l'hôte, à côté de l'agent. Donner ce socket revient à donner à l'agent le contrôle du Docker de l'hôte : réservez-le à des nœuds dédiés à la CI.
+* **`-u root`** : par défaut, Jenkins lance le conteneur avec l'uid de l'utilisateur de l'agent, qui n'a pas le droit de faire `apt-get install` ni d'accéder au socket. En root, `CHROME_NO_SANDBOX` devient nécessaire. Revers : les fichiers créés dans le workspace appartiennent à root, prévoyez un `cleanWs()` ou un nettoyage équivalent.
+* **Le montage du workspace** : `$WORKSPACE` est un chemin de l'hôte, que le plugin Docker Pipeline monte au même chemin dans l'agent. Le `-v "$WORKSPACE":…` fonctionne donc tant que l'agent Jenkins tourne directement sur l'hôte Docker ; si l'agent est lui-même conteneurisé, ce chemin n'existe pas côté démon.
+* **`credentials()` et `post { always }`** : le Credentials Store fournit le mot de passe sous forme de variable d'environnement, et `post { always }` supprime les conteneurs Flashlight et MariaDB même en cas d'échec, pour éviter les zombies sur le nœud.
 
-<Info title="La déclaration --network host permet à l'agent PHP et au conteneur Flashlight de partager la stack réseau et de se parler via localhost. C'est la voie la plus simple mais ne fonctionne pas sur macOS/Windows (où --network host a un comportement dégradé). Sur Jenkins hébergé Mac/Windows, préférer une déclaration explicite de réseau Docker partagé." />
+<Info title="La déclaration --network host permet à l'agent PHP, à MariaDB et à Flashlight de partager la pile réseau de l'hôte et de se parler via localhost. C'est la voie la plus simple, mais elle suppose un hôte Linux, que les ports 80 et 3306 soient libres sur le nœud, et elle ne fonctionne pas pareil sous Docker Desktop (macOS, Windows). Ailleurs, préférez un réseau Docker dédié." />
 
 ## Ce qui reste identique partout
 
 Peu importe le CI et le niveau, les mêmes règles s'appliquent :
 
 * **Une base à côté de Flashlight, et `PS_DOMAIN`** — l'image embarque nginx et php-fpm mais pas MySQL. Sans base, la boutique réessaie la connexion en boucle et ne répond jamais ; sans `PS_DOMAIN`, elle s'arrête aussitôt.
-* **Wait explicite après le boot Flashlight** — sur `/admin-dev/`, jusqu'à obtenir un 302 (redirection vers la page de connexion), plutôt qu'un 200 sur `/` qui prouve seulement que quelque chose écoute sur le port. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile. Détails dans l'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/).
-* **Env vars `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute.
-* **Artefacts sur échec** — le rapport HTML dans `tests/prestaflow/reports/`, les captures d'erreur dans `prestaflow/screens/errors/`. Les rendre téléchargeables est essentiel pour debug hors du CI.
-* **Exit code non-nul de la CLI** = job rouge. Ne pas court-circuiter avec un `|| true` bien intentionné qui rendrait le CI aveugle.
+* **Le module monté ET installé** — monter le dépôt dans `modules/` ne suffit pas : l'init-script `prestashop:module install` s'en charge au premier démarrage.
+* **Attente explicite après le boot Flashlight** — sur `/admin-dev/`, jusqu'à obtenir un 302 (redirection vers la page de connexion), plutôt qu'un 200 sur `/` qui prouve seulement que quelque chose écoute sur le port. Et une attente qui échoue franchement au bout du délai. Détails dans l'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/).
+* **Variables `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute ; il faut seulement qu'elles arrivent jusqu'à `$_ENV` (`variables_order` avec `E`).
+* **Artefacts sur échec** — les captures d'erreur dans `prestaflow/screens/errors/`, prises à l'échec d'une assertion. PrestaFlow ne produit pas de rapport HTML de run ; pour un fichier exploitable par le CI, les options `--junit` (écrit `prestaflow/junit.xml`) et `-o json --file` (écrit `prestaflow/results.json`) existent.
+* **Code de sortie non nul de la CLI = job rouge.** Ne pas le court-circuiter avec un `|| true` bien intentionné. Attention toutefois : en v1.7.1, si une exception interrompt la CLI (Chrome qui ne démarre pas, par exemple), le code de sortie reste 0. Relisez la sortie du job quand un run est vert en quelques secondes.
 
-Au niveau 2, les quatre intégrations officielles (Action, Component, Pipe, Orb) exposent les **mêmes clés de sortie** — `PRESTAFLOW_REPORT_ID/URL/PASSED/FAILED/SKIPPED/TOTAL/DURATION_MS/STATUS` — via le mécanisme natif de leur plateforme (step outputs, dotenv artifact, `BASH_ENV`). Le contrat côté downstream est stable, ce qui rend les workflows portables d'une plateforme à l'autre.
+Au niveau 2, les intégrations remontent les mêmes informations (identifiant et URL du rapport, compteurs, durée, statut), via le mécanisme natif de chaque plateforme. L'Action GitHub les expose en outputs de step, nommés `id`, `report-url`, `passed`, `failed`, `skipped`, `total`, `duration-ms` et `status`. Les portages GitLab, Bitbucket et CircleCI les écriront sous la forme `PRESTAFLOW_REPORT_ID`, `PRESTAFLOW_REPORT_URL`, `PRESTAFLOW_PASSED`… dans un `prestaflow.env` (artifact dotenv, fichier à sourcer ou `BASH_ENV`).
 
 ## Le cas Jenkins : niveau 2 fait maison
 
 Sans intégration officielle, deux options si vous êtes sur Jenkins et voulez la synchro plateforme :
 
-* **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
-* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe cloud runs, badge `uploaded_via: api`). Un `sh` qui prend le `results.json` produit par PrestaFlow et le pousse via `curl` avec le `PRESTAFLOW_TOKEN`. Le badge `api` est prévu pour ça — c'est exactement le canal utilisé par les intégrations officielles quand elles remontent leurs résultats.
+* **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
+* **Faire soi-même l'upload vers l'API prestaflow\.io** — c'est ce que font l'Action et les portages : un `POST https://api.prestaflow.io/ci/github-action`, authentifié par l'en-tête `X-Api-Token` (votre `PRESTAFLOW_TOKEN`), en multipart, avec le champ `projectId` (la Product Key) et le `results.json` dans `file[]`. Ce fichier n'existe qu'avec `-o json --file`, d'où le script Composer `prestaflow:json:file` de l'article 2. Malgré son nom, l'endpoint accepte n'importe quel CI, mais il classe pour l'instant tous les runs reçus comme venant de GitHub Actions.
 
-Ce second cas justifierait à lui seul un article dédié (auth, retries, formatage, artifacts screenshots). Pour l'instant, on note l'option et on renvoie à la doc API.
+Ce second cas justifierait à lui seul un article dédié (idempotence, retries, captures d'écran jointes). Pour l'instant, on note l'option.
 
 ## Notes
 
-<Info title="Cache Composer : sur tous les CI cités, prévoir un cache de vendor/ divise le temps de job par deux ou trois sur les runs qui suivent le premier. GitLab (cache: paths), Bitbucket (caches: composer natif), CircleCI (save_cache / restore_cache), Jenkins (plugin caching ou stash). C'est l'optimisation à faire en priorité." />
+<Info title="Cache Composer : sur tous les CI cités, mettre vendor/ ou le cache Composer en cache évite de tout retélécharger à chaque job. GitLab (cache: paths), Bitbucket (caches: composer, intégré), CircleCI (save_cache / restore_cache), Jenkins (plugin de cache ou stash). C'est souvent l'optimisation la plus rentable." />
 
-<Info title="Matrice multi-versions PS : disponible en syntaxe native sur GitLab (parallel: matrix:), Bitbucket (via anchors YAML) et CircleCI (matrix: sous un job), moins directe sur Jenkins (nécessite un plugin ou une génération de pipelines paramétrés). Ça mérite d'être ajouté dès qu'on cible plus d'une version — cf l'article 2 qui montre le pattern sur GitHub Actions." />
+<Info title="Matrice multi-versions PS : disponible en syntaxe native sur GitLab (parallel: matrix:, montré plus haut), sur CircleCI (matrix: sous un job du workflow) et, sur Bitbucket, via des steps parallel: (les ancres YAML évitent de répéter le step). Elle est moins directe sur Jenkins (bloc matrix du pipeline déclaratif, ou pipelines paramétrés). Voir l'article 2 pour le pattern sur GitHub Actions." />
 
-<Warning title="Sur Jenkins auto-hébergé, ne réutilisez pas le même nom de conteneur ps entre jobs concurrents. Ajoutez le BUILD_NUMBER ou un uuid au nom (--name ps-$BUILD_NUMBER) pour éviter les collisions quand deux jobs tournent sur le même nœud." />
+<Warning title="Sur Jenkins auto-hébergé, ne réutilisez pas le même nom de conteneur ps entre jobs concurrents. Ajoutez le BUILD_NUMBER au nom (--name ps-$BUILD_NUMBER) pour éviter les collisions quand deux jobs tournent sur le même nœud. Avec --network host, les ports 80 et 3306 entrent aussi en collision : un seul job Flashlight à la fois par nœud, ou un réseau Docker par job." />
