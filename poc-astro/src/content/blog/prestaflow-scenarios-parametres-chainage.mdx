@@ -25,7 +25,7 @@ Ce qu'on n'avait pas creusé, ce sont les trois mécaniques qui rendent ce patte
 
 - Les **`$params`** sur un `Scenario`, qui permettent d'écrire ses propres scénarios réutilisables avec des valeurs par défaut surchargeables à l'appel.
 - Le **`store()` / `retrieve()`** sur `TestsSuite`, qui partage un état entre `it` et entre scénarios enchaînés dans la même suite.
-- Le **`->with([...])`**, qui exécute le même `it` (ou la même suite entière) contre plusieurs jeux de données. Data-driven testing sans effort.
+- Le **`->with([...])`**, qui rejoue tous les `it` de la suite contre plusieurs jeux de données. Data-driven testing sans effort.
 
 Cette annexe couvre les trois, avec des cas d'usage concrets sur `psflowdemo` et les modules qu'on a croisés en chemin.
 
@@ -101,7 +101,7 @@ class UpdatePsflowdemoTitle extends Scenario
             $backOfficeLoginPage->login();
         })
         ->it('met à jour le titre', function () use ($modulesPsflowdemoConfigurationPage) {
-            $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+            $modulesPsflowdemoConfigurationPage->openConfiguration($this->getGlobals()['BO']['URL']);
             $modulesPsflowdemoConfigurationPage->fillTitle($this->getParam('title'));
             $modulesPsflowdemoConfigurationPage->save();
         })
@@ -141,7 +141,7 @@ public function init()
 }
 ```
 
-Les scénarios s'exécutent **dans l'ordre**, et **partagent l'état de la page Chrome** — un login BO fait dans le premier scenario reste actif pour le second, à condition qu'aucun scénario intermédiaire ne redémarre le navigateur.
+Chaque `->scenario()` ajoute ses `it` à la suite au moment de l'appel ; ils s'exécutent ensuite **dans l'ordre**, et **partagent l'état de la page Chrome** — un login BO fait dans le premier scenario reste actif pour le second, à condition qu'aucun scénario intermédiaire ne redémarre le navigateur. Revers de la médaille : par défaut, dès qu'un `it` échoue, tous les suivants de la suite passent en `skipped`, y compris ceux des scénarios suivants (`->skipWhenFailed(false)` désactive ce comportement).
 
 Pour partager de la **donnée** entre scénarios (l'id d'une commande créée dans le premier, à réutiliser dans le troisième), on utilise `store()` / `retrieve()` sur la suite.
 
@@ -163,7 +163,7 @@ Le pattern, tel qu'on le retrouve dans un projet en production :
 
 Trois choses à retenir :
 
-1. **`store()` et `retrieve()` vivent sur `TestsSuite`** (pas sur `Page`). Depuis un `it`, on les appelle via `$this` (le contexte du `it` est le suite).
+1. **`store()` et `retrieve()` vivent sur `TestsSuite`** (pas sur `Page`). Depuis un `it`, on les appelle via `$this` (le contexte du `it` est la suite).
 2. **La donnée persiste tant que la suite tourne**, entre `it` comme entre scénarios chaînés.
 3. **Un `retrieve()` d'une clef inexistante retourne `null`** (ou la valeur `$default` si passée). Utile pour un `it` optionnel qui vérifie si la clef a été posée avant.
 
@@ -171,7 +171,7 @@ Cas d'usage typique : un scenario `CreateOrder` qui stocke l'orderId, puis un sc
 
 ## Data-driven : `->with([...])`
 
-Voici la mécanique qui n'avait été mentionnée nulle part dans la série. La lib expose une méthode `->with()` qui accepte un tableau de datasets — chaque `it` défini après est **exécuté une fois par dataset** :
+Voici la mécanique qui n'avait été mentionnée nulle part dans la série. La lib expose une méthode `->with()` qui accepte un tableau de datasets — chaque `it` de la suite est **exécuté une fois par dataset** :
 
 ```php
 $this
@@ -179,7 +179,7 @@ $this
 ->with([
     ['title' => 'Court'],
     ['title' => 'Un titre de longueur moyenne pour tester le wrap'],
-    ['title' => str_repeat('Très long ', 20)],
+    ['title' => rtrim(str_repeat('Très long ', 20))],
     ['title' => 'Accents : éàü'],
     ['title' => '&<>"\''],
 ])
@@ -192,7 +192,11 @@ $this
 });
 ```
 
-Un seul `it` écrit, cinq exécutions à chaque run. Le rapport HTML les distingue en affichant le dataset actif à chaque itération.
+Un seul `it` écrit, cinq exécutions à chaque run. Attention, la sortie CLI ne les distingue pas : elle affiche cinq fois le même titre de `it`. Pour savoir quel jeu a cassé, lisez le message d'assertion (il contient la valeur attendue) ou le `results.json`, où chaque exécution porte le numéro du jeu (`dataset`, à partir de 1) et ses valeurs (`datasets`).
+
+<Warning title="with() s'applique à toute la suite">
+Peu importe où vous placez `->with()` dans la chaîne : **tous** les `it` de la suite sont rejoués pour chaque dataset, y compris ceux déclarés avant l'appel et ceux ajoutés par un `->scenario()`. Un `it` de login BO dans la même suite sera donc rejoué cinq fois. Un second `->with()` remplace le premier : il n'y a qu'une liste de datasets par suite.
+</Warning>
 
 **Utile pour** : validation d'entrées limites (vide, très long, unicode, caractères réservés), matrice de combinaisons (locale × type de client × transporteur), tests de valeurs de bord d'un prix ou d'une quantité.
 
@@ -206,18 +210,18 @@ Prises ensemble, elles vous permettent d'atteindre un pattern qui manquait à l'
 - **L'invoquer avec dix jeux de données** (`->with([...])`) ou chaîné à d'autres (`->scenario(...)`)
 - **Partager l'état entre les étapes** (`store` / `retrieve`)
 
-En termes de lignes de test : un projet qui utilise ces trois mécaniques a typiquement 3 à 5× moins de code de test que le même projet écrit avec des `it` inline dupliqués.
+En termes de lignes de test : un projet qui utilise ces trois mécaniques a nettement moins de code de test que le même projet écrit avec des `it` inline dupliqués.
 
 ## Interaction avec les autres annexes
 
 - **[Fixtures](/blog/prestaflow-fixtures-seed-data/)** — `store()` est le compagnon naturel des fixtures niveau 3 (override `before()`) : le `before()` crée une donnée, en stocke la clef via `store()`, les `it` la réutilisent via `retrieve()`.
-- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — un `it` qui itère sur 20 datasets et tombe au 12ème : la sortie CLI indique le dataset actif, la capture d'erreur porte le contexte. Le `skip()` peut cibler le `it` entier pendant le debug, l'`->with()` continue de fournir les datasets.
-- **[Multi-locales](/blog/prestaflow-scenarios-multi-locales/)** — un dataset peut porter une locale (`['locale' => 'en', 'title' => 'Welcome']`), et le `->scenario()` la relaie au Scenario invoqué qui la posera sur les globals. Testez cinq locales dans une seule suite, sans script shell.
+- **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — un `it` qui itère sur 20 datasets et tombe au 12e : la sortie CLI ne montre pas le dataset actif, mais le message d'assertion donne la valeur en cause, et `results.json` indique le numéro du jeu. Un `$this->log()` dans le `it` affiche aussi les valeurs voulues sous le `PASS`/`FAIL`. Le `skip()` peut cibler le `it` entier pendant le debug, l'`->with()` continue de fournir les datasets.
+- **[Multi-locales](/blog/prestaflow-scenarios-multi-locales/)** — un dataset ne change **pas** la locale : les Pages sont importées (et leurs URLs résolues) dans `init()`, avant que le moindre dataset ne soit lu. Une clef `locale` dans un dataset n'est qu'une valeur comme une autre pour `getParam()`, et elle perd face au `'locale'` d'un Scenario. La locale se fixe par le paramètre `'locale'` passé au Scenario, ou pour toute la suite par `PRESTAFLOW_LOCALE`. Pour couvrir plusieurs locales, écrivez une suite par locale ou relancez la même suite avec une autre valeur de `PRESTAFLOW_LOCALE`, comme dans l'annexe multi-locales.
 
 ## Notes
 
 <Info title="Le retour de scenario() est chainable (retourne $this de la suite), on peut donc enchaîner autant de scénarios qu'on veut et intercaler des it directs entre eux. Un seul describe() en tête suffit pour toute la suite." />
 
-<Warning title="Attention à l'ordre : $this->getParam('foo') consulte d'abord les params du Scenario courant, puis le dataset actif. Si un même nom est utilisé aux deux endroits, le dataset gagne. C'est cohérent (dataset = surcharge locale), mais peut surprendre si vous mélangez params et datasets sans le savoir." />
+<Warning title="Attention à l'ordre : $this->getParam('foo') consulte d'abord les params du Scenario courant, puis le dataset actif. Si un même nom est utilisé aux deux endroits, c'est le Scenario qui gagne : le dataset ne sert que pour les clefs que le Scenario ne définit pas (ou qu'il laisse à null). Un it écrit directement dans la suite, hors Scenario, ne voit que le dataset." />
 
-<Info title="Isolation : les scénarios chaînés partagent la page Chrome mais chacun a son propre $params. Pas de fuite silencieuse d'un param d'un scenario dans un autre — chacun voit ses défauts + son override d'appel, point." />
+<Warning title="Isolation : les params sont rangés par nom de classe du Scenario. Deux Scenario différents chaînés ont chacun leurs params. Mais si vous chaînez deux fois le même Scenario avec des params différents, le second appel écrase le premier : les it des deux appels liront les params du second. Pour jouer deux fois le même parcours avec des valeurs différentes, faites deux suites, ou une sous-classe du Scenario par variante." />

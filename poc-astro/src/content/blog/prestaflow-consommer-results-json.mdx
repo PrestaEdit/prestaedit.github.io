@@ -19,11 +19,11 @@ draft: false
 
 ## Le fichier oublié de la boucle CI
 
-L'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) mentionne que l'Action officielle lance `composer run prestaflow:json:file` puis pousse le résultat à la plateforme. L'annexe historique cloud explique qu'on peut télécharger ce même fichier via une URL S3 pré-signée depuis l'app.
+L'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) mentionne que l'Action officielle lance `composer run prestaflow:json:file` puis pousse le résultat à la plateforme. Une prochaine annexe, consacrée à l'historique cloud, montrera qu'on peut retélécharger ce même fichier depuis l'app.
 
 Mais on n'a jamais dit **ce qu'il y a dedans**, ni ce qu'on peut faire avec en dehors de le regarder.
 
-Ce fichier `results.json` est la sortie machine de PrestaFlow. Il contient tout ce qu'un humain voit dans le rapport HTML, dans un format que n'importe quel script sait consommer. Cette annexe montre son schéma et quatre usages pratiques pour brancher PrestaFlow au reste de votre outillage.
+Ce fichier `results.json` est la sortie machine de PrestaFlow. Il contient ce qu'un humain voit dans la sortie console, dans un format que n'importe quel script sait consommer. Cette annexe montre son schéma et quatre usages pratiques pour brancher PrestaFlow au reste de votre outillage.
 
 ## Comment le générer
 
@@ -33,10 +33,10 @@ Une seule commande :
 ./vendor/bin/prestaflow run --output=JSON --file tests/prestaflow
 ```
 
-* **`--output=JSON`** — remplace le rapport CLI par du JSON structuré.
-* **`--file`** — écrit sur le disque plutôt que sur `stdout`. Le fichier atterrit à un chemin standard sous `tests/prestaflow/reports/`.
+* **`--output=JSON`** (ou `-o json`) — remplace le rapport CLI par du JSON structuré.
+* **`--file`** — écrit sur le disque plutôt que sur `stdout`. Le fichier atterrit toujours au même endroit : `prestaflow/results.json`, à la racine du projet (le dossier depuis lequel vous lancez la commande).
 
-C'est très exactement ce que fait le script Composer `prestaflow:json:file` (visible dans le smoke workflow de l'Action officielle) :
+C'est très exactement ce que fait le script Composer `prestaflow:json:file`, celui que définit le module de démonstration psflowdemo et que l'Action officielle appelle :
 
 ```json
 "scripts": {
@@ -44,92 +44,131 @@ C'est très exactement ce que fait le script Composer `prestaflow:json:file` (vi
 }
 ```
 
-Rien ne vous empêche de l'appeler à la main pour explorer.
+Rien ne vous empêche de l'appeler à la main pour explorer. Sans `--file`, le JSON part sur `stdout`, mêlé à l'indicateur de progression : pas exploitable tel quel par `jq`.
+
+<Warning title="Le dossier prestaflow/ est vidé à chaque run">
+Chaque `prestaflow run` commence par supprimer tout le contenu de `prestaflow/` (JSON, captures, rapports). Copiez ce dont vous avez besoin avant de relancer.
+</Warning>
 
 ## Le schéma
 
-Un tableau JSON, une entrée par suite exécutée dans le run. Chaque entrée contient :
+Voici un extrait d'un vrai `results.json` produit par PrestaFlow v1.7.1 (champ `steps` retiré, noms adaptés au module fil rouge) :
 
 ```json
 {
-  "suite": "Tests\\Suites\\DisplayHome",
-  "title": "Bloc psflowdemo sur la home",
+  "suite": "Tests\\Suites\\EditTitle",
+  "title": "Modification du titre depuis le BO",
   "stats": {
-    "passes": 2,
-    "failures": 0,
+    "passes": 1,
+    "failures": 1,
     "skips": 0,
-    "skippeds": 0,
+    "skippeds": 1,
     "todos": 0,
     "assertions": 2,
     "time": 4213
   },
   "tests": [
     {
-      "title": "affiche le bloc",
+      "title": "enregistre le nouveau titre",
+      "datasets": [],
+      "dataset": 1,
+      "warning": "",
       "state": "pass",
+      "expect": {
+        "pass": ["expected 'Settings updated' to contain 'updated'"]
+      },
+      "debug": [],
       "time": 2104,
-      "code": "... source du closure via Reflection ..."
+      "visual": []
     },
     {
-      "title": "affiche le titre par défaut",
-      "state": "pass",
+      "title": "affiche le nouveau titre sur la home",
+      "datasets": [],
+      "dataset": 1,
+      "state": "fail",
+      "warning": "",
+      "screen": "error_16E9C8B963AB07ADED3089EF55D8FD13-1790260655.png",
+      "attachments": [],
+      "expect": {
+        "pass": [],
+        "fail": ["expected 'Bienvenue par défaut' to contain 'Titre mis à jour'"]
+      },
+      "debug": [],
       "time": 1108,
-      "expect": null,
-      "screen": null
+      "visual": []
+    },
+    {
+      "title": "conserve le titre après vidage du cache",
+      "datasets": [],
+      "dataset": 1,
+      "state": "skipped",
+      "expect": [],
+      "debug": [],
+      "time": 0,
+      "visual": []
     }
   ],
-  "warnings": [],
-  "screens": []
+  "warnings": ["", ""],
+  "screens": ["error_16E9C8B963AB07ADED3089EF55D8FD13-1790260655.png"]
 }
 ```
+
+<Warning title="En v1.7.1, un seul objet : la dernière suite">
+Avec la version publiée (v1.7.1), le fichier est réécrit après chaque suite : il ne contient qu'**un objet**, celui de la **dernière suite exécutée**. La branche de développement de la lib agrège toutes les suites sous une racine `{"suites": [...]}`, mais ce format n'est pas encore publié. Tous les filtres `jq` de cette annexe commencent par `(.suites // [.])[]` : ils fonctionnent avec les deux formes. Si vous avez besoin de toutes les suites dès aujourd'hui, lancez un dossier par commande et copiez `results.json` entre deux runs (le dossier est vidé à chaque fois), ou appuyez-vous sur `--junit`, dont le `junit.xml` couvre toutes les suites.
+</Warning>
 
 Les champs qui comptent en pratique :
 
 * **`stats.failures`** — zéro = suite verte. C'est le seul champ à regarder pour un check automatique de santé.
-* **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/).
-* **`tests[].expect`** — le message d'assertion en cas d'échec, du style *"Expected 'inscription' to be contained in 'You have successfully subscribed'"*. Non-null uniquement si `state:fail`.
-* **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`.
+* **`tests[].state`** — `pass` / `fail` / `skip` / `skipped` / `todo`. Ce sont les cinq états possibles vus dans l'[annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/). Après un échec, les `it` suivants de la suite passent en `skipped` (comportement par défaut, désactivable avec `->skipWhenFailed(false)`).
+* **`tests[].expect`** — un objet par état : `pass` liste les assertions réussies, `fail` contient le message de l'échec, du style *"expected 'Bienvenue par défaut' to contain 'Titre mis à jour'"*. La langue du message suit la locale de la suite. Quand aucune assertion n'a tourné (`skipped`, `todo`), c'est un tableau vide `[]`.
+* **`tests[].screen`** — nom de fichier de la capture d'erreur, à retrouver dans `prestaflow/screens/errors/<nom>`. Présent seulement pour un `it` en `fail`.
 * **`tests[].time`** — durée en millisecondes.
-* **`tests[].dataset` / `tests[].datasets`** — présent quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)).
-* **`tests[].visual`** — bloc de résultats de régressions visuelles pour ce `it`, si `visualCheckpoint` a été appelé.
+* **`tests[].dataset` / `tests[].datasets`** — le numéro du jeu de données (à partir de 1) et ses valeurs, quand le `it` était exécuté via `->with([...])` (voir l'annexe [scénarios paramétrés](/blog/prestaflow-scenarios-parametres-chainage/)). Sans `->with()`, `dataset` vaut `1` et `datasets` est vide.
+* **`tests[].visual`** — résultats de régression visuelle pour ce `it`, si `visualCheckpoint` a été appelé ; tableau vide sinon.
 
-Le reste (`code`, `attachments`, `warnings`, `screens`) est du bonus utile en debug mais rarement consommé par un script.
+Le reste (`warning`, `debug`, `attachments`, `warnings`, `screens`) est du bonus utile en debug mais rarement consommé par un script. `steps` est la closure du `it`, sérialisée en objet vide : ignorez-la.
 
 ## Cas d'usage 1 : notification Slack riche
 
-Le mail *"Job PrestaFlow failed"* de GitHub Actions ne dit rien du **pourquoi**. Un message Slack riche, généré depuis le `results.json`, dit précisément quelles suites ont cassé et sur quelle assertion.
+Le mail *"Job PrestaFlow failed"* de GitHub Actions ne dit rien du **pourquoi**. Un message Slack riche, généré depuis le `results.json`, dit précisément quelle suite a cassé et sur quelle assertion.
 
 Step à ajouter après `Run PrestaFlow` dans le workflow (GitHub Actions, adaptable ailleurs) :
 
 ```yaml
 - name: Notify Slack on failure
   if: failure()
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   run: |
-    FAILED=$(jq -r '[.[] | select(.stats.failures > 0)] | length' \
-      tests/prestaflow/reports/results.json)
+    RESULTS=prestaflow/results.json
 
-    SUMMARY=$(jq -r '[.[] |
+    FAILED=$(jq -r '[(.suites // [.])[] | select(.stats.failures > 0)] | length' "$RESULTS")
+
+    SUMMARY=$(jq -r '[(.suites // [.])[] |
       select(.stats.failures > 0) |
       .title as $suite |
       .tests[] |
       select(.state == "fail") |
-      "• *\($suite)* — \(.title)\n  ↳ `\(.expect // "no message")`"
-    ] | join("\n")' tests/prestaflow/reports/results.json)
+      "• *\($suite)* — \(.title)\n  ↳ `\(.expect.fail[0] // "pas de message")`"
+    ] | join("\n")' "$RESULTS")
+
+    PAYLOAD=$(jq -n --arg failed "$FAILED" --arg summary "$SUMMARY" \
+      '{text: "❌ *\($failed) suite(s) PrestaFlow en échec*\n\n\($summary)"}')
 
     curl -X POST -H 'Content-Type: application/json' \
-      -d "{\"text\": \"❌ *${FAILED} suite(s) PrestaFlow en échec*\n\n${SUMMARY}\"}" \
-      ${{ secrets.SLACK_WEBHOOK_URL }}
+      -d "$PAYLOAD" "$SLACK_WEBHOOK_URL"
 ```
+
+`jq -n --arg` construit le payload : les guillemets, apostrophes et retours à la ligne des messages d'assertion sont échappés correctement, ce qu'une chaîne JSON assemblée à la main en shell ne garantit pas.
 
 Rendu Slack :
 
 ```
-❌ 2 suite(s) PrestaFlow en échec
+❌ 1 suite(s) PrestaFlow en échec
 
-• Bloc newsletter ps_emailsubscription — accepte une nouvelle adresse
-  ↳ Expected empty string to not be empty
 • Modification du titre depuis le BO — affiche le nouveau titre sur la home
-  ↳ Expected 'Bienvenue par défaut' to contain 'Titre mis à jour'
+  ↳ expected 'Bienvenue par défaut' to contain 'Titre mis à jour'
 ```
 
 Bien plus utile que le lien vers l'onglet Actions. On sait quoi débugger avant même d'ouvrir le job.
@@ -144,9 +183,9 @@ Extraction du résumé :
 jq '{
   schemaVersion: 1,
   label: "prestaflow",
-  message: "\([.[].stats.passes] | add) passing / \([.[].stats.failures] | add) failing",
-  color: (if ([.[].stats.failures] | add) == 0 then "brightgreen" else "red" end)
-}' tests/prestaflow/reports/results.json > badge.json
+  message: "\([(.suites // [.])[].stats.passes] | add) passing / \([(.suites // [.])[].stats.failures] | add) failing",
+  color: (if ([(.suites // [.])[].stats.failures] | add) == 0 then "brightgreen" else "red" end)
+}' prestaflow/results.json > badge.json
 ```
 
 Publiez `badge.json` où vous voulez (un gist GitHub public suffit), puis dans votre README :
@@ -155,11 +194,11 @@ Publiez `badge.json` où vous voulez (un gist GitHub public suffit), puis dans v
 ![PrestaFlow](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/vous/xxx/raw/badge.json)
 ```
 
-Le badge se met à jour tout seul à chaque run vert / rouge. Utile pour un module open-source qui veut signaler visuellement sa couverture E2E.
+Le badge se met à jour à chaque run vert / rouge, dès que votre CI republie `badge.json`. Utile pour un module open-source qui veut signaler visuellement sa couverture E2E.
 
 ## Cas d'usage 3 : dashboard multi-projets
 
-Quand vous maintenez 10 modules ou plus, un tableau agrégé qui montre l'état de chacun vaut mieux que des GitHub Actions individuels à surveiller un par un.
+Quand vous maintenez 10 modules ou plus, un tableau agrégé qui montre l'état de chacun vaut mieux que des workflows GitHub Actions à surveiller un par un.
 
 Pattern :
 
@@ -176,38 +215,38 @@ Sur la branche `main`, une régression PrestaFlow devrait automatiquement créer
 ```yaml
 - name: Create issue on regression
   if: failure() && github.ref == 'refs/heads/main'
+  env:
+    GH_TOKEN: ${{ github.token }}
   run: |
-    TITLE=$(jq -r '[.[] |
+    RESULTS=prestaflow/results.json
+
+    TITLE=$(jq -r '[(.suites // [.])[] |
       select(.stats.failures > 0) |
       "PrestaFlow : \(.title)"
-    ] | .[0]' tests/prestaflow/reports/results.json)
+    ] | .[0]' "$RESULTS")
 
-    BODY=$(jq -r '[.[] |
+    BODY=$(jq -r '[(.suites // [.])[] |
       select(.stats.failures > 0) |
       .title as $suite |
       .tests[] | select(.state == "fail") |
-      "### \($suite) — \(.title)\n\n**Assertion:** `\(.expect // "n/a")`\n"
-    ] | join("\n---\n")' tests/prestaflow/reports/results.json)
+      "### \($suite) — \(.title)\n\n**Assertion :** `\(.expect.fail[0] // "n/a")`\n"
+    ] | join("\n---\n")' "$RESULTS")
 
     gh issue create --title "$TITLE" --body "$BODY" --label "regression,e2e"
 ```
 
-À réserver au CI de `main` (via le `github.ref` check) — sinon toutes vos feature branches génèrent des issues à chaque `it` qui n'a pas fini d'être stabilisé.
+À réserver au CI de `main` (via le `github.ref` check) — sinon toutes vos feature branches génèrent des issues à chaque `it` qui n'a pas fini d'être stabilisé. Le job doit avoir la permission `issues: write`, et les labels `regression` et `e2e` doivent exister dans le dépôt, sinon `gh issue create` échoue.
 
 ## Notes
 
-<Warning title="Le fichier peut grossir vite. Le champ code inclut le source des closures via Reflection, ce qui gonfle results.json quand vous avez beaucoup de suites. Pour la consommation CI, jq 'map(del(.tests[].code))' produit une version allégée qui fait 5 à 10× moins de poids, avec toutes les infos utiles conservées.">
-
-</Warning>
-
-<Info title="Les captures référencées par tests[].screen vivent dans prestaflow/screens/errors/. Elles ne sont PAS embarquées dans le JSON — c'est un chemin relatif. Si vous consommez le JSON hors du contexte du run (upload vers un dashboard distant, par exemple), pensez à uploader aussi le dossier des captures.">
-
+<Info title="Des captures hors du JSON">
+Les captures référencées par `tests[].screen` vivent dans `prestaflow/screens/errors/`. Elles ne sont PAS embarquées dans le JSON : c'est un simple nom de fichier. Si vous consommez le JSON hors du contexte du run (upload vers un dashboard distant, par exemple), pensez à uploader aussi le dossier des captures.
 </Info>
 
-<Info title="Ne parsez pas le JSON avec des regex bash. L'ordre des clés n'est pas garanti entre versions de la lib, et un champ optionnel qui apparaît/disparaît casse tout. Utilisez jq (dans un workflow CI) ou json_decode (dans un script PHP).">
-
+<Info title="Pas de regex sur du JSON">
+Ne parsez pas le JSON avec des regex bash. L'ordre des clés n'est pas garanti entre versions de la lib, et un champ optionnel qui apparaît/disparaît casse tout. Utilisez `jq` (dans un workflow CI) ou `json_decode` (dans un script PHP).
 </Info>
 
-<Info title="Champs qui apparaissent sous condition : dataset et datasets uniquement si le it était dans un ->with(), visual uniquement si visualCheckpoint appelé, expect et screen uniquement si state:fail. Vos scripts doivent gérer l'absence de ces champs sans lever d'exception (// null en jq, ?? [] en PHP).">
-
+<Info title="Champs présents sous condition">
+`screen` et `attachments` n'existent que si `state` vaut `fail`, et `expect.fail` aussi. `expect` peut être un objet ou un tableau vide. Vos scripts doivent gérer ces cas sans lever d'exception : filtrez sur `state == "fail"` avant de lire `expect.fail`, et utilisez `// null` en jq ou `?? []` en PHP.
 </Info>

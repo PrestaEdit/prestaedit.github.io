@@ -93,21 +93,46 @@ class CheckoutSuite extends TestsSuite
 
 <Warning title="parent::before() doit être le PREMIER appel" />
 
-Le commentaire du code de la lib est explicite : si on override `before()` sans appeler `parent::before(...)` **en premier**, le browser n'est pas instancié, les cookies ne sont pas posés, la basic auth n'est pas appliquée. Tous les `it()` échoueront sans message clair. L'annexe fixtures [le rappelait déjà](/blog/prestaflow-fixtures-seed-data/) — c'est le piège numéro un des overrides.
+Le code de `TestsSuite::before()` le montre : c'est lui qui démarre le browser, nettoie les cookies de la suite précédente, applique la basic auth, les en-têtes et les cookies fournis par l'environnement. Si on l'override sans appeler `parent::before(...)` **en premier**, rien de tout cela n'est fait : sur une préprod protégée, les `it()` échouent sans message qui pointe vers la cause. L'annexe fixtures [le rappelait déjà](/blog/prestaflow-fixtures-seed-data/) — c'est le piège numéro un des overrides.
 
-Symétrique pour `after()` : `parent::after()` en **dernier**, après le restore, pour laisser la lib fermer le browser sur un état DB propre.
+Pour `after()`, l'enjeu est moindre : `parent::after()` ne ferme pas le browser (il reste ouvert pour la suite suivante, et c'est la commande `run` qui le ferme en fin de run). Il se contente de calculer la durée de la suite. L'appeler en **dernier**, après le restore, fait entrer le coût du restore dans la durée affichée : c'est plus honnête.
+
+<Info title="before() tourne même pour les suites filtrées">
+La commande instancie chaque classe de suite trouvée avant de vérifier `--group` et `--draft`. Le constructeur appelle `before()`, donc le snapshot est pris même pour une suite exclue du run, mais son `after()` n'est jamais appelé. Pas de dégât pour la base, seulement du temps perdu.
+</Info>
 
 ## Deux (ou trois) techniques MySQL
 
 Toutes les approches ne coûtent pas la même chose.
 
-**mysqldump + restore** — universel. Marche sur MAMP, Valet, préprod, Docker, peu importe. Lent : 10 à 30 secondes pour une base PrestaShop moyenne. Multiplié par le nombre de suites, ça chiffre.
+**mysqldump + restore** — universel. Marche sur MAMP, Valet, préprod, Docker, peu importe (sur MariaDB, les commandes s'appellent aussi `mariadb-dump` et `mariadb`). Lent : la durée grimpe avec la taille de la base, et le restore est nettement plus long que le dump, car il reconstruit tables et index. Multiplié par le nombre de suites, ça chiffre.
 
 **Snapshot LVM / btrfs / ZFS** — instantané au sens FS (quelques millisecondes). Nécessite un filesystem spécifique et une machine dédiée. Pertinent pour un runner CI custom, hors sujet en local.
 
 **Transactions non-committées** — l'approche classique en unit test PHPUnit (`beginTransaction` / `rollback`). **Inapplicable en PrestaShop** : le code métier fait ses propres commits, les hooks committent, les modules committent. Aucun contrôle transactionnel end-to-end.
 
-**Snapshot Docker de la base seule** — via `docker commit` puis `docker restart`, très rapide (moins d'une seconde en général). Si la DB tourne dans un conteneur séparé, c'est le meilleur compromis en pratique. Combinable avec le trait : `snapshotDatabase()` fait un `docker commit`, `restoreDatabase()` fait un `docker restart` sur l'image snapshottée.
+**Copie du volume Docker de la base** — si la DB tourne dans un conteneur séparé, c'est le meilleur compromis en pratique. Attention au piège : `docker commit` ne sert à rien ici. Les images officielles `mysql` et `mariadb` déclarent `/var/lib/mysql` comme `VOLUME`, et `docker commit` n'embarque jamais le contenu d'un volume : un conteneur lancé depuis l'image « snapshottée » repart d'une base vide. Quant à `docker restart`, il redémarre le serveur sur les mêmes données, sans rien restaurer.
+
+La bonne méthode : arrêter le conteneur, copier le volume de données dans un volume de sauvegarde, redémarrer. Pour restaurer, même chose dans l'autre sens. Avec un conteneur `db` (MariaDB) dont les données sont dans le volume `db-data` :
+
+```sh
+# Snapshot : db-data → db-snapshot
+docker stop db
+docker run --rm -v db-data:/from:ro -v db-snapshot:/to --entrypoint sh mariadb:10.11 \
+  -c 'find /to -mindepth 1 -delete && cp -a /from/. /to/'
+docker start db
+
+# Restore : db-snapshot → db-data
+docker stop db
+docker run --rm -v db-snapshot:/from:ro -v db-data:/to --entrypoint sh mariadb:10.11 \
+  -c 'find /to -mindepth 1 -delete && cp -a /from/. /to/'
+docker start db
+
+# Attendre que le serveur réponde avant de relancer les tests
+until docker exec db mariadb-admin -uroot -p"$DB_ROOT_PASSWORD" ping --silent; do sleep 1; done
+```
+
+On réutilise l'image `mariadb` comme simple boîte à outils (`sh`, `find`, `cp`) : pas d'image à télécharger en plus. Sur notre essai (MariaDB 10.11, dossier de données de 150 Mo), snapshot et restore prennent environ deux secondes chacun, redémarrage compris. La durée suit la taille du dossier de données, pas le nombre de lignes, et le restore remet tout : lignes, compteurs `AUTO_INCREMENT`, tables créées entre-temps (elles disparaissent). Contrepartie : la base est coupée quelques secondes, à faire uniquement entre deux suites. Combinable avec le trait : `snapshotDatabase()` lance la première séquence, `restoreDatabase()` la seconde.
 
 ## Ce qu'un snapshot doit — et ne doit pas — inclure
 
@@ -153,4 +178,4 @@ Un snapshot restore ne compense pas :
 
 **Concurrence.** Deux runs qui tournent en parallèle sur la même base persistante s'écrasent mutuellement, snapshot ou pas. Le pattern niveau run ne protège pas contre ça — il faut alors soit une base par branche (schéma dédié préfixé), soit un mutex CI (un runner à la fois sur la base). C'est un problème d'orchestration, pas de snapshot.
 
-**Sécurité.** Le dump SQL contient toutes les données de la boutique — clients, adresses, commandes, éventuellement des tokens API en configuration. Ne pas l'artifacter dans un CI public sans anonymisation préalable. `mysql_config_editor` pour les credentials, pas de `-p<password>` en clair dans les logs CI.
+**Sécurité.** Le dump SQL contient toutes les données de la boutique — clients, adresses, commandes, éventuellement des tokens API en configuration. Ne pas l'artifacter dans un CI public sans anonymisation préalable. `mysql_config_editor` (MySQL) ou un fichier d'options `~/.my.cnf` (MySQL comme MariaDB) pour les credentials, pas de `-p<password>` en clair dans les logs CI.

@@ -25,19 +25,19 @@ Cette annexe est la **boîte à outils** pour ces moments-là : les cinq leviers
 
 ## Le triangle d'or : trois artefacts, systématiquement
 
-À chaque run, PrestaFlow produit trois choses. Consultez-les toujours dans cet ordre :
+À chaque échec, PrestaFlow vous laisse trois choses. Consultez-les toujours dans cet ordre :
 
-* **Le stack trace** dans la sortie CLI (ou dans la vue résultat de l'app, cf. [article 3](/blog/piloter-ses-tests-depuis-l-application-prestaflow/)). Nom de la classe, ligne, message d'exception.
-* **La capture d'erreur** — `prestaflow/screens/errors/error_<id>-<timestamp>.png`. Prise automatiquement par `Expect::that()` au moment exact de l'assertion qui tombe.
-* **Les captures d'étape** du rapport HTML — celles qu'on lit d'habitude en fin de run réussi.
+* **Le message d'échec** dans la sortie CLI (ou dans la vue résultat de l'app, cf. [article 3](/blog/piloter-ses-tests-depuis-l-application-prestaflow/)) : le `it` marqué `FAIL`, suivi du message de l'assertion ou de l'exception.
+* **La capture d'erreur** — `prestaflow/screens/errors/error_<id>-<timestamp>.png`. Prise automatiquement par `Expect::that()` quand une assertion tombe, après un court délai (voir l'étape 2). Une exception levée hors d'une assertion (un timeout de navigation, par exemple) ne déclenche pas de capture.
+* **Les assertions déjà passées** — listées sous chaque `PASS` en mode verbeux (le défaut), et dans `expect.pass` du `results.json` si vous lancez avec `-o json --file`.
 
-Le stack trace vous dit *où*. La capture d'erreur vous dit *quoi*. Les captures d'étape vous disent *comment on en est arrivé là*.
+Le message d'échec vous dit *où*. La capture d'erreur vous dit *quoi*. Les assertions passées vous disent *comment on en est arrivé là*.
 
 ## Étape 1 : commencer par la capture d'erreur, pas les logs
 
-Réflexe naturel de développeur : lire le stack trace, chercher la ligne, tenter de reproduire. Sur du E2E, c'est souvent une perte de temps.
+Réflexe naturel de développeur : lire le message d'erreur, chercher la ligne, tenter de reproduire. Sur du E2E, c'est souvent une perte de temps.
 
-Le stack trace vous dira que `getTextContent('.newsletter-message')` a renvoyé une chaîne vide. Il ne vous dira pas *pourquoi*. La capture, elle, le montre en une seconde :
+Le message d'échec vous dira que `getTextContent('.newsletter-message')` a renvoyé une chaîne vide. Il ne vous dira pas *pourquoi*. La capture, elle, le montre en une seconde :
 
 * un bandeau cookies qui n'a pas été fermé et qui masque le formulaire ;
 * un modal RGPD qui s'ouvre au-dessus du bloc newsletter ;
@@ -69,9 +69,9 @@ PRESTAFLOW_HEADLESS=false
 PRESTAFLOW_SCREENSHOT_DELAY=5
 ```
 
-`HEADLESS=false` ouvre une fenêtre Chrome visible. `SCREENSHOT_DELAY=5` ajoute 5 secondes d'attente avant chaque capture — c'est-à-dire, en pratique, du temps pour vous laisser voir la page dans son état capturé.
+`PRESTAFLOW_HEADLESS=false` ouvre une fenêtre Chrome visible. `PRESTAFLOW_SCREENSHOT_DELAY=5` porte à 5 secondes (3 par défaut) l'attente avant chaque capture d'erreur : quand une assertion tombe, la page reste figée sous vos yeux le temps de la regarder, avant la capture. Ce délai ne concerne que les captures d'erreur : un run sans échec n'attend jamais.
 
-<Warning title="Ne commit jamais ces deux valeurs dans le .env qui part en CI. Un run headed sur GitHub Actions crashe (pas de display), et un delay de 5s appliqué à chaque capture d'un run de 20 étapes ajoute 100 secondes gratuites au temps CI.">
+<Warning title="Ne commit jamais ces deux valeurs dans le .env qui part en CI. Un run headed sur GitHub Actions crashe (pas de display), et le délai s'ajoute à chaque assertion en échec : sur un run qui casse dans plusieurs suites, ce sont autant de secondes perdues. En CI, on peut même le descendre à 0.">
 
 </Warning>
 
@@ -79,7 +79,7 @@ PRESTAFLOW_SCREENSHOT_DELAY=5
 
 Un scénario de 10 étapes qui casse à la 9ème vous fait attendre les 8 premières à chaque tentative. À raison de 5 à 30 secondes par étape, c'est une éternité.
 
-PrestaFlow expose `skip()` et `todo()` en méthodes sœurs de `it()` sur `describe()` :
+PrestaFlow expose `skip()` et `todo()` en méthodes sœurs de `it()`, à enchaîner après `describe()` :
 
 ```php
 $this
@@ -87,10 +87,10 @@ $this
 ->skip('se connecte au BO', function () use ($backOfficeLoginPage) {
     // ne s'exécute pas
 })
-->skip('met à jour le titre du bloc', function () use (...) {
+->skip('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage) {
     // ne s'exécute pas non plus
 })
-->it('affiche le nouveau titre sur la home', function () use (...) {
+->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage) {
     // seule cette étape s'exécute
 });
 ```
@@ -111,7 +111,16 @@ Quand le scénario semble tourner mais l'assertion tombe sur une donnée dont on
 PRESTAFLOW_DEBUG=true
 ```
 
-La sortie CLI s'enrichit alors avec la locale résolue, la version PS détectée, et des détails supplémentaires d'exécution. Cas typique où ça sauve : un test qui passe en 8.1.7 et casse en 9.0.0, où le mode debug affiche noir sur blanc *"Locale: fr, Version: 9"* — et vous découvrez que votre catalogue de traductions n'a rien pour v9 alors que v8 l'avait (cf. le mécanisme de merge de l'[annexe *scénarios multi-locales*](/blog/prestaflow-scenarios-multi-locales/)).
+La sortie CLI affiche alors, en tête de chaque suite, la locale résolue (`Debug: Locale: fr`). C'est tout ce qu'ajoute ce mode en v1.7.1 : il n'affiche ni la version PS ni d'autres détails. Pour le reste, `$this->log()` dans un `it` écrit une ligne `Debug:` sous son résultat (et dans le champ `debug` du `results.json`), mode debug ou non :
+
+```php
+->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage) {
+    $this->log('Locale: ' . $this->getLocale() . ', PS: ' . $this->getPatchVersion());
+    // ...
+});
+```
+
+Cas typique où ça sauve : un test qui passe en 8.1.7 et casse en 9.0.0, où la sortie affiche noir sur blanc *"Locale: fr, PS: 9.0.0"* — et vous découvrez que votre catalogue de traductions n'a rien pour v9 alors que v8 l'avait (cf. le mécanisme de merge de l'[annexe *scénarios multi-locales*](/blog/prestaflow-scenarios-multi-locales/)).
 
 ## Étape 5 : le `dump` temporaire, dernière ligne de défense
 
@@ -121,22 +130,22 @@ Quand rien de tout ce qui précède ne vous a mené à la cause, restez pragmati
 ->it('lit la valeur', function () use ($page) {
     $value = $page->getTextContent('.some-selector');
     var_dump($value);            // ← temporaire
-    dump($this->translationsCatalog);  // ← si Laravel/Symfony chargé
+    var_dump($page->translationsCatalog);  // ← catalogue de la Page, null tant qu'aucune traduction n'a été demandée
     Expect::that($value)->contains('foo');
 });
 ```
 
 Bricolage assumé, mais qui coupe court à toutes les hypothèses. Contrairement au stack trace ou aux captures, il vous donne l'accès direct à la structure de données que la lib manipule à l'instant `t`.
 
-<Warning title="Un dump/var_dump laissé dans le code committé casse le rapport HTML (le JSON de résultats est pollué par la sortie inline) et fait fuiter du contenu dans les logs CI. Un pre-commit hook qui grep var_dump\\|dd\\(\\|dump\\( sur les fichiers de tests est un investissement rentable.">
-
+<Warning title="Un dump/var_dump laissé dans le code committé pollue la sortie">
+Il se mélange à la sortie console, casse le JSON écrit sur `stdout` (`-o json` sans `--file`) et fait fuiter du contenu dans les logs CI. Un pre-commit hook qui cherche `var_dump`, `dd(` ou `dump(` dans les fichiers de tests est un investissement rentable. Pour une trace qui peut rester, préférez `$this->log()`.
 </Warning>
 
 ## Le cas particulier du flake
 
 Un test qui passe *parfois* et échoue *parfois* n'est pas un bug fonctionnel. C'est un bug de scénario, et il en existe trois causes classiques :
 
-* **Wait manquant** — l'assertion est faite avant que l'action asynchrone n'ait fini de rendre son résultat. Parade : `waitForPageLoaded()` après une navigation, `isVisible($sel, 5000)` avant de lire un contenu injecté par JS.
+* **Wait manquant** — l'assertion est faite avant que l'action asynchrone n'ait fini de rendre son résultat. Parade : `clickAndWaitReload($sel)` pour un clic qui recharge la page, `waitVisible($sel)` ou `waitForText('…', 5000, $sel)` avant de lire un contenu injecté par JS, `waitUntil()` pour une condition sur mesure.
 * **Ordre d'exécution / état résiduel** — un `it` dépend d'un état laissé par le précédent, qui échoue silencieusement dans certaines conditions (session expirée, cookie perdu). Rendre chaque `it` idempotent quand c'est possible.
 * **Données polluées** — vu dans l'[annexe *tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/) : le second run crée l'inscription que le premier a laissée. Suffixe unique par run (`time()`, uuid) ou cleanup en fin de suite.
 
@@ -148,11 +157,11 @@ Un test qui passe *parfois* et échoue *parfois* n'est pas un bug fonctionnel. C
 
 </Warning>
 
-<Info title="Rapport HTML absent : la commande a été tuée avant la fin du run (Ctrl+C local, timeout CI). Le rapport n'est écrit qu'après la boucle complète des it. Un scénario qui plante son runner en cours de route ne laisse rien à lire — d'où l'intérêt des captures d'erreur, écrites au fil de l'eau.">
+<Info title="junit.xml absent : la commande a été tuée avant la fin du run (Ctrl+C local, timeout CI). Il n'est écrit qu'après la boucle complète des suites. Le results.json, lui, est réécrit après chaque suite et reflète la dernière suite terminée. Un scénario qui plante son runner en cours de route laisse peu à lire — d'où l'intérêt des captures d'erreur, écrites au fil de l'eau.">
 
 </Info>
 
-<Info title="Flaky uniquement en CI, jamais en local : souvent le boot Flashlight qui n'est pas totalement prêt quand le premier hit arrive. Monter le timeout de la boucle wait de l'article 2 (60 tentatives × 2s = 2 min) résout la plupart des cas — les 10-20 secondes de plus sont indolores comparées à un CI rouge intermittent.">
+<Info title="Flaky uniquement en CI, jamais en local : souvent le boot Flashlight qui n'est pas totalement prêt quand le premier hit arrive. Vérifiez que la boucle d'attente de l'article 2 est en place (jusqu'à 60 tentatives × 2 s, soit 2 min, en attendant le 302 de /admin-dev/), et augmentez le nombre de tentatives si votre boot est plus lent : quelques secondes de plus sont indolores comparées à un CI rouge intermittent.">
 
 </Info>
 

@@ -79,7 +79,7 @@ L'annexe [consommer results.json](/blog/prestaflow-consommer-results-json/) a mo
 - **JUnit** — format standard, consommé passivement par vos outils CI existants (dashboards, historique, alertes)
 - **`results.json`** — format PrestaFlow, consommé activement par vos scripts custom (Slack, badge README, dashboard maison)
 
-Rien n'empêche d'activer les deux dans le même run : `--junit --output=JSON --file` produit les deux fichiers, chacun pour son usage.
+Rien n'empêche d'activer les deux dans le même run : `--junit --output=JSON --file` produit les deux fichiers, chacun pour son usage. Petite différence à connaître en v1.7.1 : `junit.xml` couvre toutes les suites du run, alors que `results.json` ne garde que la dernière suite exécutée.
 
 ## `--draft` / `-d` : isoler les brouillons
 
@@ -113,11 +113,11 @@ Combiné avec le flag CLI qui prend trois formes :
 
 Une fois le scénario stable, on retire `$draft = true` de la classe. Le scénario devient normal, il tourne dans le CI principal.
 
-<Info title="Le flag utilise Symfony Console avec VALUE_NEGATABLE : --draft active, --no-draft désactive, et il n'y a pas de troisième valeur possible. Absence de flag ≠ --no-draft — c'est le mode « sans filtrage » où tout tourne." />
+<Info title="Le flag utilise Symfony Console avec VALUE_NEGATABLE : --draft active, --no-draft désactive, et l'option n'accepte pas de valeur (--draft=1 est refusé). Absence de flag ≠ --no-draft — c'est le mode « sans filtrage » où tout tourne." />
 
 ## `--visual-report` : un rapport dédié aux visuels
 
-L'annexe [régressions visuelles](/blog/prestaflow-regressions-visuelles/) a introduit `visualCheckpoint()`. Ces checkpoints apparaissent dans le rapport HTML principal des tests, mêlés aux assertions fonctionnelles. Utile en debug — moins utile quand un reviewer non-technique doit valider ou rejeter une série de diffs visuels.
+L'annexe [régressions visuelles](/blog/prestaflow-regressions-visuelles/) a introduit `visualCheckpoint()`. Leurs résultats apparaissent dans la sortie console des tests, mêlés aux assertions fonctionnelles, et dans le bloc `visual` du `results.json`. Utile en debug — moins utile quand un reviewer non-technique doit valider ou rejeter une série de diffs visuels.
 
 Le flag `--visual-report` produit un **rapport HTML séparé**, dédié uniquement aux régressions visuelles :
 
@@ -131,9 +131,9 @@ Le flag `--visual-report` produit un **rapport HTML séparé**, dédié uniqueme
 ./vendor/bin/prestaflow run tests/prestaflow --visual-report=public/visual-latest.html
 ```
 
-Le rapport présente les checkpoints en cartes visuelles : baseline / actual / diff en trois vignettes côte à côte, statut passe/fail, threshold utilisé. C'est le format à envoyer au designer ou au chef de projet qui doit trancher *« ce changement de padding est-il volontaire ? »*.
+Le rapport présente les checkpoints en cartes visuelles : référence / actuelle / diff en vignettes côte à côte (images embarquées dans le HTML), score de similarité et statut (conforme, écart, baseline créée). Le seuil utilisé n'y figure pas. C'est le format à envoyer au designer ou au chef de projet qui doit trancher *« ce changement de padding est-il volontaire ? »*.
 
-Un fichier `visual-results.json` est écrit dans le même dossier (par exemple `reports/visual/visual-results.json`) — machine-readable si vous voulez automatiser une décision.
+Un fichier `visual-results.json` est écrit dans le même dossier (par exemple `reports/visual/visual-results.json`) — machine-readable si vous voulez automatiser une décision : date de génération, puis nom, statut et score de chaque checkpoint.
 
 ### Fuseau horaire du stamp
 
@@ -165,25 +165,27 @@ Les trois options sont indépendantes et se cumulent :
 
 Un seul run produit :
 
-- Le rapport HTML principal (par défaut)
+- La sortie console habituelle
 - Le fichier `results.json` (`--output=JSON --file`)
 - Le rapport JUnit XML (`--junit`)
 - Le rapport visuel HTML dédié + son JSON (`--visual-report`)
 
-Chacun pour son usage — le HTML pour l'humain qui debug, le JSON pour les scripts custom, le JUnit pour le CI qui l'ingère nativement, le visual pour la revue humaine des baselines.
+Chacun pour son usage — la console pour l'humain qui debug, le JSON pour les scripts custom, le JUnit pour le CI qui l'ingère nativement, le visual pour la revue humaine des baselines.
 
-<Warning title="Ne pas cumuler --draft et --no-draft (Symfony Console refuse cette combinaison). Choisir l'un ou l'autre — ou aucun des deux pour tout jouer." />
+<Warning title="Ne pas cumuler --draft et --no-draft. Symfony Console ne refuse pas la combinaison : le dernier flag de la ligne l'emporte, sans avertissement. Un --draft ajouté en fin de commande par-dessus le --no-draft du CI fait donc tourner uniquement les brouillons. Choisir l'un ou l'autre — ou aucun des deux pour tout jouer." />
 
 ## Interaction avec les autres annexes
 
-- **[CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/)** — GitLab CI et Jenkins ont un support natif de JUnit qui rend `--junit` immédiatement rentable. Sur GitHub Actions, le support natif JUnit est moins riche (il faut un plugin type `dorny/test-reporter`) — l'`--output=JSON` reste souvent plus adapté.
+- **[CI hors GitHub Actions](/blog/prestaflow-ci-hors-github-actions/)** — GitLab CI et Jenkins ont un support natif de JUnit qui rend `--junit` immédiatement rentable. Sur GitHub Actions, le support natif JUnit est moins riche (il faut une action tierce, type `dorny/test-reporter`) — l'`--output=JSON` reste souvent plus adapté.
 - **[Consommer results.json](/blog/prestaflow-consommer-results-json/)** — les deux formats se cumulent, chacun a son bon usage.
 - **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — `--visual-report` est le compagnon naturel de `visualCheckpoint()`. Sans checkpoints visuels dans vos suites, le rapport est vide.
 - **Consulter l'historique cloud** — la plateforme prestaflow.io consomme le `results.json`, pas le JUnit ni le visual-report HTML. Ces derniers restent des artefacts locaux ou CI.
 
 ## Notes
 
-<Info title="Le rapport JUnit est écrit APRÈS l'exécution de toutes les suites, comme le résumé HTML. Si vous coupez le run en cours (Ctrl+C, timeout CI), le fichier n'existe pas — vos configs artifacts:reports:junit doivent gérer l'absence de fichier proprement (typiquement via allowEmptyArchive: true chez Jenkins, ou une expression when: always chez GitLab)." />
+<Info title="Le rapport JUnit est écrit APRÈS l'exécution de toutes les suites.">
+Si vous coupez le run en cours (Ctrl+C, timeout CI), ou si une exception interrompt la commande, le fichier n'existe pas. Chez Jenkins, l'étape `junit` échoue alors sur « No test report files were found » : ajoutez `allowEmptyResults: true` (`junit testResults: 'reports/junit.xml', allowEmptyResults: true`). Chez GitLab, `when: always` garantit l'envoi des artefacts même quand le job échoue ; un fichier absent est seulement signalé dans le log du job.
+</Info>
 
 <Info title="Le --draft est un filtre de suite, pas de it. Vous ne pouvez pas marquer un it individuel comme brouillon — c'est la suite entière qui l'est. Pour un it isolé, l'annexe debug rappelle que ->skip() et ->todo() existent (mais ils sortent du rapport avec un statut spécifique, pas comme un « pas là »)." />
 
