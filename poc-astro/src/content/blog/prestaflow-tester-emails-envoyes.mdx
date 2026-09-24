@@ -17,7 +17,7 @@ Beaucoup de modules PS déclenchent l'envoi d'un email : confirmation de command
 
 Vérifier ces envois demande de **capturer** ce que PS envoie sans que ça finisse dans une vraie boîte mail. C'est le rôle d'un **MTA de capture** — MailHog, Mailpit, MailCatcher — qu'on branche à côté de la boutique de test. PrestaShop envoie ses emails vers ce MTA, PrestaFlow les récupère via son API HTTP, et vos scénarios vérifient le contenu.
 
-Cette annexe montre le pattern de bout en bout avec **Mailpit** (le fork actif de MailHog) — un binaire Go de 20 Mo qui expose une UI web et une API REST, packagé en image Docker officielle.
+Cette annexe montre le pattern de bout en bout avec **Mailpit**, un outil écrit en Go et inspiré de MailHog (ce n'en est pas un fork), qui expose une UI web et une API REST, et que son auteur publie en image Docker (`axllent/mailpit`).
 
 ## Le montage : Flashlight + Mailpit + config SMTP
 
@@ -96,7 +96,7 @@ class Page extends BasePage
 
     public function reset(): void
     {
-        // DELETE /api/v1/messages vide la boîte capturée.
+        // DELETE sans liste d'IDs : Mailpit vide toute la boîte.
         $this->httpDelete($this->mailpitUrl . '/api/v1/messages');
     }
 
@@ -118,9 +118,27 @@ class Page extends BasePage
         return null;
     }
 
+    public function waitForMessage(string $email, int $timeout = 10000): array
+    {
+        $found = null;
+        $this->waitUntil(function () use ($email, &$found) {
+            $found = $this->findByRecipient($email);
+            return $found !== null;
+        }, $timeout, 'Aucun email reçu pour ' . $email);
+
+        return $found;
+    }
+
+    public function fetchMessage(string $messageId): array
+    {
+        $body = $this->httpGet($this->mailpitUrl . '/api/v1/message/' . $messageId);
+        return json_decode($body, true) ?? [];
+    }
+
     public function getMessageBody(string $messageId): string
     {
-        return $this->httpGet($this->mailpitUrl . '/api/v1/message/' . $messageId);
+        // Version texte de l'email (champ Text de l'API), sans l'enveloppe JSON.
+        return (string) ($this->fetchMessage($messageId)['Text'] ?? '');
     }
 
     private function httpGet(string $url): string
@@ -142,6 +160,8 @@ Volontairement simple — pas d'HTTP client tiers, `file_get_contents` suffit po
 
 Objectif : simuler un client qui envoie une demande via le formulaire de contact `ps_contactform`. Vérifier que l'email atterrit bien chez l'admin.
 
+Deux précisions avant le code. La boutique Flashlight n'existe qu'en anglais : le formulaire est sur `/contact-us`, que `goToPage('contact-us')` construit à partir de `PRESTAFLOW_FO_URL`. Et `$adminEmail` doit être l'adresse du contact sélectionné par défaut dans le formulaire (BO → Paramètres de la boutique → Contact) : vérifiez-la une fois sur votre boutique de test.
+
 ```php
 <?php
 
@@ -154,7 +174,7 @@ class ContactFormEmail extends TestsSuite
 {
     public function init()
     {
-        $this->importPage('FrontOffice\Home');
+        $this->importPage('FrontOffice\Contact');
         $this->importPage('Support\Mailbox', domain: 'Tests');
 
         extract($this->pages);
@@ -168,21 +188,19 @@ class ContactFormEmail extends TestsSuite
             $supportMailboxPage->reset();
             Expect::that(count($supportMailboxPage->listMessages()))->isTheSameAs(0);
         })
-        ->it('soumet le formulaire contact', function () use ($frontOfficeHomePage) use ($customerMessage) {
-            $frontOfficeHomePage->goToUrl($_ENV['PRESTAFLOW_FO_URL'] . 'nous-contacter');
-            $frontOfficeHomePage->setValue('input[name="from"]', 'client@example.test');
-            $frontOfficeHomePage->setValue('textarea[name="message"]', $customerMessage);
-            $frontOfficeHomePage->click('input[name="submitMessage"]');
-            $frontOfficeHomePage->waitForPageReload();
+        ->it('soumet le formulaire contact', function () use ($frontOfficeContactPage, $customerMessage) {
+            // Flashlight n'installe que l'anglais : la page s'appelle contact-us.
+            $frontOfficeContactPage->goToPage('contact-us');
+            $frontOfficeContactPage->setValue('input[name="from"]', 'client@example.test');
+            $frontOfficeContactPage->setValue('textarea[name="message"]', $customerMessage);
+            $frontOfficeContactPage->clickAndWaitReload('input[name="submitMessage"]');
+            $frontOfficeContactPage->waitForText('Your message has been successfully sent to our team.');
         })
-        ->it('capture un email chez l\'admin', function () use ($supportMailboxPage) use ($adminEmail) {
-            // Petit délai — l'envoi SMTP est asynchrone dans PS.
-            sleep(2);
-
-            $message = $supportMailboxPage->findByRecipient($adminEmail);
+        ->it('capture un email chez l\'admin', function () use ($supportMailboxPage, $adminEmail) {
+            $message = $supportMailboxPage->waitForMessage($adminEmail);
             Expect::that($message)->isNotNull();
         })
-        ->it('l\'email contient le message client', function () use ($supportMailboxPage) use ($adminEmail, $customerMessage) {
+        ->it('l\'email contient le message client', function () use ($supportMailboxPage, $adminEmail, $customerMessage) {
             $message = $supportMailboxPage->findByRecipient($adminEmail);
             $body = $supportMailboxPage->getMessageBody($message['ID']);
 
@@ -202,22 +220,20 @@ Quatre `it`, qui répondent aux quatre questions qu'on se pose sur un envoi d'em
 
 ## Vérifier les pièces jointes
 
-Mailpit expose aussi les attachments d'un message via `GET /api/v1/message/{ID}/part/{PartID}`. Utile quand un module génère un PDF de facture attaché à l'email de confirmation.
+Mailpit décrit les pièces jointes d'un message dans le champ `Attachments` de `GET /api/v1/message/{ID}` (nom, type, taille, `PartID`), et sert chacune via `GET /api/v1/message/{ID}/part/{PartID}`. Utile quand un module génère un PDF de facture attaché à l'email de confirmation.
 
 ```php
 public function getAttachments(string $messageId): array
 {
-    $body = $this->httpGet($this->mailpitUrl . '/api/v1/message/' . $messageId);
-    $data = json_decode($body, true);
-    return $data['Attachments'] ?? [];
+    return $this->fetchMessage($messageId)['Attachments'] ?? [];
 }
 ```
 
 Un `it` qui vérifie la présence d'un PDF :
 
 ```php
-->it('l\'email contient une facture PDF', function () use ($supportMailboxPage) use ($orderReference) {
-    $message = $supportMailboxPage->findByRecipient('client@example.test');
+->it('l\'email contient une facture PDF', function () use ($supportMailboxPage) {
+    $message = $supportMailboxPage->waitForMessage('client@example.test');
     $attachments = $supportMailboxPage->getAttachments($message['ID']);
 
     $pdf = array_filter($attachments, fn($a) => str_ends_with($a['FileName'] ?? '', '.pdf'));
@@ -238,9 +254,13 @@ Si vous testez sur la [stack locale](/blog/prestaflow-sans-flashlight-stack-loca
 
 ## Notes
 
-<Warning title="L'envoi SMTP en PS est asynchrone. Le sleep(2) dans le troisième it est artisanal — sur une boutique lente ou un CI chargé, il peut ne pas suffire. Mieux : une méthode waitForMessage($recipient, $timeoutSec = 10) dans la Page Mailbox qui poll l'API Mailpit toutes les 500ms jusqu'à trouver ou timeout." />
+<Info title="Pourquoi waitForMessage() plutôt qu'un sleep()">
 
-<Info title="Mailpit vs MailHog : le second est en fin de vie (dernier release 2020), le premier est le fork actif maintenu. Nouvelles installations : Mailpit. Vous croisez encore MailHog sur des projets anciens — l'API est très proche mais quelques endpoints diffèrent (/api/v2 chez MailHog vs /api/v1 chez Mailpit)." />
+L'envoi SMTP de PrestaShop est synchrone : la requête qui soumet le formulaire attend la réponse du serveur SMTP avant de rendre la page. Quand la page de confirmation s'affiche, Mailpit a donc déjà accepté l'email. `waitForMessage()` interroge quand même l'API jusqu'à 10 secondes (via `waitUntil()`, toutes les 100 ms) : cela absorbe le petit délai d'enregistrement côté Mailpit sans figer la suite sur un `sleep()` arbitraire, et l'échec arrive avec un message clair si rien n'est parti.
+
+</Info>
+
+<Info title="Mailpit et MailHog : MailHog n'est plus maintenu (sa dernière version date de 2020). Mailpit, inspiré de MailHog mais écrit indépendamment, est activement maintenu. Nouvelles installations : Mailpit. Vous croisez encore MailHog sur des projets anciens, mais son API n'est pas la même : la Page Mailbox ci-dessus ne fonctionne qu'avec Mailpit." />
 
 <Info title="En prod, ne laissez surtout pas la config SMTP pointer sur un Mailpit — vous ne recevriez pas vos vrais emails. La config Mailpit doit vivre uniquement dans la boutique de recette (côté init-script Flashlight ou dans un .env dédié qui n'est pas déployé en prod)." />
 

@@ -19,7 +19,7 @@ draft: false
 
 ## Décor
 
-La série a supposé Flashlight partout — image Docker PrestaShop clé en main, jetable, idéale pour le CI. C'est le bon choix dès qu'on parle de reproductibilité (article 2) ou de matrice multi-versions.
+La série a supposé Flashlight partout — image Docker PrestaShop clé en main, jetable, idéale pour le CI. C'est le bon choix dès qu'on parle de reproductibilité ([automatisation en CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)) ou de [matrice multi-versions](/blog/prestaflow-multi-versions-prestashop/).
 
 Mais dans la vraie vie du dev, beaucoup de gens ont **déjà** une boutique qui tourne en local via [Valet](https://cvuorinen.net/valet-prestashop/), [MAMP](https://www.mamp.info/), [DevKinsta](https://kinsta.com/devkinsta/), [Herd](https://herd.laravel.com/), ou une `docker-compose.yml` maison. Une boutique qui a leur config à eux, leur thème custom, leur base peuplée. Booter Flashlight à côté ferait doublon — voire noierait le vrai contexte de dev.
 
@@ -55,7 +55,7 @@ Vos suites tournent contre `prestashop.test` — la boutique qui tourne déjà s
 
 ### Les gains
 
-* **Zéro attente de boot**. Un run PrestaFlow local démarre en une seconde, contre 30-60s pour Flashlight au premier boot.
+* **Zéro attente de boot**. Un run PrestaFlow local démarre aussitôt, alors que Flashlight doit d'abord démarrer son conteneur et installer la boutique.
 * **Contexte de dev réaliste**. Votre thème custom, vos modules installés, votre config personnalisée, votre catalogue à vous. Vous testez ce que vous développez, pas ce qu'un conteneur générique aurait servi.
 * **Persistance entre runs**. Un produit ajouté au panier persiste, une config modifiée reste. Utile pour explorer manuellement l'état laissé par un scénario, sans qu'un conteneur ne le jette derrière vous.
 * **Vitesse d'itération**. Combiné à `PRESTAFLOW_HEADLESS=false` et à l'[app PrestaFlow](/blog/piloter-ses-tests-depuis-l-application-prestaflow/), on obtient la boucle courte parfaite pour écrire un scénario en tâtonnant.
@@ -63,7 +63,7 @@ Vos suites tournent contre `prestashop.test` — la boutique qui tourne déjà s
 ### Les pertes
 
 * **Reproductibilité perdue**. Votre boutique a votre config, votre catalogue, votre base. Ce qui passe chez vous ne passera pas forcément chez le collègue — ni sur la CI. C'est le miroir inversé de la promesse Flashlight.
-* **Pollution de la base**. Vos suites laissent des traces (produits créés, adresses saisies, abonnements newsletter). Sans cleanup soigné (voir l'[annexe module tiers](/blog/prestaflow-tester-un-module-tiers/) sur le suffixe timestamp et le cleanup end-of-suite), la base grossit et se dégrade.
+* **Pollution de la base**. Vos suites laissent des traces (produits créés, adresses saisies, abonnements newsletter). Sans cleanup soigné (voir l'[annexe module tiers](/blog/prestaflow-tester-un-module-tiers/) sur le suffixe unique et l'étape de nettoyage), la base grossit et se dégrade.
 * **Impossible en CI**. Sur GitHub Actions, il n'y a pas de `prestashop.test` — il faut soit Flashlight, soit monter une boutique dans le workflow.
 
 ## Quand choisir Flashlight, quand choisir sa stack locale
@@ -72,7 +72,7 @@ Un cadre simple :
 
 | Moment                                   | Bon choix                                                           |
 | ---------------------------------------- | ------------------------------------------------------------------- |
-| Écriture d'un scénario, itération rapide | **Stack locale** — boot en 1s, votre contexte                       |
+| Écriture d'un scénario, itération rapide | **Stack locale** — pas de boot, votre contexte                      |
 | Debug d'un scénario capricieux           | **Stack locale** — headed + persistance = pratique                  |
 | Test avant push                          | **Stack locale** puis **Flashlight** — d'abord chez soi, puis le CI |
 | CI sur chaque push                       | **Flashlight** — reproductibilité, matrice versions                 |
@@ -88,12 +88,19 @@ Rien n'empêche d'avoir les deux prêts, chacun avec son `.env` :
 ```
 psflowdemo/
 ├─ .env                  ← local, .gitignored, pointe sur prestashop.test
-├─ .env.flashlight       ← versionné, pointe sur http://localhost/ (Flashlight)
+├─ .env.flashlight       ← versionné, pointe sur votre Flashlight (ex. http://localhost:8000/)
 ```
 
-En local vous laissez PrestaFlow lire `.env` par défaut. En CI, la GitHub Action met l'environnement en dur via `env:` dans le workflow, ou vous copiez `.env.flashlight` en `.env` dans un step préalable.
+Flashlight n'écoute pas forcément sur le port 80 : c'est le port que vous publiez avec Docker (`-p 8000:80`, par exemple), et `PS_DOMAIN` doit reprendre la même valeur (`localhost:8000`).
 
-<Info title="Ne committez jamais votre .env local — il contient l'URL et les creds de votre stack de dev. Le .env.flashlight, lui, contient des valeurs standards (demo@prestashop.com, mot de passe Flashlight par défaut) qui n'ont rien de sensible et peuvent vivre dans le repo comme référence de configuration CI.">
+En local, vous laissez PrestaFlow lire `.env` par défaut. En CI, deux cas :
+
+* **Avec l'Action et `flashlight: true`**, c'est elle qui démarre Flashlight (sur le port 8000, 8001 ou 8002, le premier libre) et qui écrit un `.env.local` avec deux variables seulement : `PRESTAFLOW_FO_URL` et `PRESTAFLOW_PS_VERSION`. La lib lit `.env.local` en priorité et ignore alors `.env` : inutile d'y copier `.env.flashlight`, les autres variables gardent leurs valeurs par défaut.
+* **Sans l'Action**, avec un Flashlight lancé à la main dans le workflow, copiez `.env.flashlight` en `.env` dans un step préalable. Évitez de passer ces variables par `env:` : la version 1.7.1 de la lib les lit dans `$_ENV`, qui reste vide si PHP est configuré sans le `E` de `variables_order`.
+
+<Info title="Ne committez jamais votre .env local">
+
+Il contient l'URL et les identifiants de votre stack de dev. Le `.env.flashlight`, lui, contient les identifiants par défaut de Flashlight (`admin@prestashop.com` / `prestashop`), qui n'ont rien de sensible sur une boutique jetable et peuvent vivre dans le dépôt comme référence de configuration.
 
 </Info>
 
@@ -105,9 +112,11 @@ En local vous laissez PrestaFlow lire `.env` par défaut. En CI, la GitHub Actio
 
 ## Notes
 
-<Warning title="Certificat auto-signé et HTTPS local : Valet, Herd et beaucoup d'installations locales servent en https:// avec un certificat auto-signé (self-signed CA installée dans le système). Chrome que pilote PrestaFlow peut être plus regardant qu'un Chrome utilisateur — s'il refuse la navigation, ajoutez temporairement HEADLESS=false et acceptez le certificat manuellement pour installer l'exception dans le profil Chrome de PrestaFlow.">
+<Info title="Certificat auto-signé et HTTPS local">
 
-</Warning>
+Valet, Herd et beaucoup d'installations locales servent en `https://` avec un certificat signé par une autorité locale. Rien à faire côté PrestaFlow : la lib lance Chrome avec l'option `ignoreCertificateErrors` activée, et le certificat est accepté tel quel. Pour regarder le navigateur travailler, passez `PRESTAFLOW_HEADLESS=false`.
+
+</Info>
 
 <Info title="Un piège de simplicité : lancer une suite qui teste le tunnel de checkout sur votre stack locale peut créer une vraie commande dans votre base, avec statut « en attente de paiement », visible dans le BO. Pas un incident, mais gardez-le en tête — votre BO local va se remplir de commandes de test au fil des runs. Un ménage périodique (SQL truncate ou script de reset) évite l'encombrement.">
 

@@ -33,11 +33,13 @@ Il en existe deux dans PrestaFlow, distincts et complémentaires : **URLs friend
 * **`src/Urls/{locale}.json`** — mappe les slugs canoniques (anglais) vers leur variante localisée. Un `goToPage('login')` sait aller sur `/login` en anglais et sur `/connexion` en français.
 * **`src/Translations/{locale}.json`** — mappe les messages canoniques (anglais) vers leur traduction. `$this->translate('The employee does not exist...')` retourne la version française si la locale courante est `fr`.
 
-Les deux systèmes sont pilotés par la même variable d'environnement : **`PRESTAFLOW_LOCALE`**.
+Les deux systèmes sont pilotés par la même variable d'environnement : **`PRESTAFLOW_LOCALE`** (`en` par défaut).
+
+Dans la version 1.7.1, la lib livre des catalogues pour deux locales seulement : `en` et `fr`. Pour toute autre langue, c'est à vous de fournir les fichiers (voir plus bas) : sans eux, les slugs restent en anglais et `translate()` renvoie le texte anglais.
 
 ## URLs friendly : la partie déjà gérée pour vous
 
-Les URLs friendly des pages standard PrestaShop sont déjà cataloguées côté lib. Extrait de `src/Urls/fr.json` :
+Les URLs friendly des pages standard PrestaShop sont déjà cataloguées côté lib. Voici `src/Urls/fr.json` en entier (le fichier `en.json` est vide : en anglais, le slug canonique sert tel quel) :
 
 ```json
 {
@@ -56,7 +58,7 @@ $frontOfficeCartPage->goToPage('cart');
 
 atterrit sur `/cart` avec `PRESTAFLOW_LOCALE=en` et sur `/panier?action=show` avec `PRESTAFLOW_LOCALE=fr`. Rien à faire côté scénario.
 
-<Info title="Si votre module custom expose une URL friendly propre (un contrôleur front avec un slug), vous pouvez fournir votre propre catalogue dans Tests/Urls/{locale}.json à la racine du projet — voir plus bas la note sur ce chemin. La lib le mergera avec le sien.">
+<Info title="Si votre module custom expose une URL friendly propre (un contrôleur front avec un slug), vous pouvez fournir votre propre catalogue dans Tests/Urls/{locale}.json à la racine du projet — voir plus bas la note sur ce chemin. La lib le fusionnera avec le sien.">
 
 </Info>
 
@@ -87,7 +89,7 @@ public function defineMessages(): array
 `translate('You have successfully subscribed')` consulte le catalogue de la locale courante et retourne :
 
 * `"You have successfully subscribed"` si `PRESTAFLOW_LOCALE=en` (ou si aucun catalogue ne connaît cette clé — c'est l'identité)
-* `"Vous êtes bien abonné à la newsletter."` si `PRESTAFLOW_LOCALE=fr` **et** que ce message est dans le catalogue français.
+* la traduction française si `PRESTAFLOW_LOCALE=fr` **et** que ce message est dans le catalogue français (on l'y ajoute plus bas).
 
 Les messages résolus sont pré-calculés au chargement de la Page et disponibles via `getMessage('successText')`.
 
@@ -137,61 +139,98 @@ Contenu de `Tests/Translations/fr.json` :
 }
 ```
 
-Le fichier `en.json` peut rester `{}` (l'identité) ou vous permettre d'overrider des messages de la lib si nécessaire.
+Recopiez la traduction telle que votre boutique l'affiche, au caractère près : c'est elle que `str_contains()` cherchera dans le message.
 
-La lib merge les catalogues dans cet ordre : **default → major → minor → patch → custom**. Vos traductions gagnent toujours sur celles de la lib, ce qui vous permet aussi bien de compléter que de corriger.
+Le fichier `en.json` peut rester `{}` (l'identité) ou vous permettre de surcharger des messages de la lib si nécessaire.
+
+La lib fusionne les catalogues dans cet ordre : **default → major → minor → patch → custom**. Vos traductions gagnent toujours sur celles de la lib, ce qui vous permet aussi bien de compléter que de corriger.
 
 <Warning title="Attention à la casse et à l'emplacement. Le code PHP de vos Pages vit dans tests/prestaflow/ (minuscule, autoloadé PSR-4 via le composer.json de l'article 1). Les catalogues JSON de traductions, eux, sont chargés par la lib au filesystem, avec un chemin en dur qui cherche à la RACINE du projet, sous un dossier Tests/ MAJUSCULE (Tests/Translations/{locale}.json, Tests/Urls/{locale}.json). Les deux dossiers coexistent, l'un pour le code, l'autre pour les catalogues.">
 
 </Warning>
 
-<Info title="En cas de doute sur le chargement effectif, un dump temporaire de $this->translationsCatalog dans une méthode de Page vous montre exactement ce qui a été mergé, dans l'ordre.">
+<Info title="En cas de doute sur le chargement effectif, un dump temporaire de $this->translationsCatalog dans une méthode de Page, après un premier appel à translate(), vous montre exactement le résultat de la fusion.">
 
 </Info>
 
 ## Tester la même suite contre plusieurs locales, en local
 
-Même approche que le script multi-versions de l'annexe précédente : boucle shell, override d'une variable d'environnement, la suite ne change pas.
+Même approche que le script de l'[annexe multi-versions](/blog/prestaflow-multi-versions-prestashop/) : une boucle shell qui change une variable d'environnement, la suite ne change pas.
+
+Un détail compte : la version 1.7.1 de la lib lit `PRESTAFLOW_LOCALE` dans `$_ENV`, qui reste vide quand PHP est configuré sans le `E` de `variables_order` (le réglage des `php.ini` fournis avec PHP). Un simple `PRESTAFLOW_LOCALE=fr ./vendor/bin/prestaflow …` peut donc être ignoré sans message. Le plus sûr est de passer par un fichier que la lib charge. Elle lit `.env.local` à la place de `.env` quand il existe : le script en génère un à chaque tour, à partir de votre `.env`, et le supprime à la fin.
 
 ```sh
 #!/usr/bin/env bash
 set -e
 
-for locale in fr en de it es; do
+if [ -f .env.local ]; then
+    echo ".env.local existe déjà : renommez-le avant de lancer ce script." >&2
+    exit 1
+fi
+trap 'rm -f .env.local' EXIT
+
+for locale in fr en; do
     echo "=== Locale $locale ==="
 
-    PRESTAFLOW_LOCALE=$locale ./vendor/bin/prestaflow run tests/prestaflow
+    # Copie du .env + la locale du tour (la dernière valeur d'une clé l'emporte).
+    { cat .env; echo; echo "PRESTAFLOW_LOCALE=$locale"; } > .env.local
+    ./vendor/bin/prestaflow run tests/prestaflow
 done
 ```
 
 Prérequis : que votre boutique de test ait bien les langues installées et activées. Sinon vos navigations aboutissent en 404, et vos assertions traduites tombent sur un message resté en anglais.
 
-En CI, le pattern est identique à la matrice multi-versions de l'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) — on ajoute simplement une dimension :
+<Warning title="Flashlight n'installe que l'anglais">
 
-```yaml
-strategy:
-  fail-fast: false
-  matrix:
-    ps-version: ['8.1.7', '9.0.0']
-    locale: ['fr', 'en']
-```
-
-Quatre combinaisons parallèles.
-
-## Notes
-
-<Warning title="Traduction manquante : translate() retourne silencieusement la clé anglaise si aucun catalogue ne connaît le message. Une assertion sur getMessage('successText') tombera alors sur un contains() qui compare une chaîne française à une chaîne anglaise — et cassera sans que la cause soit évidente. Loggez ou audit régulièrement votre catalog custom.">
+L'image Flashlight installe PrestaShop avec la seule langue anglaise. Une matrice de locales contre Flashlight, et donc contre l'Action avec `flashlight: true`, n'a pas de sens : en `fr`, les slugs français mènent en 404. Visez une boutique où les langues sont installées, typiquement votre preprod.
 
 </Warning>
 
-<Info title="Contexte : PrestaShop traduit certains messages différemment selon le contexte (BO vs front, role admin vs client). Un même wording anglais peut avoir plusieurs traductions selon la clé de traduction PS. Quand vous copiez un texte depuis l'interface pour votre catalogue custom, vérifiez qu'il vient bien du contexte que votre scénario visite.">
+En CI, on ajoute une dimension `locale` à la matrice, et on la relie à `PRESTAFLOW_LOCALE`. Pour la même raison qu'en local, on écrit la variable dans le `.env` lors d'une étape préalable plutôt que dans un bloc `env:` :
+
+```yaml
+jobs:
+  e2e:
+    name: E2E — locale ${{ matrix.locale }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        locale: ['fr', 'en']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - run: composer install --prefer-dist --no-progress
+
+      - name: Préparer le .env PrestaFlow
+        run: |
+          if [ -f .env.local ]; then
+            echo "::error::.env.local présent, le .env ne serait pas chargé"
+            exit 1
+          fi
+          {
+            echo "PRESTAFLOW_FO_URL=https://preprod.example.com/"
+            echo "PRESTAFLOW_LOCALE=${{ matrix.locale }}"
+          } >> .env
+
+      - name: Run PrestaFlow
+        run: ./vendor/bin/prestaflow run tests/prestaflow
+```
+
+Deux jobs parallèles, un par locale, contre la même preprod. Si elle est protégée, ajoutez les variables des annexes [htpasswd](/blog/prestaflow-preprod-htpasswd/) ou [Cloudflare](/blog/prestaflow-preprod-cloudflare/) dans la même étape.
+
+## Notes
+
+<Warning title="Traduction manquante : translate() retourne silencieusement la clé anglaise si aucun catalogue ne connaît le message. Une assertion sur getMessage('successText') tombera alors sur un contains() qui compare une chaîne française à une chaîne anglaise — et cassera sans que la cause soit évidente. Relisez régulièrement votre catalogue custom.">
+
+</Warning>
+
+<Info title="Contexte : PrestaShop traduit certains messages différemment selon le contexte (BO ou front, rôle admin ou client). Un même wording anglais peut avoir plusieurs traductions selon la clé de traduction PS. Quand vous copiez un texte depuis l'interface pour votre catalogue custom, vérifiez qu'il vient bien du contexte que votre scénario visite.">
 
 </Info>
 
 <Warning title="Emails et notifications transactionnels : les messages envoyés par email par un module tombent souvent hors du système de traduction PS (hard-codés en anglais dans le PHP, ou dans un template que le module a oublié de rendre traduisible). Testez votre assertion sur un vrai envoi avant de vous fier à getMessage().">
 
 </Warning>
-
-<Info title="Prochaine annexe : debugger un scénario qui casse — lire un rapport, rejouer localement l'étape fautive, isoler le vrai problème du bruit d'environnement.">
-
-</Info>
