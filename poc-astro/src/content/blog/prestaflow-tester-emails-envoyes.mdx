@@ -24,20 +24,31 @@ Cette annexe montre le pattern de bout en bout avec **Mailpit** (le fork actif d
 En CI (adapter les patterns pour local Valet/MAMP est trivial), on ajoute un side-car Mailpit à côté de Flashlight :
 
 ```yaml
-- name: Start Mailpit
+- name: Start MariaDB and Mailpit
   run: |
-    docker run -d --rm --name mailpit \
+    docker network create prestashop
+    docker run -d --name mysql --network prestashop \
+      -e MARIADB_ROOT_PASSWORD=prestashop \
+      -e MARIADB_DATABASE=prestashop \
+      -e MARIADB_USER=prestashop \
+      -e MARIADB_PASSWORD=prestashop \
+      mariadb:11
+    docker run -d --name mailpit --network prestashop \
       -p 1025:1025 \
       -p 8025:8025 \
       axllent/mailpit:latest
 
 - name: Start PrestaShop (Flashlight)
   run: |
-    docker run -d --rm --name ps \
+    docker run -d --name ps --network prestashop \
       -p 80:80 \
-      --link mailpit \
+      -e PS_DOMAIN=localhost \
+      -e MYSQL_HOST=mysql \
+      -v ${{ github.workspace }}/tests/flashlight-init:/tmp/init-scripts:ro \
       prestashop/prestashop-flashlight:8.1.7
 ```
+
+Les trois conteneurs partagent un réseau Docker : PrestaShop joint la base sous le nom `mysql` et le SMTP sous le nom `mailpit`. Flashlight n'embarque pas MySQL, d'où la base à côté, et `PS_DOMAIN` est obligatoire. Pour l'attente du boot, reprenez la boucle sur `/admin-dev/` de l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/).
 
 Deux ports Mailpit exposés :
 
@@ -54,13 +65,17 @@ set -e
 
 cd /var/www/html
 
-php bin/console prestashop:config:set PS_MAIL_METHOD 2
-php bin/console prestashop:config:set PS_MAIL_SERVER mailpit
-php bin/console prestashop:config:set PS_MAIL_SMTP_PORT 1025
-php bin/console prestashop:config:set PS_MAIL_SMTP_ENCRYPTION off
-php bin/console prestashop:config:set PS_MAIL_USER ""
-php bin/console prestashop:config:set PS_MAIL_PASSWD ""
+php bin/console prestashop:config set PS_MAIL_METHOD --value 2
+php bin/console prestashop:config set PS_MAIL_SERVER --value mailpit
+php bin/console prestashop:config set PS_MAIL_SMTP_PORT --value 1025
+php bin/console prestashop:config set PS_MAIL_SMTP_ENCRYPTION --value off
+php bin/console prestashop:config set PS_MAIL_USER --value ""
+php bin/console prestashop:config set PS_MAIL_PASSWD --value ""
 ```
+
+<Info title="La commande prestashop:config (actions get / set / remove) existe à partir de PrestaShop 8 ; elle est absente de 1.7.8.11. Sur une 1.7, posez ces clés par un UPDATE SQL sur ps_configuration dans le même init-script. Le script doit aussi être exécutable (chmod +x), sinon Flashlight le saute.">
+
+</Info>
 
 Chaque email que PS envoie part vers `mailpit:1025` et se retrouve consultable via `http://localhost:8025/api/v1/messages`.
 

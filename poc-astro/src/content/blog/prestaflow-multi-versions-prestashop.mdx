@@ -171,24 +171,42 @@ Un petit script shell fait le même travail localement, en série, avec Flashlig
 #!/usr/bin/env bash
 set -e
 
-for version in 1.7.8 8.1.7 9.0.0; do
+docker network create prestaflow 2>/dev/null || true
+
+for version in 1.7.8.11 8.1.7 9.0.0; do
     echo "=== PrestaShop $version ==="
 
-    docker rm -f ps 2>/dev/null || true
-    docker run -d --rm --name ps -p 80:80 \
+    # Une base neuve par version : Flashlight n'embarque pas MySQL.
+    docker rm -f ps mysql 2>/dev/null || true
+    docker run -d --name mysql --network prestaflow \
+        -e MARIADB_ROOT_PASSWORD=prestashop \
+        -e MARIADB_DATABASE=prestashop \
+        -e MARIADB_USER=prestashop \
+        -e MARIADB_PASSWORD=prestashop \
+        mariadb:11
+
+    docker run -d --name ps --network prestaflow -p 80:80 \
+        -e PS_DOMAIN=localhost \
+        -e MYSQL_HOST=mysql \
         prestashop/prestashop-flashlight:$version
 
-    # Attente du boot Flashlight
+    # Attente du boot : le back office redirige (302) vers la page de
+    # connexion une fois la boutique vraiment servie.
     for i in $(seq 1 60); do
-        curl -sf http://localhost/ > /dev/null && break
+        code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin-dev/ || true)
+        [ "$code" = "302" ] && break
         sleep 2
     done
 
     PRESTAFLOW_PS_VERSION=$version ./vendor/bin/prestaflow run tests/prestaflow
 done
+
+docker rm -f ps mysql
 ```
 
-Le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
+Trois détails qui comptent. Flashlight n'embarque pas MySQL : chaque version a sa propre base MariaDB, sur un réseau Docker partagé, et la boutique réessaie de s'y connecter jusqu'à ce qu'elle réponde. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt) et doit correspondre à l'URL vue depuis votre machine. Enfin, vérifiez les tags avant de les épingler : `1.7.8` n'existe pas, `1.7.8.11` oui, et les versions récentes n'existent qu'avec un suffixe (`9.2.0-nginx`). L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) détaille ces points.
+
+Côté PrestaFlow, le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
 
 <Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans attendre les 5-10 minutes de la matrice complète. Vous re-jouez uniquement la version fautive avec PRESTAFLOW_HEADLESS=false pour voir Chrome faire son travail.">
 

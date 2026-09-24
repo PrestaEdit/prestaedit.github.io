@@ -66,12 +66,20 @@ set -e
 cd /var/www/html
 
 # Config par défaut connue et stable, sur laquelle les scénarios peuvent s'appuyer.
-php bin/console prestashop:config:set PSFLOWDEMO_TITLE "Bienvenue sur notre boutique"
+php bin/console prestashop:config set PSFLOWDEMO_TITLE --value "Bienvenue sur notre boutique"
 ```
 
 <Info title="Naming numérique par convention (10-, 20-, 30-) : l'ordre alphabétique est garanti, l'espace de manœuvre à l'insertion est confortable, et on lit l'ordre d'exécution d'un coup d'œil." />
 
-<Warning title="Les init-scripts doivent être exécutables (chmod +x) et démarrer par un shebang (#!/usr/bin/env bash). Sans quoi Flashlight les ignore silencieusement — vos scénarios tombent sur une boutique sans votre seed et vous cherchez pourquoi une heure." />
+<Warning title="Les init-scripts doivent être exécutables (chmod +x). Un script qui ne l'est pas est ignoré, avec une seule ligne dans le log de boot (« ~ /tmp/init-scripts/… is not executable. Skipping. ») : facile à rater, et vos scénarios tombent sur une boutique sans votre seed. Ajoutez aussi un shebang (#!/usr/bin/env bash) pour que le script tourne avec le shell que vous attendez." />
+
+### Quand s'exécutent-ils, exactement ?
+
+Le script de démarrage de Flashlight suit un ordre fixe : restauration du dump SQL, installation des modules de `INSTALL_MODULES_DIR`, **init-scripts**, puis démarrage de php-fpm et nginx, et enfin les **post-scripts** (`POST_SCRIPTS_DIR`, monté par défaut en `/tmp/post-scripts`).
+
+Conséquence pratique : pendant un init-script, la base est prête et `bin/console` fonctionne, mais **la boutique ne répond pas encore en HTTP**. Pour tout ce qui a besoin d'une boutique servie, ou qui manipule des objets comme `Shop` ou `ShopUrl` (créer une seconde boutique, par exemple), utilisez un post-script. L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) en montre un complet.
+
+<Warning title="Un script qui échoue n'arrête pas le conteneur. ON_INIT_SCRIPT_FAILURE et ON_POST_SCRIPT_FAILURE valent fail par défaut, et le log affiche bien « execution failed. Sleep and exit. »… mais la sortie s'exécute dans un processus enfant lancé par xargs et n'atteint jamais le conteneur. Vérifié avec un init-script volontairement en échec : la boutique démarre quand même et le conteneur reste Up (healthy). Ne prenez pas un conteneur démarré pour la preuve que le seed est appliqué : lisez le log de boot (docker logs) ou faites-le vérifier par un premier scénario." />
 
 ## Niveau 2 : step pré-run en CI
 
@@ -139,7 +147,7 @@ class CartWithPromoCode extends TestsSuite
 
 L'annexe *module tiers* insistait sur le cleanup end-of-suite parce qu'elle décrivait une boutique de recette **persistante** — chaque run laisse des traces, il faut nettoyer derrière soi.
 
-Dans un pipeline **Flashlight**, la logique s'inverse : chaque run démarre un conteneur neuf, la base MySQL vit dans le conteneur, tout est jeté à la fin. **Le cleanup est gratuit, il se fait tout seul.**
+Dans un pipeline **Flashlight**, la logique s'inverse : chaque run démarre une boutique neuve et sa base (Flashlight n'embarque pas MySQL : la base tourne dans un conteneur à côté), et les deux sont jetés à la fin. **Le cleanup est gratuit, il se fait tout seul**, à une condition en local : détruire la base avec son volume (`docker compose down -v`), sinon elle survit au prochain démarrage.
 
 Deux mondes :
 
@@ -165,7 +173,7 @@ Pour se repérer :
 
 ## Notes
 
-<Info title="Compat multi-versions : un init-script qui fait des INSERT SQL directs sur ps_configuration peut casser entre versions PS si le schéma change. Préférer les commandes CLI (bin/console prestashop:module install, prestashop:config:set) qui s'adaptent — ou versionner votre init-scripts par version PS majeure (dossiers ./tests/flashlight-init/v8, ./tests/flashlight-init/v9)." />
+<Info title="Compat multi-versions : un init-script qui fait des INSERT SQL directs sur ps_configuration peut casser entre versions PS si le schéma change. Préférer les commandes CLI (bin/console prestashop:module install, prestashop:config set, cette dernière à partir de PrestaShop 8 seulement) qui s'adaptent — ou versionner votre init-scripts par version PS majeure (dossiers ./tests/flashlight-init/v8, ./tests/flashlight-init/v9)." />
 
 <Warning title="Credentials embarqués dans les init-scripts : ces fichiers finissent dans votre repo Git. Traitez tout secret (API key, mot de passe admin d'un service tiers appelé au boot) comme un cookie — secret GitHub référencé dans le workflow, jamais en dur dans le script versionné." />
 

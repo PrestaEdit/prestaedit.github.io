@@ -15,7 +15,7 @@ Annexe de la série PrestaFlow. Prérequis : avoir lu [« Fixtures et seed data 
 
 ## Décor : pourquoi snapshot
 
-Dans un pipeline **Flashlight**, la base MySQL vit dans le conteneur. Le conteneur meurt à la fin du run, la base avec lui. Rien à nettoyer. L'annexe [fixtures niveau 1](/blog/prestaflow-fixtures-seed-data/) exploite ce modèle : on injecte via `init-scripts`, on ne retire jamais.
+Dans un pipeline **Flashlight**, la boutique et sa base sont jetables. Flashlight n'embarque pas MySQL : la base tourne dans un conteneur à côté, mais les deux sont détruits à la fin du run (en local, avec `docker compose down -v` pour emporter le volume). Rien à nettoyer. L'annexe [fixtures niveau 1](/blog/prestaflow-fixtures-seed-data/) exploite ce modèle : on injecte via `init-scripts`, on ne retire jamais.
 
 Sur une boutique **persistante** — Valet, MAMP, préprod partagée, comme décrit dans [l'annexe stack locale](/blog/prestaflow-sans-flashlight-stack-locale/) — la base survit aux runs. Un test qui crée un client crée un vrai client. Un test qui commande décrémente un vrai stock. Au bout de dix runs, la base est un dépotoir : commandes fantômes, produits épuisés, configurations pétées. **Le cleanup n'est plus optionnel, il est obligatoire.**
 

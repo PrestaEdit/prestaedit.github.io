@@ -41,7 +41,7 @@ Le workflow niveau 1 fait cinq choses, dans l'ordre :
 1. `git clone` du projet (implicite dans tout CI)
 2. Installer PHP (typiquement 8.2) et Composer
 3. `composer install`
-4. Démarrer Flashlight en arrière-plan, attendre qu'il réponde en HTTP
+4. Démarrer une base MariaDB puis Flashlight en arrière-plan, attendre que le back office réponde
 5. Lancer `./vendor/bin/prestaflow run tests/prestaflow` avec les env vars pointant sur `http://localhost/`
 
 Toute la variation d'un CI à l'autre au niveau 1 concerne uniquement la syntaxe pour exprimer ces cinq étapes, plus les mécanismes de secrets et d'artifacts. Le niveau 2 remplace ces étapes par un appel à l'intégration officielle, qui les regroupe et ajoute la remontée vers la plateforme.
@@ -60,9 +60,20 @@ e2e:
   stage: test
   image: php:8.2-cli
   services:
+    - name: mariadb:11
+      alias: mysql
+      variables:
+        MARIADB_ROOT_PASSWORD: prestashop
+        MARIADB_DATABASE: prestashop
+        MARIADB_USER: prestashop
+        MARIADB_PASSWORD: prestashop
     - name: prestashop/prestashop-flashlight:8.1.7
       alias: prestashop
+      variables:
+        PS_DOMAIN: prestashop
+        MYSQL_HOST: mysql
   variables:
+    FF_NETWORK_PER_BUILD: "true"
     PRESTAFLOW_PS_VERSION: "8.1.7"
     PRESTAFLOW_LOCALE: fr
     PRESTAFLOW_FO_URL: http://prestashop/
@@ -75,7 +86,7 @@ e2e:
     - docker-php-ext-install gd
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer install --prefer-dist --no-progress
-    - for i in $(seq 1 60); do curl -sf http://prestashop/ > /dev/null && break; sleep 2; done
+    - for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://prestashop/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done
   script:
     - ./vendor/bin/prestaflow run tests/prestaflow
   artifacts:
@@ -88,7 +99,8 @@ e2e:
 
 Trois particularités GitLab :
 
-* **`services:`** permet de lancer un conteneur en side-car, accessible par son alias comme hostname (ici `prestashop`). Plus propre que le `docker run -d` manuel de GitHub Actions.
+* **`services:`** permet de lancer des conteneurs en side-car, accessibles par leur alias comme hostname (ici `prestashop` et `mysql`). Plus propre que le `docker run -d` manuel de GitHub Actions. Flashlight n'embarque pas MySQL : il lui faut la base en second service. Et comme la boutique doit joindre la base, **`FF_NETWORK_PER_BUILD`** est nécessaire : sans lui, les services ne se voient pas entre eux.
+* **`PS_DOMAIN: prestashop`** — obligatoire (sans lui, Flashlight s'arrête aussitôt), et égal au nom sous lequel le job joint la boutique. PrestaShop redirige vers son domaine configuré : un domaine qui ne correspond pas à l'URL de `PRESTAFLOW_FO_URL` renverrait chaque page ailleurs.
 * **`image:`** de niveau job = le conteneur qui exécute le script. On prend `php:8.2-cli` officiel et on y ajoute Chromium + composer.
 * **`artifacts:`** ne s'attache qu'`on_failure` — même pattern que le `if: failure()` de GitHub. Le rapport HTML et les captures d'erreur restent téléchargeables 7 jours.
 
@@ -145,13 +157,14 @@ pipelines:
     - step:
         name: E2E — PrestaShop 8.1.7
         services:
+          - mariadb
           - flashlight
         script:
           - apt-get update && apt-get install -y curl chromium libgd-dev unzip git
           - docker-php-ext-install gd
           - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
           - composer install --prefer-dist --no-progress
-          - for i in $(seq 1 60); do curl -sf http://localhost/ > /dev/null && break; sleep 2; done
+          - for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done
           - export PRESTAFLOW_FO_URL=http://localhost/
           - export PRESTAFLOW_BO_URL=http://localhost/admin-dev/
           - export PRESTAFLOW_BO_EMAIL=admin@prestashop.com
@@ -164,13 +177,23 @@ pipelines:
 
 definitions:
   services:
+    mariadb:
+      image: mariadb:11
+      variables:
+        MARIADB_ROOT_PASSWORD: prestashop
+        MARIADB_DATABASE: prestashop
+        MARIADB_USER: prestashop
+        MARIADB_PASSWORD: prestashop
     flashlight:
       image: prestashop/prestashop-flashlight:8.1.7
+      variables:
+        PS_DOMAIN: localhost
+        MYSQL_HOST: 127.0.0.1
 ```
 
 Deux particularités Bitbucket :
 
-* La syntaxe `services:` se déclare dans un bloc `definitions:` séparé et se référence dans le `step:` par son nom. Les services partagent le réseau du step, donc on parle à Flashlight via `http://localhost/` — pas via un alias.
+* La syntaxe `services:` se déclare dans un bloc `definitions:` séparé et se référence dans le `step:` par son nom. Les services partagent le réseau du step, donc on parle à Flashlight via `http://localhost/` — pas via un alias. Même chose entre services : Flashlight, qui n'embarque pas MySQL, joint le service MariaDB sur `127.0.0.1` (et non `localhost`, que le client MySQL interprète comme une socket locale).
 * **Les artefacts sont toujours produits**, il n'existe pas de conditionnel natif `on_failure` — on paie donc un peu plus de stockage. Alternative : `&& exit 0 || (tar cf reports.tgz tests/prestaflow/reports/ && exit 1)` pour un tar conditionnel dans le script.
 
 <Warning title="Bitbucket Pipelines a une limite mémoire par service à 1024 MB par défaut, insuffisante pour Flashlight sur certaines versions PS. Si le conteneur crashe au boot, augmentez avec size: 2x sur le service (voir la doc Bitbucket) — ça double la RAM disponible et fait sauter la plupart des blocages." />
@@ -281,8 +304,9 @@ pipeline {
 
         stage('Start Flashlight') {
             steps {
-                sh 'docker run -d --rm --name ps --network host prestashop/prestashop-flashlight:8.1.7'
-                sh 'for i in $(seq 1 60); do curl -sf http://localhost/ && break; sleep 2; done'
+                sh 'docker run -d --rm --name mysql --network host -e MARIADB_ROOT_PASSWORD=prestashop -e MARIADB_DATABASE=prestashop -e MARIADB_USER=prestashop -e MARIADB_PASSWORD=prestashop mariadb:11'
+                sh 'docker run -d --rm --name ps --network host -e PS_DOMAIN=localhost -e MYSQL_HOST=127.0.0.1 prestashop/prestashop-flashlight:8.1.7'
+                sh '''for i in $(seq 1 60); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin-dev/ || true); [ "$code" = "302" ] && break; sleep 2; done'''
             }
         }
 
@@ -298,7 +322,7 @@ pipeline {
             archiveArtifacts artifacts: 'tests/prestaflow/reports/**,prestaflow/screens/errors/**', allowEmptyArchive: true
         }
         always {
-            sh 'docker rm -f ps 2>/dev/null || true'
+            sh 'docker rm -f ps mysql 2>/dev/null || true'
         }
     }
 }
@@ -308,7 +332,7 @@ Trois particularités Jenkins :
 
 * **Docker-in-Docker requis** — l'agent est un conteneur PHP, mais on lance Flashlight via un `docker run` qui doit passer le socket Docker de l'host. C'est du DinD, à configurer côté Jenkins (mount de `/var/run/docker.sock`, sinon Cloud plugin type Kubernetes).
 * **`credentials()`** — Jenkins Credentials Store fournit les secrets sous forme de variables d'environnement quand on les référence via `credentials(...)`. Plus verbeux mais plus explicite que les secrets GitHub/GitLab.
-* **`post { always }`** garantit la stop du conteneur Flashlight même en cas d'échec, évitant les zombies sur le nœud.
+* **`post { always }`** garantit l'arrêt des conteneurs Flashlight et MariaDB même en cas d'échec, évitant les zombies sur le nœud.
 
 <Info title="La déclaration --network host permet à l'agent PHP et au conteneur Flashlight de partager la stack réseau et de se parler via localhost. C'est la voie la plus simple mais ne fonctionne pas sur macOS/Windows (où --network host a un comportement dégradé). Sur Jenkins hébergé Mac/Windows, préférer une déclaration explicite de réseau Docker partagé." />
 
@@ -316,7 +340,8 @@ Trois particularités Jenkins :
 
 Peu importe le CI et le niveau, les mêmes règles s'appliquent :
 
-* **Wait explicite après le boot Flashlight** — 30 à 60 secondes. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile.
+* **Une base à côté de Flashlight, et `PS_DOMAIN`** — l'image embarque nginx et php-fpm mais pas MySQL. Sans base, la boutique réessaie la connexion en boucle et ne répond jamais ; sans `PS_DOMAIN`, elle s'arrête aussitôt.
+* **Wait explicite après le boot Flashlight** — sur `/admin-dev/`, jusqu'à obtenir un 302 (redirection vers la page de connexion), plutôt qu'un 200 sur `/` qui prouve seulement que quelque chose écoute sur le port. Sans quoi le premier `it` tombe sur une boutique pas prête, avec une capture d'erreur inutile. Détails dans l'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/).
 * **Env vars `PRESTAFLOW_*`** — mêmes noms, mêmes rôles, quelle que soit la plateforme. Le code de la lib ne connaît rien du CI qui l'exécute.
 * **Artefacts sur échec** — le rapport HTML dans `tests/prestaflow/reports/`, les captures d'erreur dans `prestaflow/screens/errors/`. Les rendre téléchargeables est essentiel pour debug hors du CI.
 * **Exit code non-nul de la CLI** = job rouge. Ne pas court-circuiter avec un `|| true` bien intentionné qui rendrait le CI aveugle.
