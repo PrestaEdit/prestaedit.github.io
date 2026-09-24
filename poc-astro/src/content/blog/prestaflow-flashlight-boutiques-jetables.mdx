@@ -1,0 +1,457 @@
+---
+title: 'PrestaShop Flashlight : des boutiques jetables pour tester'
+date: 2026-09-24
+tags:
+  - Tests
+author: PrestaEdit
+series: prestaflow
+featuredimg: >-
+  https://prestaedit.github.io/head/2026-09-24-prestaflow-flashlight-boutiques-jetables.svg
+summary: >-
+  La série utilise Flashlight partout sans l'avoir jamais présenté. Ce qu'est
+  l'image, comment choisir son tag, la provisionner avec des post-scripts,
+  monter une matrice 1.7 / 8.2 / 9.2 en docker compose, et les pièges vérifiés
+  en le mettant en place dans la bibliothèque PrestaFlow elle-même.
+draft: false
+---
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». Les exemples viennent de la PR PrestaFlow/php-library#62, qui a remplacé la boutique de référence montée à la main par des boutiques Flashlight.">
+
+</Info>
+
+## Décor
+
+Depuis l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/), la série suppose Flashlight partout : un `docker run`, une attente, et PrestaFlow part à l'assaut de la boutique. On l'a utilisé comme une boîte noire. Cette annexe ouvre la boîte.
+
+Le prétexte est concret. La bibliothèque `PrestaFlow/php-library` testait jusqu'ici contre **un** conteneur PrestaShop 9 monté à la main, avec un dossier admin aléatoire, une seconde boutique ajoutée un jour puis oubliée, et une configuration que personne n'aurait su reconstruire. Tout ce qui passait « chez nous » ne prouvait pas grand-chose. La [PR #62](https://github.com/PrestaFlow/php-library/pull/62) l'a remplacé par trois boutiques Flashlight reproductibles — 1.7.8.11, 8.2.8 et 9.2.0 — utilisées à l'identique en local et en CI.
+
+Ce qui suit, c'est ce montage, étape par étape, avec les pièges rencontrés en route. Tous ont été vérifiés, pas supposés.
+
+## Ce qu'est Flashlight (et ce qu'il n'est pas)
+
+[PrestaShop Flashlight](https://github.com/PrestaShop/prestashop-flashlight) est une image Docker officielle qui démarre une boutique PrestaShop **installée** en quelques secondes. Son astuce : l'assistant d'installation tourne **au build de l'image**, et son résultat est figé dans un dump SQL. Au démarrage du conteneur, il n'y a plus qu'à restaurer ce dump et corriger le domaine. Vous obtenez le catalogue, les clients et les commandes de démo habituels, sans rien cliquer.
+
+Quelques faits à avoir en tête :
+
+* **nginx et php-fpm sont inclus, pas MySQL.** Il faut fournir une base à côté — d'où le `docker compose`.
+* **Le back office est fixe** : `/admin-dev/`, avec `admin@prestashop.com` / `prestashop`. Pas de dossier admin aléatoire à aller chercher.
+* **C'est un outil de dev et de test.** Le README est explicite : l'image est impropre à la production. Pour ça, il y a [PrestaShop/docker](https://github.com/PrestaShop/docker).
+
+<Info title="Jetable est le mot-clé. Une boutique Flashlight n'a aucune valeur en soi : on la démarre, on teste, on la détruit avec son volume. Si vous vous surprenez à la « soigner », c'est qu'il manque un script de provisioning.">
+
+</Info>
+
+## Choisir le bon tag
+
+C'est le premier piège, et il a tué une tentative précédente dans la bibliothèque : un `docker-compose.yml` qui épinglait `prestashop/prestashop-flashlight:9.0.1`. Ce tag n'existe pas. Le conteneur n'a jamais démarré, et le fichier est resté deux mois non commité.
+
+Vérifié sur le Docker Hub au moment d'écrire ces lignes :
+
+| Tag                | Existe ? |
+| ------------------ | -------- |
+| `1.7.8.11`         | oui      |
+| `1.7.8.11-nginx`   | oui      |
+| `8.2.8`            | **non**  |
+| `8.2.8-nginx`      | oui      |
+| `9.2.0`            | **non**  |
+| `9.2.0-nginx`      | oui      |
+
+Les versions anciennes ont un tag nu, les récentes seulement des tags suffixés. Plutôt que de retenir la règle, vérifiez avant d'épingler :
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://hub.docker.com/v2/repositories/prestashop/prestashop-flashlight/tags/9.2.0-nginx
+# 200 : le tag existe. 404 : il n'existe pas.
+```
+
+La bibliothèque épingle le suffixe `-nginx` pour les trois versions, ce qui rend la matrice homogène. On verra plus bas que ce choix a une conséquence sur le multiboutique.
+
+## Une première boutique
+
+Le strict minimum : une base MariaDB avec un healthcheck, et la boutique qui attend que la base soit prête.
+
+```yaml
+services:
+  db92:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: prestashop
+      MARIADB_DATABASE: prestashop
+      MARIADB_USER: prestashop
+      MARIADB_PASSWORD: prestashop
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ps92:
+    image: prestashop/prestashop-flashlight:9.2.0-nginx
+    depends_on:
+      db92:
+        condition: service_healthy
+    environment:
+      PS_DOMAIN: localhost:8092
+      MYSQL_HOST: db92
+      DEBUG_MODE: "false"
+    ports:
+      - "8092:80"
+```
+
+```sh
+docker compose up ps92 -d
+```
+
+`PS_DOMAIN` est la seule variable obligatoire, et elle doit contenir **le port vu depuis l'hôte**. PrestaShop redirige vers son domaine configuré : si vous exposez sur 8092 et déclarez `localhost`, chaque page vous renverra sur le port 80.
+
+Les variables qui comptent le plus pour des tests :
+
+| Variable                 | Rôle                                                   | Défaut               |
+| ------------------------ | ------------------------------------------------------ | -------------------- |
+| `PS_DOMAIN`              | Domaine public **avec le port**                        | — (obligatoire)      |
+| `MYSQL_HOST`             | Hôte de la base                                        | `mysql`              |
+| `INSTALL_MODULES_DIR`    | Dossier de zips de modules à installer au boot         | vide                 |
+| `INIT_SCRIPTS_DIR`       | Scripts exécutés **avant** le démarrage de PrestaShop  | `/tmp/init-scripts`  |
+| `POST_SCRIPTS_DIR`       | Scripts exécutés **après** le démarrage de PrestaShop  | `/tmp/post-scripts`  |
+| `ON_POST_SCRIPT_FAILURE` | `fail` ou `continue` si un post-script échoue          | `fail`               |
+| `MYSQL_EXTRA_DUMP`       | Dump SQL supplémentaire à restaurer                    | vide                 |
+| `DEBUG_MODE`             | Active le mode debug de PrestaShop                     | `false`              |
+
+## Provisionner : init-scripts ou post-scripts ?
+
+Flashlight offre trois points d'extension, qui s'exécutent dans cet ordre :
+
+1. **`INSTALL_MODULES_DIR`** — des zips de modules, installés via la CLI PrestaShop. Le plus simple pour tester votre module.
+2. **`INIT_SCRIPTS_DIR`** — avant que PrestaShop ne démarre. C'est ce que l'[annexe fixtures](/blog/prestaflow-fixtures-seed-data/) utilise pour poser une configuration.
+3. **`POST_SCRIPTS_DIR`** — après le démarrage. Le seul moment où l'on peut manipuler la boutique avec ses propres classes.
+
+La bibliothèque avait besoin d'une **seconde boutique** dans chaque conteneur, pour que le multiboutique soit là par défaut plutôt qu'un réglage fait une fois à la main. Créer une boutique demande les objets `Shop`, `ShopGroup`, `ShopUrl` : c'est donc un post-script.
+
+On monte le dossier en lecture seule :
+
+```yaml
+  ps92:
+    # ...
+    environment:
+      PS_DOMAIN: localhost:8092
+      SECOND_SHOP_PORT: "8093"
+      MYSQL_HOST: db92
+      POST_SCRIPTS_DIR: /tmp/post-scripts
+    volumes:
+      - ./docker/post-scripts:/tmp/post-scripts:ro
+    ports:
+      - "8092:80"
+      - "8093:80"   # la seconde boutique
+```
+
+Et le script, raccourci à l'essentiel :
+
+```sh
+#!/bin/sh
+set -eu
+
+echo "* Provisioning a second shop..."
+
+cat > /tmp/second-shop.php <<'PHP'
+<?php
+require_once '/var/www/html/config/config.inc.php';
+
+$group = new ShopGroup();
+$group->name = 'Group2';
+$group->active = true;
+$group->add();
+
+$shop = new Shop();
+$shop->name = 'Shop2';
+$shop->id_shop_group = (int) $group->id;
+$shop->id_category = (int) Configuration::get('PS_HOME_CATEGORY');
+$shop->theme_name = 'classic';
+$shop->active = true;
+$shop->add();
+
+$url = new ShopUrl();
+$url->id_shop = (int) $shop->id;
+$port = getenv('SECOND_SHOP_PORT') ?: '8093';
+$host = preg_replace('/:\d+$/', '', (string) Configuration::get('PS_SHOP_DOMAIN'));
+$url->domain = $url->domain_ssl = $host . ':' . $port;
+$url->physical_uri = '/';
+$url->virtual_uri = '';
+$url->main = true;
+$url->active = true;
+$url->add();
+
+// ... puis copie des données de la boutique 1 : copyShopData(),
+// catégories, hook actionShopDataDuplication, activation du multiboutique.
+PHP
+
+php /tmp/second-shop.php
+rm -f /tmp/second-shop.php
+
+echo "✅ Second shop provisioned"
+```
+
+Le script PHP est écrit dans un heredoc puis exécuté : Flashlight lance des exécutables, et c'est la façon la plus simple de profiter de `config.inc.php` sans maintenir un fichier PHP à part. La version complète est dans [`docker/post-scripts/10-second-shop.sh`](https://github.com/PrestaFlow/php-library/pull/62/files).
+
+<Info title="Piège de la copie de données : Shop::copyShopData() lit Tools::getValue('categoryBox'), c'est-à-dire ce que posterait le formulaire Multiboutique. En CLI, la valeur est false, et count(false) est fatal en PHP 8. Le script remplit donc $_POST['categoryBox'] avec les catégories de la boutique source avant l'appel.">
+
+</Info>
+
+<Warning title="Un script sans bit exécutable (chmod +x) n'est pas lancé. Seule une ligne du log de boot le signale (« ~ … is not executable. Skipping. ») : le symptôme visible est une boutique qui démarre sans votre provisioning.">
+
+</Warning>
+
+### Pourquoi un port et pas `/shop2/`
+
+Le réflexe multiboutique, c'est une URL virtuelle : `localhost:8092/shop2/`. Ici, ça ne marche pas. PrestaShop route les URL virtuelles grâce aux règles du `.htaccess`, et les tags `-nginx` **ne lisent jamais `.htaccess`**. La boutique répondrait sans servir aucun asset.
+
+En revanche, PrestaShop distingue les boutiques par domaine **port compris**. Deux ports publiés vers le même port 80 du conteneur, deux `ShopUrl` différents : deux boutiques.
+
+Sur le conteneur 9.2, la boutique 1 utilise hummingbird et la boutique 2 classic. Un seul boot fournit donc **les deux thèmes**, ce qui permet de vérifier que c'est bien une autre boutique qui répond, et pas la première sur un autre port :
+
+```sh
+curl -s http://localhost:8092/ | grep -o 'themes/[a-z]*/' | head -1   # hummingbird
+curl -s http://localhost:8093/ | grep -o 'themes/[a-z]*/' | head -1   # classic
+```
+
+### Une boutique dupliquée n'a pas de moyen de paiement
+
+Deuxième post-script, et un vrai bug PrestaShop trouvé en chemin : la table `ps_module_carrier` n'est pas dans la liste des tables associées aux boutiques, donc une boutique dupliquée n'hérite d'aucune restriction transporteur. Résultat : le tunnel de la boutique 2 s'arrête sur « aucun moyen de paiement disponible », sans rien dans les logs. Remonté upstream sous [PrestaShop#42964](https://github.com/PrestaShop/PrestaShop/issues/42964) ; en attendant, on copie les lignes :
+
+```sh
+#!/bin/sh
+set -eu
+
+cat > /tmp/carrier-restrictions.php <<'PHP'
+<?php
+require_once '/var/www/html/config/config.inc.php';
+
+$rows = Db::getInstance()->executeS('SELECT id_shop FROM ' . _DB_PREFIX_ . 'shop WHERE id_shop <> 1');
+foreach ($rows ?: [] as $row) {
+    Db::getInstance()->execute(
+        'INSERT IGNORE INTO ' . _DB_PREFIX_ . 'module_carrier (id_module, id_shop, id_reference) '
+        . 'SELECT id_module, ' . (int) $row['id_shop'] . ', id_reference '
+        . 'FROM ' . _DB_PREFIX_ . 'module_carrier WHERE id_shop = 1'
+    );
+}
+PHP
+
+php /tmp/carrier-restrictions.php
+rm -f /tmp/carrier-restrictions.php
+```
+
+Les préfixes numériques (`10-second-shop.sh`, `20-carrier-restrictions.sh`) fixent l'ordre : les scripts sont exécutés par ordre alphabétique.
+
+## Attendre la boutique, pour de vrai
+
+Tous les workflows de la série attendaient qu'un `curl` sur `/` réponde 200. C'est insuffisant, pour deux raisons :
+
+* **Un 200 sur `/` prouve seulement que quelque chose écoute sur le port.** Un vieux conteneur monté à la main répond tout aussi bien, et tout ce qui suit passe… contre la mauvaise boutique.
+* **Le front peut répondre avant la fin du provisioning.**
+
+Le bon discriminant est `/admin-dev/`. Flashlight fixe ce dossier et le redirige vers la page de connexion : un **302** signifie que c'est bien une boutique Flashlight et que PHP s'exécute. Une installation classique avec un dossier admin aléatoire renverrait 404.
+
+```sh
+for i in $(seq 1 60); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8092/admin-dev/ || true)
+  if [ "$code" = "302" ] || [ "$code" = "200" ]; then
+    echo "back office answers $code — shop is up"; break
+  fi
+  echo "back office answers ${code:-000}, waiting..."; sleep 5
+done
+```
+
+Mesuré sur la 9.2 : environ 8 secondes entre `up -d` et le premier 302, post-scripts compris. Ne comptez pas sur ce chiffre, comptez sur la boucle.
+
+## Brancher PrestaFlow
+
+Avec Flashlight, la configuration n'a plus rien de spécifique à la machine. On la versionne comme exemple :
+
+```env
+# .env.flashlight.example
+PRESTAFLOW_FO_URL=http://localhost:8092/
+PRESTAFLOW_BO_URL=http://localhost:8092/admin-dev/
+PRESTAFLOW_BO_EMAIL=admin@prestashop.com
+PRESTAFLOW_BO_PASSWD=prestashop
+PRESTAFLOW_LOCALE=en
+PRESTAFLOW_PS_VERSION=9.2.0
+PRESTAFLOW_THEME=hummingbird
+```
+
+```sh
+cp .env.flashlight.example .env.flashlight
+set -a; . ./.env.flashlight; set +a
+php bin/prestaflow run src/Tests/Suites/Smoke/FrontOfficeSmoke.php
+```
+
+Pas besoin de déplacer votre `.env.local` : la bibliothèque charge ses fichiers `.env` avec le chargeur *immutable* de Dotenv, qui n'écrase jamais une variable déjà présente dans l'environnement. Les variables exportées gagnent.
+
+<Info title="Ce mode complète celui de l'annexe « PrestaFlow sans Flashlight » plutôt qu'il ne le remplace : votre stack locale pour itérer vite sur votre contexte, Flashlight pour un résultat que le collègue et la CI reproduiront à l'identique.">
+
+</Info>
+
+## Une suite smoke qui tient sur toutes les versions
+
+Pour une matrice multi-versions, on veut une suite qui échoue **tôt** et **précisément**. Un tunnel de commande qui casse répond « bloqué à l'étape 2 » pour une douzaine de raisons différentes. Trois pages, en revanche, désignent la coupable :
+
+```php
+<?php
+
+namespace PrestaFlow\Library\Tests\Suites\Smoke;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class FrontOfficeSmoke extends TestsSuite
+{
+    public function init()
+    {
+        $this->importPage('FrontOffice\Home');
+        $this->importPage('FrontOffice\Listing');
+        $this->importPage('FrontOffice\Product');
+
+        extract($this->pages);
+
+        $this
+        ->describe('Front office smoke')
+        ->it('the home page renders', function () use ($frontOfficeHomePage) {
+            $frontOfficeHomePage->goToPage('home');
+
+            Expect::that($frontOfficeHomePage->isDisplayed())->equals(true);
+        })
+        ->it('reach the product listing from the home page', function () use ($frontOfficeHomePage, $frontOfficeListingPage) {
+            $frontOfficeHomePage->goToAllProducts();
+
+            Expect::that($frontOfficeListingPage->getListingTitle())->notEquals('');
+        })
+        ->it('open a product and read its price', function () use ($frontOfficeListingPage, $frontOfficeProductPage) {
+            $frontOfficeListingPage->goToProduct(1);
+
+            Expect::that($frontOfficeProductPage->getPrice() > 0)->equals(true);
+        });
+    }
+}
+```
+
+Deux choix délibérés :
+
+* **Aucune fixture en dur.** Pas d'URL produit, pas d'id de catégorie : la suite parcourt le catalogue que la boutique possède. Elle est aussi valable en 1.7.8.11 qu'en 9.2.0.
+* **`isDisplayed()` plutôt qu'un code HTTP.** Une page de maintenance, une page d'erreur et une redirection vers une autre boutique répondent toutes 200. On vérifie que la section de la page d'accueil est visible.
+
+Un prix supérieur à zéro prouve trois choses en une assertion : le listing pointait vers un vrai produit, la page produit a trouvé son élément prix, et le format affiché a été compris.
+
+## La matrice : 1.7, 8.2 et 9.2
+
+Le `docker-compose.yml` final déclare un couple base + boutique par version, chacun sur ses ports :
+
+| Service | PrestaShop | Boutique 1 | Boutique 2 | Thème 1     | Thème 2 |
+| ------- | ---------- | ---------- | ---------- | ----------- | ------- |
+| `ps17`  | 1.7.8.11   | 8017       | 8018       | classic     | classic |
+| `ps82`  | 8.2.8      | 8082       | 8083       | classic     | classic |
+| `ps92`  | 9.2.0      | 8092       | 8093       | hummingbird | classic |
+
+En CI, un job par version démarre **une seule** boutique :
+
+```yaml
+jobs:
+  smoke:
+    name: Smoke (PrestaShop ${{ matrix.ps }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ps: '1.7.8.11', service: ps17, port: 8017, theme: classic }
+          - { ps: '8.2.8',    service: ps82, port: 8082, theme: classic }
+          - { ps: '9.2.0',    service: ps92, port: 8092, theme: hummingbird }
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Start the shop
+        run: docker compose up ${{ matrix.service }} -d
+
+      - name: Wait for the shop
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${{ matrix.port }}/admin-dev/" || true)
+            if [ "$code" = "302" ] || [ "$code" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          docker compose logs ${{ matrix.service }}; exit 1
+
+      - name: Run the smoke suite
+        env:
+          PRESTAFLOW_FO_URL: http://localhost:${{ matrix.port }}/
+          PRESTAFLOW_BO_URL: http://localhost:${{ matrix.port }}/admin-dev/
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
+          PRESTAFLOW_PS_VERSION: ${{ matrix.ps }}
+          PRESTAFLOW_THEME: ${{ matrix.theme }}
+          PRESTAFLOW_LOCALE: en
+        run: php bin/prestaflow run src/Tests/Suites/Smoke/FrontOfficeSmoke.php
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.ps }}
+          path: prestaflow/screens/
+          if-no-files-found: ignore
+```
+
+Le même `docker-compose.yml` sert en local et en CI. C'est tout l'intérêt : quand un job rougit, `docker compose up ps17 -d` reproduit exactement sa boutique sur votre machine.
+
+## Ce qu'une matrice verte prouve (et ce qu'elle ne prouve pas)
+
+Avant de lancer la matrice, la prédiction était que 1.7 et 8.2 échoueraient. Les page objects v7 et v8 de la bibliothèque sont de petites classes de neuf lignes qui héritent des sélecteurs v9 — 378 lignes au total contre 2 222 pour v9. Donc, pensait-on, le support de ces versions n'est que déclaratif.
+
+**Les trois lignes sont passées au vert.** La prédiction était fausse : c'était une déduction tirée d'une liste de fichiers, pas une mesure. Pour l'accueil, le listing et la fiche produit en thème classic, le HTML n'a pas bougé de façon significative entre 1.7.8 et 9.2. L'héritage fonctionne pour ces pages.
+
+Mais il faut lire ce vert **étroitement**. Il prouve que trois pages du front fonctionnent sur trois versions sans sélecteur spécifique. Il ne prouve **pas** que 1.7 ou 8.2 sont supportées : la suite couvre 3 pages du front sur 31, en classic uniquement, sans tunnel, sans back office, sans compte client, sans panier.
+
+<Warning title="Une matrice verte est une affirmation forte que plus personne ne relit. « La CI passe en 1.7 » devient vite « on supporte la 1.7 ». Tant que la suite reste à trois pages, elle produira du vert rassurant et vide. L'étape utile suivante, c'est de l'élargir jusqu'à trouver où les versions divergent vraiment.">
+
+</Warning>
+
+### Ce que Flashlight a fait remonter
+
+Mettre la bibliothèque face à des boutiques neuves, sur deux thèmes, a révélé trois défauts que la boutique maison masquait. Chacun est corrigé dans la PR et verrouillé par un test qui échoue sans le correctif :
+
+* **`Listing::goToProduct()` ne marchait pas en hummingbird.** Le sélecteur du lien était complété en PHP (`. ' .product-title a'`), donc hors de portée des fichiers de thème. Il attendait aussi la navigation avec `waitForNavigation()`, qui n'attend pas une navigation déclenchée par un clic : deux échecs sur quatre runs.
+* **Les surcharges de thème ignoraient l'héritage.** Elles étaient indexées sur la classe concrète : une page qui étend une autre page (Category étend Listing) ne voyait pas les surcharges de son parent. Sept pages du front v9 étaient concernées.
+* **`getPageURL()` ne remplaçait `{index}` que pour un tableau.** Tous les appels passaient un scalaire, et le placeholder finissait encodé dans l'URL : `%7Bindex%7D`.
+
+Aucun de ces bugs n'était visible avec une seule boutique, un seul thème, configurée à la main.
+
+## Les pièges, en résumé
+
+<Warning title="Un conteneur « healthy » n'est pas une boutique provisionnée. ON_POST_SCRIPT_FAILURE (et ON_INIT_SCRIPT_FAILURE) valent fail par défaut, mais la sortie du gestionnaire s'exécute dans un processus enfant lancé par xargs et n'atteint jamais le conteneur. Vérifié avec un post-script puis un init-script volontairement en échec : le log affiche « execution failed. Sleep and exit. », le conteneur reste Up (healthy) et sert une boutique à moitié construite. C'est la suite smoke qui prouve le provisioning, pas docker compose ps.">
+
+</Warning>
+
+En cas de doute, le log de boot dit tout :
+
+```sh
+docker compose logs ps92 | grep -i -e 'post-script' -e '✅' -e 'error'
+```
+
+<Warning title="Vérifiez que les ports sont libres avant de démarrer. Si un ancien conteneur occupe 8092, docker compose échoue sur ce service… mais vos curl et vos suites continuent de répondre, contre l'ancien conteneur.">
+
+</Warning>
+
+<Info title="Détruisez avec le volume : docker compose down -v. Sans -v, la base survit au redémarrage. C'est parfois ce que l'on veut, et le plus souvent la façon de se retrouver à déboguer une boutique dont on ne comprend plus l'état.">
+
+</Info>
+
+<Info title="Appels HTTP depuis l'intérieur du réseau Docker : PrestaShop choisit la boutique d'après l'en-tête Host. Un curl lancé depuis un autre conteneur vers http://prestashop/ est redirigé vers PS_DOMAIN, injoignable depuis ce réseau. Passez l'en-tête Host attendu (par exemple Host: localhost:8092), comme le détaille le README de Flashlight.">
+
+</Info>
+
+## Pour aller plus loin
+
+* [Le README de Flashlight](https://github.com/PrestaShop/prestashop-flashlight) et ses exemples : Xdebug, Blackfire, tunnel ngrok, développement de module.
+* [La PR PrestaFlow/php-library#62](https://github.com/PrestaFlow/php-library/pull/62) et son `docs/testing-with-flashlight.md`, où chaque commande a été exécutée depuis un état vierge.
+* L'[annexe multi-versions](/blog/prestaflow-multi-versions-prestashop/) pour structurer ses Pages quand les versions divergent vraiment.
