@@ -13,7 +13,7 @@ summary: >-
   versions PrestaShop.
 ---
 <Info title="Annexe de la série">
-  Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». On reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+  Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». On reprend le module fil rouge [PrestaFlow/psflowdemo](https://github.com/PrestaFlow/psflowdemo).
 </Info>
 
 ## Rappel
@@ -117,7 +117,7 @@ Certaines actions ne dépendent pas d'un écran mais du contexte (BO ou front) :
 
 Répéter ces actions dans chaque Page mène à de la duplication qui pourrit lentement. Le pattern PrestaFlow, visible dans les projets qui l'utilisent en production, est de **les extraire dans un trait sous `Tests\Support\`**.
 
-Cas concret vu dans le monorepo [lacitedesnuages/lacitedesnuages.be](https://github.com/lacitedesnuages/lacitedesnuages.be) qui utilise PrestaFlow en production — un trait qui préfixe une URL relative avec `PRESTAFLOW_FO_URL` :
+Cas concret, tiré d'un projet qui utilise PrestaFlow en production : un trait qui préfixe une URL relative avec `PRESTAFLOW_FO_URL` :
 
 ```php
 <?php

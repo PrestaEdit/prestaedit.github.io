@@ -188,6 +188,8 @@ for version in 1.7.8.11 8.1.7 9.0.0; do
     docker run -d --name ps --network prestaflow -p 80:80 \
         -e PS_DOMAIN=localhost \
         -e MYSQL_HOST=mysql \
+        -v "$PWD":/var/www/html/modules/psflowdemo \
+        -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
         prestashop/prestashop-flashlight:$version
 
     # Attente du boot : le back office redirige (302) vers la page de
@@ -197,6 +199,7 @@ for version in 1.7.8.11 8.1.7 9.0.0; do
         [ "$code" = "302" ] && break
         sleep 2
     done
+    [ "$code" = "302" ] || { echo "PrestaShop $version n'a pas démarré"; docker logs ps; exit 1; }
 
     PRESTAFLOW_PS_VERSION=$version ./vendor/bin/prestaflow run tests/prestaflow
 done
@@ -204,7 +207,7 @@ done
 docker rm -f ps mysql
 ```
 
-Trois détails qui comptent. Flashlight n'embarque pas MySQL : chaque version a sa propre base MariaDB, sur un réseau Docker partagé, et la boutique réessaie de s'y connecter jusqu'à ce qu'elle réponde. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt) et doit correspondre à l'URL vue depuis votre machine. Enfin, vérifiez les tags avant de les épingler : `1.7.8` n'existe pas, `1.7.8.11` oui, et les versions récentes n'existent qu'avec un suffixe (`9.2.0-nginx`). L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) détaille ces points.
+Le module est monté dans `modules/psflowdemo` et installé au boot par l'init-script de l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) (`.flashlight/init-scripts/10-install-module.sh`). Trois autres détails comptent. Flashlight n'embarque pas MySQL : chaque version a sa propre base MariaDB, sur un réseau Docker partagé, et la boutique réessaie de s'y connecter jusqu'à ce qu'elle réponde. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt) et doit correspondre à l'URL vue depuis votre machine. Enfin, vérifiez les tags avant de les épingler : `1.7.8` n'existe pas, `1.7.8.11` oui, et les versions récentes n'existent qu'avec un suffixe (`9.2.0-nginx`). L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) détaille ces points.
 
 Côté PrestaFlow, le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
 
@@ -260,7 +263,7 @@ Reco : privilégier l'override, ne recourir à `getMajorVersion()` que quand la 
 
 ## Notes
 
-<Warning title="Sessions Flashlight : chaque restart de l'image remet l'état à zéro. Si vous testez plusieurs versions en série avec le script ci-dessus, aucun résidu ne subsiste. En revanche, si vous re-lancez PrestaFlow plusieurs fois sur la MÊME image sans restart, l'état du run précédent (produit ajouté au panier, session BO ouverte) peut fausser le suivant.">
+<Warning title="État entre deux runs : redémarrer le conteneur Flashlight ne remet PAS la boutique à zéro. Le dump n'est restauré qu'au premier démarrage, et les données vivent dans la base MariaDB, qui survit au redémarrage. Seule la recréation des deux conteneurs, comme le fait le script ci-dessus (docker rm -f ps mysql), repart d'un état propre. Si vous relancez PrestaFlow plusieurs fois sur les mêmes conteneurs, l'état du run précédent (produit ajouté au panier, configuration modifiée) peut fausser le suivant.">
 
 </Warning>
 

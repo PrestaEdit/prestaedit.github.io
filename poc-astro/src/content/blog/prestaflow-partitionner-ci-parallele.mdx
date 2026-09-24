@@ -141,7 +141,7 @@ Deux, trois, quatre partitions couvrent la majorité des cas. Au-delà, on paye 
 Chaque job CI est un environnement indépendant. Il télécharge le repo, démarre son Flashlight, monte sa boutique. Deux conséquences pratiques :
 
 - Les **fixtures niveau 1** (init-scripts appliqués au boot de Flashlight, cf. l'annexe [fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)) doivent être appliquées dans **tous** les jobs. Elles font partie de la config du conteneur, pas d'une suite.
-- Les **baselines visuelles** (cf. [versionner les baselines visuelles](/blog/prestaflow-versionner-baselines-visuelles/)) doivent être accessibles à tous les jobs qui font du visual matching. Elles sont committées dans le repo, donc le `checkout` initial les récupère — pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
+- Les **baselines visuelles** (cf. versionner les baselines visuelles) doivent être accessibles à tous les jobs qui font du visual matching. Elles sont committées dans le repo, donc le `checkout` initial les récupère — pas d'action supplémentaire à prévoir, tant que la baseline reste versionnée.
 
 Ce qui reste **spécifique** à chaque job : la boutique, les cookies, l'état runtime. Rien ne fuit d'un job à l'autre, et c'est ce qui rend le partitionnement sûr.
 

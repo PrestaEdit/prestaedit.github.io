@@ -14,7 +14,7 @@ summary: >-
   multi-versions.
 ---
 <Info title="Suite de la série">
-Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge [PrestaEdit/psflowdemo](https://github.com/PrestaEdit/psflowdemo).
+Cet article s'inscrit dans la suite de « Écrire son premier scénario de test avec PrestaFlow ». Il en reprend le module fil rouge [PrestaFlow/psflowdemo](https://github.com/PrestaFlow/psflowdemo).
 </Info>
 
 ## Préambule
@@ -87,6 +87,8 @@ jobs:
             -p 80:80 \
             -e PS_DOMAIN=localhost \
             -e MYSQL_HOST=mysql \
+            -v "$PWD":/var/www/html/modules/psflowdemo \
+            -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
             prestashop/prestashop-flashlight:8.1.7
 
       - name: Wait for PrestaShop to be ready
@@ -105,7 +107,7 @@ jobs:
       - name: Run PrestaFlow scenarios
         env:
           PRESTAFLOW_PS_VERSION: 8.1.7
-          PRESTAFLOW_LOCALE: fr
+          PRESTAFLOW_LOCALE: en
           PRESTAFLOW_FO_URL: http://localhost/
           PRESTAFLOW_BO_URL: http://localhost/admin-dev/
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
@@ -128,10 +130,21 @@ Ce workflow fait, dans l'ordre :
 1. **Cloner le module** (`actions/checkout`).
 2. **Installer PHP et Composer**, puis les dépendances du module (`shivammathur/setup-php`, `composer install`).
 3. **Démarrer une base MariaDB**. Flashlight embarque nginx et php-fpm, mais **pas MySQL** : sans base à côté, le conteneur boucle indéfiniment sur « Cannot connect to MySQL, retrying » et la boutique ne répond jamais. Attendre le healthcheck de la base fait échouer le job tout de suite, avec un message clair, si elle ne démarre pas.
-4. **Démarrer Flashlight** sur le même réseau Docker, avec l'image PS 8.1.7. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt avec le code 2 : « Missing PS_DOMAIN ») et doit correspondre à l'URL vue depuis le runner, port compris : ici `localhost`, puisque `-p 80:80` expose le port 80.
-5. **Attendre que PrestaShop réponde** en interrogeant `/admin-dev/` jusqu'à obtenir un 302 (redirection vers la page de connexion). Un 200 sur `/` ne suffit pas : il prouve seulement que quelque chose écoute sur le port, et le front répond avant la fin des post-scripts éventuels.
-6. **Lancer PrestaFlow** avec les variables d'environnement pointant vers `http://localhost/`.
-7. **Uploader le rapport HTML en artifact** si un scénario échoue, pour pouvoir l'inspecter depuis l'interface GitHub sans avoir à rejouer.
+4. **Démarrer Flashlight** sur le même réseau Docker, avec l'image PS 8.1.7, en y montant le module (le dépôt cloné) dans `modules/psflowdemo`. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt avec le code 2 : « Missing PS_DOMAIN ») et doit correspondre à l'URL vue depuis le runner, port compris : ici `localhost`, puisque `-p 80:80` expose le port 80.
+5. **Installer le module** : monter le dossier ne suffit pas, PrestaShop doit encore l'installer. C'est le rôle de l'init-script monté dans `/tmp/init-scripts`, décrit juste après.
+6. **Attendre que PrestaShop réponde** en interrogeant `/admin-dev/` jusqu'à obtenir un 302 (redirection vers la page de connexion). Un 200 sur `/` ne suffit pas : il prouve seulement que quelque chose écoute sur le port, et le front répond avant la fin des post-scripts éventuels.
+7. **Lancer PrestaFlow** avec les variables d'environnement pointant vers `http://localhost/`. La locale est `en` : l'image Flashlight n'installe que l'anglais.
+8. **Uploader le rapport HTML en artifact** si un scénario échoue, pour pouvoir l'inspecter depuis l'interface GitHub sans avoir à rejouer.
+
+L'init-script, à versionner dans le dépôt du module sous `.flashlight/init-scripts/10-install-module.sh` (et à rendre exécutable avec `chmod +x`, sinon Flashlight le saute) :
+
+```sh
+#!/bin/sh
+set -eu
+php /var/www/html/bin/console prestashop:module install psflowdemo
+```
+
+Flashlight exécute les init-scripts au premier démarrage, une fois la base restaurée et avant de servir la boutique : quand le back office répond, le module est installé.
 
 Pour aller plus loin sur l'image elle-même (choix du tag, post-scripts, matrice de versions en `docker compose`, pièges), voir l'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/).
 
@@ -210,11 +223,12 @@ jobs:
           projectId: 'pk_01ABCDEFGHIJKLMNOP'
           flashlight: true
           ps-version: '8.1.7'
+          flashlight-init-scripts: .flashlight/init-scripts
 ```
 
 **15 lignes utiles**, contre 40 pour le niveau 1. Ce que l'Action fait à votre place :
 
-* **Démarre Flashlight** avec la version demandée via l'input `ps-version`. Plus de `docker run` manuel, plus d'attente `curl`.
+* **Démarre Flashlight** avec la version demandée via l'input `ps-version`, et monte le dépôt dans `modules/` (d'après le `type` de votre `composer.json`). Plus de `docker run` manuel, plus d'attente `curl`. Le module est monté, pas installé : l'input `flashlight-init-scripts` réutilise l'init-script du niveau 1 pour l'installer.
 * **Injecte les variables d'environnement** attendues par la lib (URLs, credentials, locale).
 * **Lance le script Composer `prestaflow:json:file`** puis pousse le résultat à la plateforme.
 * **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (respecté par le bloc `permissions: pull-requests: write`).
@@ -238,7 +252,7 @@ Utile pour brancher une notification Slack, un statut custom, ou un gate sur `st
 
 ## Matrix multi-versions
 
-C'est ici que le passage à l'Action prend tout son sens. Pour tester votre module contre **1.7.8**, **8.1.7** et **9.0.0** en parallèle :
+C'est ici que le passage à l'Action prend tout son sens. Pour tester votre module contre **1.7.8.11**, **8.1.7** et **9.0.0** en parallèle :
 
 ```yaml
 jobs:
@@ -248,7 +262,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ps-version: ['1.7.8', '8.1.7', '9.0.0']
+        ps-version: ['1.7.8.11', '8.1.7', '9.0.0']
     steps:
       - uses: actions/checkout@v4
       # ... setup PHP, composer install ...
@@ -258,6 +272,7 @@ jobs:
           projectId: 'pk_01ABCDEFGHIJKLMNOP'
           flashlight: true
           ps-version: ${{ matrix.ps-version }}
+          flashlight-init-scripts: .flashlight/init-scripts
 ```
 
 <Info title="fail-fast: false garantit qu'un échec sur PS 1.7 n'annule pas les runs 8.1 et 9.0. On veut voir le tableau complet — sinon un flake sur une version cache l'état des autres." />

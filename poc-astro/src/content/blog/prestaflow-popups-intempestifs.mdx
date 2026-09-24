@@ -141,7 +141,7 @@ Appelé dans la méthode qui suit chaque navigation, ce trait rend la boutique t
 ## Interaction avec les autres annexes
 
 - **[Cookies pré-injectés](/blog/prestaflow-auth-cookies-pre-injectes/)** — pour tout popup qui expose un cookie de consentement, la solution cookie reste **la plus propre** (elle simule un utilisateur qui a déjà interagi, pas un utilisateur qui verrait un site cassé). Cette annexe est le complément pour tous les autres cas.
-- **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — un widget masqué en CSS n'apparaît pas dans les baselines. Bien. Mais un widget qu'on n'a pas pensé à masquer produit un baseline qui *contient le widget* — la première fois qu'il change (nouvelle version du chat, promo Halloween → Noël), tous vos checkpoints tombent d'un coup. Toujours masquer avant de figer les baselines.
+- **Régressions visuelles** — un widget masqué en CSS n'apparaît pas dans les baselines. Bien. Mais un widget qu'on n'a pas pensé à masquer produit un baseline qui *contient le widget* — la première fois qu'il change (nouvelle version du chat, promo Halloween → Noël), tous vos checkpoints tombent d'un coup. Toujours masquer avant de figer les baselines.
 - **[TDD](/blog/prestaflow-tdd-scenario-avant-fix/)** — un bug qui apparaît uniquement quand un popup se superpose à un sélecteur est un cas parfait de scénario TDD : reproduisez le popup + le clic bloqué, fixez le CSS de votre site pour que le popup respecte le z-index, le scénario passe et reste comme garde-fou.
 
 ## Notes

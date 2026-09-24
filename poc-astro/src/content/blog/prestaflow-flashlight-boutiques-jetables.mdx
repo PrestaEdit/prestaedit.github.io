@@ -14,7 +14,7 @@ summary: >-
   en le mettant en place dans la bibliothèque PrestaFlow elle-même.
 draft: false
 ---
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». Les exemples viennent de la PR PrestaFlow/php-library#62, qui a remplacé la boutique de référence montée à la main par des boutiques Flashlight.">
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ». Les exemples viennent de la PR PrestaFlow/php-library#62, qui remplace la boutique de référence montée à la main par des boutiques Flashlight.">
 
 </Info>
 
@@ -22,7 +22,7 @@ draft: false
 
 Depuis l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/), la série suppose Flashlight partout : un `docker run`, une attente, et PrestaFlow part à l'assaut de la boutique. On l'a utilisé comme une boîte noire. Cette annexe ouvre la boîte.
 
-Le prétexte est concret. La bibliothèque `PrestaFlow/php-library` testait jusqu'ici contre **un** conteneur PrestaShop 9 monté à la main, avec un dossier admin aléatoire, une seconde boutique ajoutée un jour puis oubliée, et une configuration que personne n'aurait su reconstruire. Tout ce qui passait « chez nous » ne prouvait pas grand-chose. La [PR #62](https://github.com/PrestaFlow/php-library/pull/62) l'a remplacé par trois boutiques Flashlight reproductibles — 1.7.8.11, 8.2.8 et 9.2.0 — utilisées à l'identique en local et en CI.
+Le prétexte est concret. La bibliothèque `PrestaFlow/php-library` testait jusqu'ici contre **un** conteneur PrestaShop 9 monté à la main, avec un dossier admin aléatoire, une seconde boutique ajoutée un jour puis oubliée, et une configuration que personne n'aurait su reconstruire. Tout ce qui passait « chez nous » ne prouvait pas grand-chose. La [PR #62](https://github.com/PrestaFlow/php-library/pull/62), en cours de revue au moment d'écrire ces lignes, le remplace par trois boutiques Flashlight reproductibles — 1.7.8.11, 8.2.8 et 9.2.0 — utilisées à l'identique en local et en CI.
 
 Ce qui suit, c'est ce montage, étape par étape, avec les pièges rencontrés en route. Tous ont été vérifiés, pas supposés.
 
@@ -122,9 +122,9 @@ Flashlight offre trois points d'extension, qui s'exécutent dans cet ordre :
 
 1. **`INSTALL_MODULES_DIR`** — des zips de modules, installés via la CLI PrestaShop. Le plus simple pour tester votre module.
 2. **`INIT_SCRIPTS_DIR`** — avant que PrestaShop ne démarre. C'est ce que l'[annexe fixtures](/blog/prestaflow-fixtures-seed-data/) utilise pour poser une configuration.
-3. **`POST_SCRIPTS_DIR`** — après le démarrage. Le seul moment où l'on peut manipuler la boutique avec ses propres classes.
+3. **`POST_SCRIPTS_DIR`** — après le démarrage, sur une boutique déjà servie.
 
-La bibliothèque avait besoin d'une **seconde boutique** dans chaque conteneur, pour que le multiboutique soit là par défaut plutôt qu'un réglage fait une fois à la main. Créer une boutique demande les objets `Shop`, `ShopGroup`, `ShopUrl` : c'est donc un post-script.
+La bibliothèque avait besoin d'une **seconde boutique** dans chaque conteneur, pour que le multiboutique soit là par défaut plutôt qu'un réglage fait une fois à la main. Créer une boutique demande les objets `Shop`, `ShopGroup`, `ShopUrl`. Un init-script y aurait accès aussi (la base est restaurée avant qu'il ne tourne, c'est ce qui permet à Flashlight d'installer les modules par `bin/console`), mais la bibliothèque a choisi un post-script : il travaille sur une boutique complète, démarrée comme elle le sera pendant les tests.
 
 On monte le dossier en lecture seule :
 
@@ -242,7 +242,7 @@ Les préfixes numériques (`10-second-shop.sh`, `20-carrier-restrictions.sh`) fi
 
 ## Attendre la boutique, pour de vrai
 
-Tous les workflows de la série attendaient qu'un `curl` sur `/` réponde 200. C'est insuffisant, pour deux raisons :
+Le réflexe est d'attendre qu'un `curl` sur `/` réponde 200 ; c'est ce que faisaient les premières versions des workflows de cette série, et c'est encore ce que fait l'Action GitHub. C'est insuffisant, pour deux raisons :
 
 * **Un 200 sur `/` prouve seulement que quelque chose écoute sur le port.** Un vieux conteneur monté à la main répond tout aussi bien, et tout ce qui suit passe… contre la mauvaise boutique.
 * **Le front peut répondre avant la fin du provisioning.**
@@ -410,7 +410,7 @@ Avant de lancer la matrice, la prédiction était que 1.7 et 8.2 échoueraient. 
 
 **Les trois lignes sont passées au vert.** La prédiction était fausse : c'était une déduction tirée d'une liste de fichiers, pas une mesure. Pour l'accueil, le listing et la fiche produit en thème classic, le HTML n'a pas bougé de façon significative entre 1.7.8 et 9.2. L'héritage fonctionne pour ces pages.
 
-Mais il faut lire ce vert **étroitement**. Il prouve que trois pages du front fonctionnent sur trois versions sans sélecteur spécifique. Il ne prouve **pas** que 1.7 ou 8.2 sont supportées : la suite couvre 3 pages du front sur 31, en classic uniquement, sans tunnel, sans back office, sans compte client, sans panier.
+Mais il faut lire ce vert **étroitement**. Au moment de la PR, il prouve que trois pages du front fonctionnent sur trois versions sans sélecteur spécifique. Il ne prouve **pas** que 1.7 ou 8.2 sont supportées : la suite couvre 3 pages du front sur 31, en classic uniquement, sans tunnel, sans back office, sans compte client, sans panier.
 
 <Warning title="Une matrice verte est une affirmation forte que plus personne ne relit. « La CI passe en 1.7 » devient vite « on supporte la 1.7 ». Tant que la suite reste à trois pages, elle produira du vert rassurant et vide. L'étape utile suivante, c'est de l'élargir jusqu'à trouver où les versions divergent vraiment.">
 
@@ -435,7 +435,7 @@ Aucun de ces bugs n'était visible avec une seule boutique, un seul thème, conf
 En cas de doute, le log de boot dit tout :
 
 ```sh
-docker compose logs ps92 | grep -i -e 'post-script' -e '✅' -e 'error'
+docker compose logs ps92 | grep -i -e 'post-script' -e '✅' -e 'error' -e 'failed' -e 'not executable'
 ```
 
 <Warning title="Vérifiez que les ports sont libres avant de démarrer. Si un ancien conteneur occupe 8092, docker compose échoue sur ce service… mais vos curl et vos suites continuent de répondre, contre l'ancien conteneur.">
@@ -446,7 +446,7 @@ docker compose logs ps92 | grep -i -e 'post-script' -e '✅' -e 'error'
 
 </Info>
 
-<Info title="Appels HTTP depuis l'intérieur du réseau Docker : PrestaShop choisit la boutique d'après l'en-tête Host. Un curl lancé depuis un autre conteneur vers http://prestashop/ est redirigé vers PS_DOMAIN, injoignable depuis ce réseau. Passez l'en-tête Host attendu (par exemple Host: localhost:8092), comme le détaille le README de Flashlight.">
+<Info title="Appels HTTP depuis l'intérieur du réseau Docker : PrestaShop choisit la boutique d'après l'en-tête Host. Un curl lancé depuis un autre conteneur vers http://ps92/ est redirigé vers PS_DOMAIN, injoignable depuis ce réseau. Passez l'en-tête Host attendu (par exemple Host: localhost:8092), comme le détaille le README de Flashlight.">
 
 </Info>
 

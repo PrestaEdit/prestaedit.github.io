@@ -245,7 +245,7 @@ Le paiement en base côté Stripe et l'ordre côté PrestaShop passent en « pai
 ## Interaction avec les autres annexes
 
 - **[Tester les webhooks](/blog/prestaflow-tester-webhooks/)** — la moitié serveur-à-serveur du paiement Stripe (le `payment_intent.succeeded` que Chrome ne voit pas).
-- **[Mocker les API tierces avec WireMock](/blog/prestaflow-mock-api-tiers-wiremock/)** — pour éviter la dépendance à Stripe test mode (air-gap, coupures API), remplacer Stripe par un mock complet côté serveur.
+- **Mocker les API tierces avec WireMock** — pour éviter la dépendance à Stripe test mode (air-gap, coupures API), remplacer Stripe par un mock complet côté serveur.
 - **[Fixtures et seed data](/blog/prestaflow-fixtures-seed-data/)** — poser les clés `sk_test_…` / `pk_test_…` dans la configuration du module au boot Flashlight, pour que la boutique de test soit toujours en mode test Stripe.
 - **[Popups intempestifs](/blog/prestaflow-popups-intempestifs/)** — Stripe.js peut afficher une bannière consent CMP la première fois. Le pattern d'auto-dismiss s'y applique.
 

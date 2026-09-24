@@ -353,7 +353,7 @@ Au niveau 2, les quatre intégrations officielles (Action, Component, Pipe, Orb)
 Sans intégration officielle, deux options si vous êtes sur Jenkins et voulez la synchro plateforme :
 
 * **Rester au niveau 1** — vous avez le CI qui rougit sur les régressions fonctionnelles. Vous n'avez ni le commentaire PR agrégé, ni l'historique côté plateforme, ni les régressions visuelles synchronisées. C'est déjà utile.
-* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe [cloud runs](/blog/prestaflow-consulter-historique-cloud/), badge `uploaded_via: api`). Un `sh` qui prend le `results.json` produit par PrestaFlow et le pousse via `curl` avec le `PRESTAFLOW_TOKEN`. Le badge `api` est prévu pour ça — c'est exactement le canal utilisé par les intégrations officielles quand elles remontent leurs résultats.
+* **Faire soi-même le POST vers l'API prestaflow\.io** — la plateforme expose `POST /api/projects/{id}/runs` (visible dans l'annexe cloud runs, badge `uploaded_via: api`). Un `sh` qui prend le `results.json` produit par PrestaFlow et le pousse via `curl` avec le `PRESTAFLOW_TOKEN`. Le badge `api` est prévu pour ça — c'est exactement le canal utilisé par les intégrations officielles quand elles remontent leurs résultats.
 
 Ce second cas justifierait à lui seul un article dédié (auth, retries, formatage, artifacts screenshots). Pour l'instant, on note l'option et on renvoie à la doc API.
 
