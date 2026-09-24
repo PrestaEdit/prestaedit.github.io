@@ -6,7 +6,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-09-30-prestaflow-versionner-baselines-visuelles.svg'
-summary: "Un thème testé sur 4 breakpoints × 4 locales = 60+ PNG par écran. Multiplié par les gabarits, le repo explose. Git LFS, .gitattributes, alternatives côté plateforme — quatre stratégies pour vivre avec ses baselines."
+summary: "Un thème testé sur 3 breakpoints × 5 locales = 15 PNG par écran. Multiplié par les gabarits, le repo explose. Git LFS, .gitattributes, alternatives côté plateforme — quatre stratégies pour vivre avec ses baselines."
 ---
 
 <Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Régressions visuelles » et idéalement « Tester un thème PrestaShop »." />
@@ -17,20 +17,20 @@ L'[annexe régressions visuelles](/blog/prestaflow-regressions-visuelles/) a ins
 
 Vrai. Sauf que le corollaire arrive rarement dans les discussions initiales : à quelle vitesse `visual-baseline/` grossit ?
 
-Ordre de grandeur pris de l'[annexe thème](/blog/prestaflow-tester-un-theme/) : un thème sérieusement testé, c'est 5 gabarits × 3 breakpoints × 4 locales × 2 versions PS = **120 baselines**. Chacune pèse 200 KB à 2 MB selon la taille de page et le contenu. **24 à 240 MB de PNG dans le repo Git**, uniquement pour les baselines visuelles.
+Ordre de grandeur pris de l'[annexe thème](/blog/prestaflow-tester-un-theme/) : un thème sérieusement testé, c'est 6 gabarits × 3 breakpoints × 5 locales × 2 versions PS = **180 baselines**. Une capture pleine page pèse facilement de quelques centaines de KB à plus d'un MB selon la taille de page et le contenu. Disons **de 50 à 300 MB de PNG dans le repo Git**, uniquement pour les baselines visuelles — et chaque mise à jour en ajoute une nouvelle copie à l'historique.
 
-Un repo Git de 240 MB à cause d'images :
+Un repo Git de plusieurs centaines de MB à cause d'images :
 
 - clone lent (grosse latence pour les nouveaux contributeurs)
 - historique qui explose (chaque MAJ de baseline duplique le fichier)
-- GitHub commence à afficher des warnings au-delà de 100 MB par fichier ; 1 GB total pour le repo est un seuil réel où la plateforme dégrade l'expérience
+- GitHub avertit au-delà de 50 MiB par fichier et refuse au-delà de 100 MiB ; sa documentation recommande de garder un dépôt idéalement sous 1 GB, et en tout cas sous 5 GB
 - IDE lent (rescan des fichiers, indexation)
 
 Cette annexe donne quatre stratégies pour vivre avec, dans l'ordre où on les adopte quand le problème apparaît.
 
 ## Stratégie 1 : compression + limites explicites
 
-Le plus simple, à faire d'entrée de jeu. PNG accepte la compression sans perte (`optipng`, `pngquant`, `oxipng`) qui divise la taille par 2 à 4 sans changer un pixel. Un pre-commit hook qui compresse toutes les baselines commit protège la taille du repo dès le début.
+Le plus simple, à faire d'entrée de jeu. PNG accepte l'optimisation sans perte (`optipng`, `oxipng`) : même image, pixel pour pixel, dans un fichier plus petit. Le gain varie selon l'image ; mesurez-le sur vos propres captures. Évitez en revanche `pngquant`, qui réduit la palette **avec perte** : les pixels changent, et vos comparaisons avec eux. Un pre-commit hook qui optimise toutes les baselines commitées protège la taille du repo dès le début.
 
 `.git/hooks/pre-commit` :
 
@@ -67,11 +67,19 @@ git commit -m "chore: track visual baselines with Git LFS"
 visual-baseline/**/*.png filter=lfs diff=lfs merge=lfs -text
 ```
 
-Résultat : `git clone` reste rapide (les pointeurs pèsent quelques KB), les baselines sont téléchargées à la demande (`git lfs pull`) uniquement sur les machines qui en ont besoin (CI, développeurs qui touchent aux tests visuels).
+Résultat : l'historique Git ne contient plus que des pointeurs. Par défaut, `git clone` télécharge quand même les fichiers LFS de la révision extraite (seulement la version courante, pas tout l'historique). Pour cloner sans les baselines, `GIT_LFS_SKIP_SMUDGE=1 git clone …`, puis `git lfs pull` le jour où on en a besoin.
 
-**Quotas** — sur GitHub gratuit, 1 GB de stockage LFS et 1 GB de bande passante par mois. Payant au-delà. Sur les repos volumineux, ça devient un vrai poste de dépense — comptez 5$/mois pour 50 GB, jusqu'à ~50$/mois pour un projet actif avec beaucoup de contributeurs et beaucoup de baselines.
+En CI, `actions/checkout` ne récupère **pas** les fichiers LFS par défaut : sans l'option, `visual-baseline/` ne contient que des pointeurs texte, et chaque comparaison échoue.
 
-**Suffisant tant que** votre budget LFS reste raisonnable et que vos contributeurs sont OK avec l'étape `git lfs pull` supplémentaire.
+```yaml
+- uses: actions/checkout@v4
+  with:
+    lfs: true
+```
+
+**Quotas** — selon la documentation GitHub consultée le 24/09/2026, un compte GitHub Free (personnel ou organisation) inclut 10 GiB de stockage LFS et 10 GiB de bande passante par mois. Au-delà, c'est facturé à l'usage : 0,07 $ par GiB stocké et par mois, 0,0875 $ par GiB téléchargé. Chaque run de CI qui télécharge les baselines consomme de la bande passante : c'est souvent ce poste-là qui dépasse le premier.
+
+**Suffisant tant que** votre budget LFS reste raisonnable et que vos contributeurs ont Git LFS installé.
 
 ## Stratégie 3 : baselines hors-repo, blob storage
 
@@ -82,9 +90,9 @@ Deux étapes :
 1. **Script d'upload/download**. Un helper `composer run visual:pull` télécharge les baselines depuis le bucket, `composer run visual:push` upload les nouvelles. La branche courante définit le chemin de préfixe.
 2. **Convention de nommage stable**. Les baselines de PrestaFlow suivent déjà `{name}--{tag}.png` (voir annexe régressions visuelles) — c'est utilisable tel quel comme clé S3.
 
-Coût : Cloudflare R2 est ~0.015$/GB/mois de stockage, aucun coût de bande passante. Pour 10 GB de baselines, ça fait 0.15$ par mois. Deux ordres de magnitude moins cher que Git LFS.
+Coût : selon la grille tarifaire de Cloudflare consultée le 24/09/2026, R2 facture le stockage 0,015 $ par GB et par mois (les 10 premiers GB sont gratuits), sans frais de sortie (les opérations sur les objets restent facturées au-delà d'un quota gratuit). Pour 20 GB de baselines, 0,15 $ par mois de stockage. Environ cinq fois moins cher au GB stocké que Git LFS au-delà de son quota, et surtout sans facture de bande passante.
 
-**Contrepartie** : un contributeur qui n'exécute pas `visual:pull` avant de lancer les tests obtient des baselines manquantes → PrestaFlow crée des baselines vierges → il commit ces baselines fausses. Il faut donc :
+**Contrepartie** : un contributeur qui n'exécute pas `visual:pull` avant de lancer les tests obtient des baselines manquantes → PrestaFlow crée de nouvelles baselines à partir de ses captures, sans rien comparer → il risque de les pousser avec `visual:push` et d'écraser les bonnes. Il faut donc :
 
 - un check dans le script de test qui vérifie que `visual-baseline/` n'est pas vide avant de lancer les régressions visuelles
 - une doc claire dans le README (*"avant tout run de tests visuels, `composer run visual:pull`"*)
@@ -93,9 +101,9 @@ Coût : Cloudflare R2 est ~0.015$/GB/mois de stockage, aucun coût de bande pass
 
 ## Stratégie 4 : déléguer à la plateforme prestaflow.io
 
-L'[Action officielle](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) synchronise déjà les baselines avec la plateforme. Elles vivent côté serveur, sont téléchargées par l'Action avant chaque run, et les nouvelles captures + diffs sont uploadés à la fin.
+L'[Action officielle](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) (`PrestaFlow/github-action@v2`, input `visual` activé par défaut) synchronise déjà les baselines avec la plateforme. Elles vivent côté serveur, sont téléchargées dans `visual-baseline/` avant chaque run (en écrasant un fichier du dépôt qui porterait le même nom), et les nouvelles captures + diffs sont envoyées à la fin.
 
-**Ce qui change avec cette stratégie** : votre repo ne contient plus **aucun** PNG de baseline. La plateforme fait autorité, l'Action est le seul intermédiaire. Le développeur qui itère en local sans la plateforme (via la CLI PrestaFlow directe, cf. article 2 niveau 1) ne bénéficie plus des baselines partagées — il en crée localement, elles ne remontent pas.
+**Ce qui change avec cette stratégie** : votre repo ne contient plus **aucun** PNG de baseline. La plateforme fait autorité, l'Action est le seul intermédiaire. Le développeur qui itère en local sans la plateforme (avec la CLI PrestaFlow seule, comme au niveau 1 de l'article 2) ne bénéficie plus des baselines partagées — il en crée localement, elles ne remontent pas.
 
 C'est le choix par défaut pour les projets qui utilisent déjà l'Action officielle. Zéro outillage à maintenir côté repo, zéro coût LFS. Le prix : l'usage de la plateforme est un prérequis pour toute contribution qui touche aux baselines.
 
@@ -112,24 +120,26 @@ Les stratégies sont **cumulatives** : la compression (1) reste bénéfique quel
 
 ## Éviter les régressions de churn
 
-Chaque MAJ de baseline duplique le PNG dans l'historique Git (ou dans le blob storage versionné, selon la stratégie). Sur un projet actif où le thème évolue, ça monte vite.
+Chaque MAJ de baseline ajoute une nouvelle copie du PNG à l'historique Git, au stockage LFS ou au bucket versionné, selon la stratégie. Sur un projet actif où le thème évolue, ça monte vite.
 
 Deux réflexes pour limiter le churn :
 
-- **Ne pas capturer plein écran quand un sélecteur suffit**. Un `visualCheckpoint('newsletter-block', selector: '.block_newsletter')` produit une image de 20 KB au lieu de 500 KB pour la home entière. Le diff est aussi plus lisible.
+- **Ne pas capturer plein écran quand un sélecteur suffit**. Un `visualCheckpoint('newsletter-block', selector: '.block_newsletter')` produit une image de quelques dizaines de KB, là où la home entière en pèse souvent des centaines. Le diff est aussi plus lisible.
 - **Regrouper les MAJ de baseline**. Une refonte de thème qui touche 30 écrans → 1 seul commit *"baselines refresh: theme v2 upgrade"* qui met à jour d'un coup les 30 baselines, plutôt que 30 commits épars. L'historique reste lisible et un rollback ciblé reste possible.
 
-<Warning title="git filter-repo pour nettoyer l'historique quand vous vous rendez compte tardivement que le repo pèse 5 GB à cause d'anciennes baselines : oui, ça marche. Non, ça n'est pas indolore — tout le monde doit re-cloner, les PR en cours cassent, les tags anciens peuvent bouger. À réserver aux situations vraiment coincées, avec un plan clair de communication à l'équipe." />
+<Warning title="Réécrire l'historique (git filter-repo, git lfs migrate) pour le nettoyer quand vous vous rendez compte tardivement que le repo pèse 5 GB à cause d'anciennes baselines : oui, ça marche. Non, ça n'est pas indolore — tout le monde doit re-cloner, les PR en cours cassent, les tags anciens peuvent bouger. À réserver aux situations vraiment coincées, avec un plan clair de communication à l'équipe." />
 
 ## Interaction avec les autres annexes
 
 - **[Régressions visuelles](/blog/prestaflow-regressions-visuelles/)** — cette annexe est le complément infra de celle-ci. Une couvre le pourquoi et le comment fonctionnel (`visualCheckpoint`, seuils, tags), celle-ci couvre le stockage physique.
 - **[Tester un thème](/blog/prestaflow-tester-un-theme/)** — l'ordre de grandeur "60 à 200 baselines" y était mentionné sans discuter du coût de versioning. Cette annexe complète.
-- **Cloud runs** — la stratégie 4 s'inscrit dans le workflow global de la plateforme, où les baselines ne sont qu'un asset parmi d'autres (résultats, screenshots d'étape, diffs).
+- **Cloud runs** — la stratégie 4 s'inscrit dans le workflow global de la plateforme, où les baselines ne sont qu'un asset parmi d'autres (résultats, captures d'échec, diffs).
 
 ## Notes
 
-<Info title="Git LFS n'est pas rétroactif : passer un repo existant en LFS ne compresse pas l'historique. Les vieux commits contiennent toujours les PNG en dur. Pour un vrai gain sur un repo mature, il faut réécrire l'historique (git filter-repo --path visual-baseline --to-subdirectory-filter) — opération lourde à ne faire qu'une fois." />
+<Info title="Git LFS n'est pas rétroactif">
+Passer un repo existant en LFS n'allège pas l'historique : les vieux commits contiennent toujours les PNG en dur. Pour un vrai gain sur un repo mature, il faut réécrire l'historique, par exemple `git lfs migrate import --everything --include="visual-baseline/**"`, puis `git push --force --all` (et `--tags`). Pour supprimer purement les anciennes baselines de l'historique : `git filter-repo --path visual-baseline/ --invert-paths`, à lancer dans un clone frais. Dans les deux cas, opération lourde à ne faire qu'une fois, avec les précautions du Warning ci-dessus.
+</Info>
 
 <Info title="Nombre de baselines vs pertinence : un projet qui a plus de baselines que de gabarits distincts a un problème — vous testez probablement la même chose sous plusieurs angles qui se recouvrent. Auditez : combien de vos baselines n'ont jamais changé en 6 mois ? Celles-là peuvent être remplacées par un checkpoint unique ou un sélecteur plus large." />
 

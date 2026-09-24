@@ -12,8 +12,8 @@ summary: >-
   et les locales dans les mêmes captures.
 draft: false
 ---
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow », l'annexe « Régressions visuelles » et l'annexe « Scénarios multi-locales ».">
-
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et l'annexe « Scénarios multi-locales ».">
+La méthode `visualCheckpoint`, utilisée plus bas, sera détaillée dans une annexe à venir consacrée aux régressions visuelles.
 </Info>
 
 ## Décor
@@ -82,7 +82,8 @@ class ProductPage extends TestsSuite
         $this
         ->describe('Gabarit produit')
         ->it('la page charge sans erreur', function () use ($themeProductPage) {
-            $themeProductPage->goToProductPath('1-1-hummingbird-printed-t-shirt.html');
+            // 'product' → {index}-product.html ; PrestaShop redirige vers l'URL canonique.
+            $themeProductPage->goToPage('product', ['index' => 1]);
             Expect::that($themeProductPage->isBroken())->isTheSameAs(false);
         })
         ->it('la structure DOM attendue est présente', function () use ($themeProductPage) {
@@ -133,7 +134,7 @@ Chaque Page de gabarit le `use`, et les deux premiers `it` deviennent triviaux e
 
 ## Responsive : trois breakpoints, un tag automatique
 
-Le thème doit tenir sur mobile, tablette, desktop. PrestaFlow expose la taille de viewport via `setViewport()`. Pattern d'itération dans une suite :
+Le thème doit tenir sur mobile, tablette, desktop. La taille de viewport se règle sur l'onglet, avec `setViewport()` de chrome-php (la commande CDP `Emulation.setDeviceMetricsOverride`). Un détail impose l'ordre des appels : côté front, `goToPage()` ferme l'onglet et en ouvre un neuf à chaque appel. Un viewport réglé **avant** `goToPage()` est perdu avec l'ancien onglet. On navigue donc d'abord, on règle le viewport, puis on recharge la page dans le même onglet pour qu'elle se construise à la bonne largeur. Pattern d'itération dans une suite :
 
 ```php
 public function init()
@@ -151,25 +152,32 @@ public function init()
 
     foreach ($viewports as $vp) {
         $this->it("rend proprement en {$vp['label']}", function () use ($themeHomePage, $vp) {
-            $themeHomePage->getPage()->setViewport($vp['w'], $vp['h']);
-            $themeHomePage->goToPage('home');
+            $themeHomePage->goToPage('home'); // recrée l'onglet
+
+            $tab = $themeHomePage->getPage();
+            $tab->setViewport($vp['w'], $vp['h'])->await();
+            // Rechargement dans le même onglet : le réglage de viewport y survit.
+            $tab->navigate($themeHomePage->getPageURL('home'))->waitForNavigation();
+
             $themeHomePage->visualCheckpoint('home');
         });
     }
 }
 ```
 
-Le tag `'auto'` par défaut de `visualCheckpoint` intègre la taille de viewport dans le nom du fichier baseline : `home--auto-v8-375x812-fr.png`, `home--auto-v8-1280x800-fr.png`. **Aucune duplication du nom `'home'` dans le code**, PrestaFlow route sur le bon fichier selon le viewport courant.
+Le tag `'auto'` par défaut de `visualCheckpoint` intègre la taille de viewport dans le nom du fichier baseline : `home--auto-v8-375x812-fr.png`, `home--auto-v8-1280x800-fr.png` (la taille est mesurée dans la page, `window.innerWidth` × `window.innerHeight`, au moment de la capture). **Aucune duplication du nom `'home'` dans le code**, PrestaFlow route sur le bon fichier selon le viewport courant.
 
 ## Multi-locales en parallèle
 
-Le thème doit aussi tenir dans les langues qu'il annonce supporter. Rien à changer côté suites — on boucle sur `PRESTAFLOW_LOCALE` avec le pattern shell de l'[annexe *scénarios multi-locales*](/blog/prestaflow-scenarios-multi-locales/) :
+Le thème doit aussi tenir dans les langues qu'il annonce supporter. Rien à changer côté suites — on boucle sur `PRESTAFLOW_LOCALE` avec le pattern shell de l'[annexe *scénarios multi-locales*](/blog/prestaflow-scenarios-multi-locales/), sur une boutique où ces langues sont installées (l'image Flashlight n'installe que l'anglais) :
 
 ```sh
 for locale in fr en de it es; do
-    PRESTAFLOW_LOCALE=$locale ./vendor/bin/prestaflow run tests/prestaflow
+    PRESTAFLOW_LOCALE=$locale ./vendor/bin/prestaflow run tests/prestaflow --visual-report=reports/visual/$locale/index.html
 done
 ```
+
+Chaque `run` commence par vider `prestaflow/` : les captures et résultats de la locale précédente disparaissent. Les baselines, dans `visual-baseline/`, ne sont pas touchées. Pour garder une trace de chaque locale, on écrit un rapport visuel par locale (`--visual-report` avec un chemin) : il embarque ses images, il reste lisible après les runs suivants.
 
 Le tag automatique combine `width × height × locale`, donc un même `visualCheckpoint('product-page')` produit :
 
@@ -183,7 +191,7 @@ visual-baseline/
 └─ ...
 ```
 
-Pour 5 gabarits × 3 breakpoints × 4 locales = **60 baselines** à approuver la première fois. Beaucoup, mais une fois figés, ces 60 fichiers gardent votre thème sous cloche.
+Pour les 6 gabarits de l'arborescence × 3 breakpoints × 5 locales = **90 baselines** à approuver la première fois. Beaucoup, mais une fois figés, ces 90 fichiers gardent votre thème sous cloche.
 
 ## Pièges spécifiques au thème
 
@@ -193,7 +201,7 @@ Pour 5 gabarits × 3 breakpoints × 4 locales = **60 baselines** à approuver la
 
 **Modules tiers déjà installés.** À l'inverse, votre thème doit survivre à un `blockreassurance`, un `ps_emailsubscription`, un `contactform` — qui vont injecter leur markup dans vos hooks. Suite dédiée avec le module installé (voir [annexe fixtures](/blog/prestaflow-fixtures-seed-data/) niveau 1 pour l'installation via init-script).
 
-## Iteration dev : la boucle courte
+## Itération dev : la boucle courte
 
 Le pattern qui marche en pratique pour un intégrateur qui itère sur son thème :
 
@@ -201,24 +209,20 @@ Le pattern qui marche en pratique pour un intégrateur qui itère sur son thème
 2. `PRESTAFLOW_HEADLESS=false` — on voit Chrome.
 3. La suite de l'écran sur lequel on bosse (ex : `Theme\HomePage`) prête à cliquer.
 4. On retouche un `.scss` du thème, on rebuild, on relance la suite depuis l'app.
-5. On voit la nouvelle capture, on la compare au baseline, on approuve (nouveau baseline) ou on corrige (retour au thème).
+5. On voit la nouvelle capture, on la compare au baseline, on approuve (on supprime la référence dans `visual-baseline/`, le run suivant la recrée à partir de la nouvelle capture) ou on corrige (retour au thème).
 
 Cette boucle prend 10 à 30 secondes selon l'écran. C'est plus rapide que de recharger manuellement dans un navigateur et vérifier à l'œil, parce que le diff avec le baseline **rattrape** les régressions que l'œil manque.
 
 ## Notes
 
-<Warning title="Un baseline de thème est intrinsèquement fragile. La moindre update PS mineure peut faire bouger un pixel dans le layout global sans que le thème en soit responsable. Ajustez le threshold (voir annexe régressions visuelles, valeur par défaut 0.98) sur les captures full-page, gardez le pixel-parfait pour les checkpoints d'éléments isolés (logo, icônes).">
+<Warning title="Un baseline de thème est intrinsèquement fragile. La moindre update PS mineure peut faire bouger un pixel dans le layout global sans que le thème en soit responsable. Ajustez le threshold (voir annexe régressions visuelles, valeur par défaut 0.98) sur les captures full-page, gardez un seuil strict (0.999) pour les checkpoints d'éléments isolés (logo, icônes).">
 
 </Warning>
 
-<Info title="Fonts custom : Chrome headless peut prendre le screenshot avant que les web fonts soient totalement chargées, ce qui produit des baselines qui « clignotent » entre les runs. Waitez sur un élément que la font finale a rendu (title, headline) plutôt que sur DOMContentLoaded seul.">
-
+<Info title="Fonts custom : Chrome headless peut prendre le screenshot avant que les web fonts soient totalement chargées, ce qui produit des baselines qui « clignotent » entre les runs. Attendez explicitement leur chargement plutôt que de vous fier au seul chargement de la page.">
+Par exemple : `$page->waitUntil(fn () => $page->getPage()->evaluate('document.fonts.status')->getReturnValue() === 'loaded', 5000);` juste avant le `visualCheckpoint`.
 </Info>
 
 <Info title="Ordre de grandeur pour un thème publié : comptez 60 à 200 baselines selon la combinatoire (gabarits × breakpoints × locales × états). C'est un investissement de setup, pas un coût récurrent — une fois figés, les baselines vieillissent lentement.">
-
-</Info>
-
-<Info title="Prochaines annexes potentielles : migration depuis un autre framework E2E (Playwright, Cypress), déclenchement cloud-native (quand la feature existera côté plateforme).">
 
 </Info>

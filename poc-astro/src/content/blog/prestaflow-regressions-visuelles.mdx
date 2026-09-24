@@ -22,13 +22,13 @@ Robuste, et **aveugle à tout ce qui n'est pas testé par ces deux assertions** 
 - si le bloc déborde de son conteneur sur mobile, le test passe ;
 - si une mise à jour du thème casse la marge entre le bloc et le pied de page, le test passe.
 
-Cette classe de bugs — visibles à l'œil, invisibles à l'assertion — est précisément ce que couvrent les régressions visuelles. Le principe : au premier run on prend une photo (le *baseline*), aux runs suivants on prend une nouvelle photo et on la compare pixel à pixel.
+Cette classe de bugs — visibles à l'œil, invisibles à l'assertion — est précisément ce que couvrent les régressions visuelles. Le principe : au premier run on prend une photo (le *baseline*), aux runs suivants on prend une nouvelle photo et on la compare au baseline.
 
 PrestaFlow expose ça via **une seule méthode** : `visualCheckpoint`.
 
 ## `visualCheckpoint` en une ligne
 
-Reprenons la Page `Modules\Psflowdemo\Home` de l'article 1. On ne lui ajoute rien — la méthode `visualCheckpoint` est fournie par la Page parente `FrontOffice\Page` de la lib.
+Reprenons la Page `Modules\Psflowdemo\Home` de l'article 1. On ne lui ajoute rien — la méthode `visualCheckpoint` est définie dans `CommonPage`, dont héritent toutes les Pages de la lib, donc aussi `FrontOffice\Page` dont elle hérite.
 
 Dans la suite `DisplayHome`, ajoutez un troisième `it` :
 
@@ -54,17 +54,19 @@ visualCheckpoint(
 - **`$selector`** — optionnel. Sans lui, capture toute la page ; avec lui, capture uniquement l'élément désigné.
 - **`$threshold`** — score de similarité minimum (0.98 = 98 %).
 - **`$fullPage`** — quand pas de sélecteur, choisir entre toute la page (défaut) ou seulement la fenêtre visible.
-- **`$tag`** — variante du checkpoint ; `'auto'` par défaut résout à quelque chose comme `auto-v8-1280x800-fr` (voir plus bas).
+- **`$tag`** — variante du checkpoint ; `'auto'` par défaut résout à quelque chose comme `auto-v8-1920x1080-en` (voir plus bas).
 
 ## Premier run : le baseline
 
-Au tout premier lancement, aucun fichier de référence n'existe pour `home-with-block`. PrestaFlow prend la capture, la sauvegarde comme baseline, marque le checkpoint avec le statut `baseline` dans le rapport — et n'échoue jamais.
+Au tout premier lancement, aucun fichier de référence n'existe pour `home-with-block`. PrestaFlow prend la capture, la sauvegarde comme baseline, marque le checkpoint avec le statut `baseline` (visible dans le rapport visuel produit par `--visual-report`) — et n'échoue jamais.
 
 Le fichier vit à la racine du projet, dans un dossier dédié :
 
 ```
-./visual-baseline/home-with-block--auto-v8-1280x800-fr.png
+./visual-baseline/home-with-block--auto-v8-1920x1080-en.png
 ```
+
+`1920x1080` est la taille de fenêtre par défaut du navigateur piloté par PrestaFlow (réglable avec `PRESTAFLOW_WINDOW_SIZE_WIDTH` et `PRESTAFLOW_WINDOW_SIZE_HEIGHT`), `en` la locale par défaut.
 
 <Info title="Pourquoi visual-baseline/ à la racine et pas sous prestaflow/screens/ ? Volontairement : au démarrage de chaque run, le dossier screens/ est vidé (actual/ et diff/ sont régénérés à chaque exécution). Les baselines, elles, doivent survivre entre runs et être versionnées. D'où leur emplacement isolé." />
 
@@ -76,7 +78,9 @@ Trois choses à retenir :
 
 ## Runs suivants : la comparaison
 
-Dès la seconde exécution, PrestaFlow prend une nouvelle capture (`actual/`), la compare au baseline via [`SapientPro\ImageComparator`](https://github.com/SapientPro/image-comparator), calcule un score de similarité et écrit un diff (`diff/`).
+Dès la seconde exécution, PrestaFlow prend une nouvelle capture (`actual/`), la compare au baseline via [`SapientPro\ImageComparator`](https://github.com/SapientPro/image-comparator), calcule un score de similarité et écrit une image de diff (`diff/`), à chaque comparaison, que le checkpoint passe ou non.
+
+Le score n'est **pas** une comparaison pixel à pixel. Chaque image est réduite à 8×8 pixels en niveaux de gris pour en tirer une empreinte de 64 bits (*average hash*) ; le score est la part de bits identiques, pondérée par la proximité des couleurs moyennes. Conséquence directe : un bit qui bascule coûte environ 1,6 point, et un changement très localisé sur une grande capture (un titre qui rétrécit sur une home entière) peut ne pas faire bouger le score du tout. L'image de diff, elle, est calculée pixel à pixel : elle montre en rouge tout ce qui a changé, même quand le score passe.
 
 Si le score `≥ threshold` → statut `pass`. Sinon → statut `fail`, avec les fichiers `actual/` et `diff/` attachés au résultat pour inspection.
 
@@ -85,15 +89,15 @@ L'arborescence finale d'un projet actif :
 ```
 ./
 ├─ visual-baseline/                    ← les baselines (commit)
-│  └─ home-with-block--auto-v8-1280x800-fr.png
+│  └─ home-with-block--auto-v8-1920x1080-en.png
 └─ prestaflow/screens/
    ├─ actual/                          ← capture du dernier run (temporaire)
-   │  └─ home-with-block--auto-v8-1280x800-fr.png
-   └─ diff/                            ← diff du dernier run si failure (temporaire)
-      └─ home-with-block--auto-v8-1280x800-fr.png
+   │  └─ home-with-block--auto-v8-1920x1080-en.png
+   └─ diff/                            ← diff du dernier run (temporaire)
+      └─ home-with-block--auto-v8-1920x1080-en.png
 ```
 
-<Info title="Ajoutez prestaflow/screens/ à votre .gitignore. Seul visual-baseline/ mérite d'être versionné." />
+<Info title="Ajoutez prestaflow/ à votre .gitignore : le dossier est vidé au début de chaque run. Seul visual-baseline/ mérite d'être versionné." />
 
 ## Choisir sa cible : full-page, viewport, élément
 
@@ -114,7 +118,7 @@ $page->visualCheckpoint('home-above-the-fold', fullPage: false);
 $page->visualCheckpoint('home-newsletter-block', selector: '.block_newsletter');
 ```
 
-Règle simple : **le plus petit périmètre qui capture ce que vous voulez surveiller**. Un checkpoint full-page échouera à cause d'un compteur de visiteurs dans le header — un checkpoint sur `.block_newsletter` seul, non.
+Règle simple : **le plus petit périmètre qui capture ce que vous voulez surveiller**. Un checkpoint full-page peut échouer à cause d'un compteur de visiteurs dans le header — un checkpoint sur `.block_newsletter` seul, non. Et vu le mode de calcul du score, c'est aussi le seul moyen de voir un petit changement : sur un élément isolé, le bloc remplit toute l'empreinte.
 
 ## Tags automatiques
 
@@ -124,30 +128,30 @@ Le tag `'auto'` (défaut) résout à `auto-v{major}-{width}x{height}-{locale}`, 
 
 ```
 visual-baseline/
-├─ home-with-block--auto-v8-1280x800-fr.png
-├─ home-with-block--auto-v8-1280x800-en.png
-├─ home-with-block--auto-v9-1280x800-fr.png
-└─ home-with-block--auto-v8-375x812-fr.png     ← mobile portrait
+├─ home-with-block--auto-v8-1920x1080-en.png
+├─ home-with-block--auto-v8-1920x1080-fr.png
+├─ home-with-block--auto-v9-1920x1080-en.png
+└─ home-with-block--auto-v8-375x812-en.png     ← mobile portrait
 ```
 
-Le même appel `visualCheckpoint('home-with-block')` produit le bon fichier selon `PRESTAFLOW_PS_VERSION`, la taille de viewport, et `PRESTAFLOW_LOCALE` du run en cours. Aucune duplication côté scénario.
+Le même appel `visualCheckpoint('home-with-block')` produit le bon fichier selon `PRESTAFLOW_PS_VERSION`, la taille de viewport (`window.innerWidth` × `window.innerHeight`, mesurée au moment de la capture), et `PRESTAFLOW_LOCALE` du run en cours. Aucune duplication côté scénario.
 
 Vous pouvez passer un tag custom (`'dark-mode'`, `'promotion-noel'`) quand vous voulez isoler manuellement une variante spécifique — le tag doit matcher `[a-z0-9._-]+`, sinon la lib lève une exception.
 
 ## Threshold : le curseur qu'il faut caler
 
-Le seuil par défaut est **0.98** — deux images sont considérées identiques si elles se ressemblent à 98 % ou plus.
+Le seuil par défaut est **0.98** — deux images sont considérées identiques si leur score atteint 98 % ou plus. Avec l'empreinte de 64 bits, cela tolère un bit différent, pas deux.
 
-- **Trop bas (0.90)** : cache les vraies régressions (une couleur change de teinte, un padding gagne 20px et on ne voit rien).
-- **Trop haut (0.995)** : inonde de faux positifs, chaque run se retrouve à râler sur du bruit d'antialiasing qui varie d'un rendu headless à l'autre.
+- **Trop bas (0.90)** : tolère jusqu'à six bits différents sur 64, et cache les vraies régressions (une couleur change de teinte, un padding gagne 20px et on ne voit rien).
+- **Trop haut (0.995)** : le moindre bit qui bascule, ou une légère dérive de la couleur moyenne, fait échouer le checkpoint ; chaque run se retrouve à râler sur du bruit.
 
 En pratique, 0.98 est un bon point de départ. On l'ajuste par exception, checkpoint par checkpoint :
 
 ```php
-// Bloc avec beaucoup de texte — l'antialiasing peut faire varier de quelques dixièmes
+// Bloc avec beaucoup de texte — on tolère deux bits d'écart
 $page->visualCheckpoint('article-body', threshold: 0.96);
 
-// Logo — pixel-parfait attendu
+// Logo — aucune différence tolérée
 $page->visualCheckpoint('brand-logo', selector: '.logo', threshold: 0.999);
 ```
 
@@ -162,25 +166,33 @@ Trois classes de contenus font échouer un checkpoint sans qu'il y ait de vraie 
 Trois parades, dans l'ordre :
 
 1. **Restreindre le sélecteur** au périmètre stable, à condition que la zone dynamique soit hors de ce périmètre — `.block_newsletter` seul plutôt que la home entière. Sinon, la parade suivante.
-2. **Masquer via CSS avant le checkpoint** — un `setValueByJs` ou un `evaluate` qui applique `display:none` sur les zones dynamiques juste avant la capture.
+2. **Masquer via CSS avant le checkpoint** — un `evaluate` qui applique `visibility: hidden` sur les zones dynamiques juste avant la capture (`visibility` garde la place de l'élément, donc la mise en page ne bouge pas) :
+
+   ```php
+   $page->getPage()->evaluate("document.querySelectorAll('.visitor-counter, .blockcart .cart-products-count').forEach(function (e) { e.style.visibility = 'hidden'; })");
+   ```
 3. **Baisser le threshold** — solution paresseuse, à utiliser quand les deux précédentes ne suffisent pas.
 
-<Warning title="Une capture prise trop tôt ressemble beaucoup à une régression sur le rapport. Ajoutez un waitForPageLoaded() ou un isVisible() sur un élément final de la page avant le visualCheckpoint — sinon vous chassez des fantômes." />
+<Warning title="Une capture prise trop tôt ressemble beaucoup à une régression">
+Ajoutez une attente sur un élément final de la page avant le `visualCheckpoint` — `waitVisible()` ou `waitForText()`, voire `waitUntil()` pour une condition JS — sinon vous chassez des fantômes. N'utilisez pas `waitForPageLoaded()` : dans la version 1.7.1, elle ne fait rien.
+</Warning>
 
 ## Revue humaine côté plateforme
 
 En local, valider un changement voulu comme nouveau baseline consiste à copier `prestaflow/screens/actual/foo.png` par-dessus `visual-baseline/foo.png` puis committer. Rapide, mais aveugle.
 
-En CI (voir l'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)), l'Action officielle synchronise les baselines et les diffs avec [prestaflow.io](https://prestaflow.io). La plateforme propose alors une **revue humaine** : côte-à-côte baseline vs actual, décision *« changement voulu, promouvoir en baseline »* ou *« régression, à corriger »*. Le nouveau baseline redescend automatiquement pour les runs suivants.
+En CI (voir l'[article 2](/blog/automatiser-ses-scenarios-prestaflow-en-ci/)), l'Action officielle (`PrestaFlow/github-action@v2`, input `visual` activé par défaut) synchronise avec [prestaflow.io](https://prestaflow.io) : elle télécharge les baselines de la plateforme dans `visual-baseline/` avant le run, puis envoie les captures `actual/` et `diff/` après. La plateforme propose alors une **revue humaine** : côte-à-côte baseline vs actual, décision *« changement voulu, promouvoir en baseline »* ou *« régression, à corriger »*. Le nouveau baseline redescend automatiquement pour les runs suivants.
 
 C'est là que la trilogie de la série montre son intérêt cumulé : la lib écrit le checkpoint, la CI l'exécute sur chaque commit, l'app / la plateforme arbitre les diffs.
 
 ## Notes
 
-<Info title="Polices web : Chrome headless peut prendre le screenshot avant que les fonts personnalisées soient chargées. Waiter sur un élément final de la page (footer, dernier bloc) plutôt que sur DOMContentLoaded aide à contourner." />
+<Info title="Polices web">
+Chrome headless peut prendre le screenshot avant que les fonts personnalisées soient chargées, même une fois l'événement `load` passé. Attendre explicitement leur chargement règle le problème : `$page->waitUntil(fn () => $page->getPage()->evaluate('document.fonts.status')->getReturnValue() === 'loaded', 5000);`
+</Info>
 
 <Info title="Densité d'écran : Chrome headless capture en 1× par défaut. Si votre thème charge des ressources Retina conditionnelles, vos baselines ne verront jamais ces variantes." />
 
 <Warning title="Ne partagez pas de captures qui contiennent des données réelles (email client, prix confidentiel, backoffice avec des commandes). visual-baseline/ finit dans le repo — auditez ce que vos checkpoints capturent avant de committer." />
 
-<Info title="Prochaine annexe : écrire un scénario qui tient sur PS 1.7 → 8 → 9, avec le système de Pages par version évoqué dans « Factoriser ses Pages »." />
+<Info title="Prochaine annexe : tester les emails envoyés par un module." />

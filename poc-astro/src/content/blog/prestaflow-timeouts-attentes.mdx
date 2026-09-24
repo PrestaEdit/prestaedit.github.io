@@ -6,7 +6,7 @@ tags:
 author: PrestaEdit
 series: prestaflow
 featuredimg: 'https://prestaedit.github.io/head/2026-09-28-prestaflow-timeouts-attentes.svg'
-summary: "Sept annexes ont introduit une méthode d'attente sans la mettre en perspective avec les autres. Cette annexe rassemble le cookbook : waitForPageLoaded, waitForPageReload, isVisible avec timeout, sleep, PRESTAFLOW_SCREENSHOT_DELAY, quand utiliser quoi."
+summary: "Plusieurs annexes ont introduit une manière d'attendre sans la mettre en perspective avec les autres. Cette annexe rassemble le cookbook des attentes de PrestaFlow 1.7.1 : navigation, clickAndWaitReload, waitVisible, waitForText, waitUntil, isVisible, sleep, et ce que fait vraiment PRESTAFLOW_SCREENSHOT_DELAY."
 ---
 
 <Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
@@ -15,100 +15,161 @@ summary: "Sept annexes ont introduit une méthode d'attente sans la mettre en pe
 
 Les annexes précédentes ont mentionné, chacune dans son coin, une manière d'attendre quelque chose :
 
-- L'annexe [debug](/blog/prestaflow-debug-un-scenario-qui-casse/) évoque `waitForPageLoaded()` et `isVisible($sel, 5000)` comme parades aux flakes.
+- L'annexe [debug](/blog/prestaflow-debug-un-scenario-qui-casse/) range le *wait manquant* parmi les trois causes classiques de flake.
 - L'annexe [factoriser Pages](/blog/prestaflow-factoriser-ses-pages/) donne un exemple de timeout explicite dans un sélecteur (`isVisible($sel, 8000)`).
-- L'annexe [tester un thème](/blog/prestaflow-tester-un-theme/) précise que les fonts custom peuvent tromper `waitForPageLoaded()`.
-- L'annexe tester les emails utilise un `sleep(2)` avoué comme artisanal.
+- L'annexe [tester un thème](/blog/prestaflow-tester-un-theme/) précise que les fonts custom peuvent être capturées avant d'être rendues.
 
-Résultat : un lecteur qui traverse la série apprend cinq mécaniques d'attente sans jamais voir la vue d'ensemble. Cette annexe range tout, avec une règle claire par cas.
+Résultat : un lecteur qui traverse la série croise plusieurs mécaniques d'attente sans jamais voir la vue d'ensemble. Cette annexe range tout, avec une règle claire par cas. Toutes les méthodes citées existent dans la version publiée de la lib (1.7.1), sur toutes les Pages (elles sont définies dans `CommonPage`).
 
 ## Le tableau de décision
 
-Six mécaniques, six cas où chacune est le bon outil :
+Huit mécaniques, huit cas où chacune est le bon outil :
 
 | Mécanique | Quand l'utiliser |
 |---|---|
-| `waitForPageLoaded()` | Après un `goToUrl()` ou navigation directe. Attend `DOMContentLoaded` + un peu de marge. |
-| `waitForPageReload()` | Après un `click` qui déclenche un reload/redirect (submit, redirection interne). |
-| `isVisible($sel, $timeoutMs)` | Avant de lire ou d'interagir avec un contenu dont l'apparition est différée (JS, AJAX). |
-| `visualCheckpoint` avec `PRESTAFLOW_SCREENSHOT_DELAY` | Régressions visuelles quand animations d'entrée / fonts custom faussent la capture. |
-| `sleep($sec)` PHP | En dernier recours, quand aucune condition observable n'existe (envoi email, job async). |
-| Poll manuel via boucle | Attente sur une condition externe custom (fichier apparu, API tierce répond). |
+| `goToPage()` / `goToUrl()` | Navigation que vous initiez. Elles attendent déjà l'événement `load` (30 s maximum) : rien à ajouter derrière. |
+| `clickAndWaitReload($sel)` / `waitForPageReload()` | Après un clic qui recharge la page (submit, redirection). Attend l'événement `load` du nouveau document, 10 s maximum. |
+| `waitVisible($sel, $timeout)` | Avant d'interagir avec un élément qui arrive plus tard (JS, AJAX). Lève une exception au timeout. |
+| `waitHidden($sel, $timeout)` | Attendre qu'un spinner ou un overlay soit retiré de la page. |
+| `waitForText($text, $timeout, $sel)` | Attendre un texte précis (message de succès, total recalculé). |
+| `waitUntil($callable, $timeout)` | Toute autre condition : état JS, fichier, API tierce. |
+| `isVisible($sel, $timeoutMs)` | Poser une question oui/non sans faire échouer le `it`. |
+| `sleep($sec)` PHP | En dernier recours, quand aucune condition observable n'existe. |
 
 Chaque mécanique répond à une question différente. Les mélanger produit des scénarios lents ou instables. Les prendre au bon endroit produit des scénarios rapides et robustes.
 
-## `waitForPageLoaded()` — après une navigation
+<Warning title="waitForPageLoaded() ne fait rien">
+La méthode existe dans 1.7.1, mais elle appelle `waitForNavigation()` sur la page chrome-php, qui n'a pas cette méthode : le `__call` de `CommonPage` avale l'appel sans erreur. Elle rend donc la main immédiatement, sans rien attendre. Ne l'utilisez pas comme parade : après une navigation, `goToPage()` a déjà attendu ; pour un contenu différé, utilisez `waitVisible()` ou `waitForText()`. De même, `waitForJsCondition()` n'existe pas dans 1.7.1 : passez par `waitUntil()` (voir plus bas).
+</Warning>
 
-Sert après tout appel qui charge une nouvelle URL et où **vous initiez** le chargement :
+## La navigation attend déjà
+
+`goToPage()` (FO et BO) et `goToUrl()` font `navigate($url)->waitForNavigation()` côté chrome-php : elles rendent la main quand l'événement `load` du document est tombé, ou lèvent une exception au bout de 30 secondes.
 
 ```php
-$page->goToUrl($url);
-$page->waitForPageLoaded();
+$page->goToPage('home');
+// Le document est chargé : on peut lire le titre.
 Expect::that($page->getPageTitle())->isNotEmpty();
 ```
 
-Attend l'événement `DOMContentLoaded`, plus une marge pour laisser Chrome finaliser. C'est le wait par défaut pour une navigation top-level.
+**Attention** : `load` ne dit **rien** sur ce qui arrive après (appels AJAX, widgets injectés par JS, fonts chargées tardivement). Si votre assertion suivante dépend d'un de ces éléments, il faut une attente ciblée en plus.
 
-**Attention** : `DOMContentLoaded` ne dit **rien** sur les ressources qui arrivent après (images, JS asynchrones, fonts web). Si votre assertion suivante dépend d'un de ces éléments, il faut un `isVisible` en plus.
-
-## `waitForPageReload()` — après un submit ou redirect
+## `clickAndWaitReload()` — après un submit ou redirect
 
 Sert quand ce n'est **pas vous** qui déclenchez la navigation, mais un `click` qui provoque un reload :
 
 ```php
+$page->clickAndWaitReload('#submit-form');
+
+// Équivalent en deux temps :
 $page->click('#submit-form');
 $page->waitForPageReload();
 ```
 
-Utile pour tous les formulaires PrestaShop qui submit et rechargent la page — login BO, config module, save d'une adresse. Sans ce wait, l'assertion suivante peut partir sur l'ancienne page qui n'a pas encore basculé.
+Utile pour tous les formulaires PrestaShop qui soumettent et rechargent la page — login BO (c'est ce que fait `login()`), configuration de module, enregistrement d'une adresse. Sans ce wait, l'assertion suivante peut partir sur l'ancienne page qui n'a pas encore basculé.
 
-**Confusion classique** : `waitForPageLoaded` vs `waitForPageReload`. Règle simple — si vous avez appelé `goToUrl()` juste avant, c'est `waitForPageLoaded`. Si vous avez cliqué un bouton dont l'action est une navigation, c'est `waitForPageReload`.
+**Piège** : `waitForPageReload()` n'échoue jamais. Au bout de 10 secondes sans rechargement, elle rend la main en silence. Faites-la suivre d'une attente qui, elle, échoue si l'état attendu n'arrive pas :
 
-## `isVisible($sel, $timeoutMs)` — attente ciblée
+```php
+$page->clickAndWaitReload('button[name="submitPsflowdemo"]');
+$page->waitVisible('.alert.alert-success', 5000);
+```
 
-La plus fine des attentes. Retourne `bool`, et attend jusqu'à `timeoutMs` que le sélecteur apparaisse **visible dans le DOM** :
+**Règle simple** : si vous avez appelé `goToPage()` ou `goToUrl()`, il n'y a rien à ajouter. Si vous avez cliqué un bouton dont l'action est une navigation, c'est `clickAndWaitReload()`.
+
+## `waitVisible()`, `waitHidden()`, `waitForText()` — attentes ciblées
+
+Les plus fines des attentes. Elles interrogent la page toutes les 100 ms jusqu'au timeout (10 s par défaut), puis lèvent une `TimeoutException` : le `it` échoue avec un message explicite.
+
+```php
+// Signatures (CommonPage, 1.7.1)
+waitVisible($selector, int $timeout = 10000, ?string $message = null): void
+waitHidden($selector, int $timeout = 10000, ?string $message = null): void
+waitForText(string $text, int $timeout = 10000, string $selector = 'body', ?string $message = null): void
+```
+
+```php
+$page->waitVisible('#newsletter-success', 5000);
+$page->waitHidden('.spinner', 5000);
+$page->waitForText('Votre message a bien été envoyé', 8000, '#content');
+```
+
+C'est **la** parade au contenu injecté par JS avec un délai. Le timeout définit combien de temps on est prêt à attendre — 5 s pour un modal court, 8 s pour un chargement AJAX lourd.
+
+**Nuance importante** : malgré son nom, `waitVisible()` attend que l'élément soit **présent dans le DOM**, pas qu'il soit affiché. Un élément déjà dans la page mais en `display: none` la satisfait immédiatement. Symétriquement, `waitHidden()` attend que l'élément soit **retiré** du DOM. Pour attendre un affichage réel, passez par `waitUntil()`.
+
+## `waitUntil()` — n'importe quelle condition
+
+La brique sur laquelle reposent les trois précédentes. Elle appelle votre closure toutes les 100 ms jusqu'à ce qu'elle renvoie `true`, sinon lève une `TimeoutException` avec votre message :
+
+```php
+waitUntil(callable $condition, int $timeout = 10000, string $message = 'Condition was not met.'): void
+```
+
+Exemple : attendre que les web fonts soient chargées, ou qu'un élément soit réellement affiché.
+
+```php
+$page->waitUntil(
+    fn () => $page->getPage()->evaluate('document.fonts.status')->getReturnValue() === 'loaded',
+    5000,
+    'Les web fonts ne sont pas chargées'
+);
+
+$page->waitUntil(
+    fn () => $page->getPage()->evaluate(
+        "(function () { var e = document.querySelector('#blockcart-modal'); return !!e && getComputedStyle(e).display !== 'none'; })()"
+    )->getReturnValue() === true,
+    5000,
+    'La modale panier ne s\'est pas affichée'
+);
+```
+
+C'est l'équivalent, dans 1.7.1, d'une attente sur une condition JS.
+
+## `isVisible($sel, $timeoutMs)` — la question oui/non
+
+`isVisible()` attend jusqu'à `$timeoutMs` (1 s par défaut) que le sélecteur soit présent dans le DOM, et retourne `bool` au lieu de lever une exception :
 
 ```php
 Expect::that($page->isVisible('#newsletter-success', 5000))->isTheSameAs(true);
 ```
 
-C'est **la** parade au contenu injecté par JS avec un délai. Le sélecteur apparaîtra quand le JS aura terminé son travail, pas avant. Le timeout définit combien de temps on est prêt à attendre — 5s pour un modal court, 8s pour un chargement AJAX lourd.
+À réserver aux cas où `false` est une réponse légitime (un bloc optionnel, un test qui vérifie une absence). Pour une simple attente, `waitVisible()` est plus lisible et son message d'échec plus parlant.
 
-**Piège récurrent** : `isVisible` sans timeout (ou avec un timeout à 1000ms trop court) sur un contenu qui prend habituellement 3s à apparaître. Vous obtenez un faux `false`, votre assertion tombe rouge, et vous cherchez pendant une heure un bug qui n'existe pas.
+**Piège récurrent** : `isVisible` sans timeout (le défaut est 1 s) sur un contenu qui prend habituellement 3 s à apparaître. Vous obtenez un faux `false`, votre assertion tombe rouge, et vous cherchez pendant une heure un bug qui n'existe pas.
 
-<Warning title="Ne montez pas les timeouts partout à 30 secondes « au cas où ». Un scénario cassé prend alors une éternité à échouer, et vous êtes tenté de les baisser en catastrophe pour re-débloquer un CI trop lent. Un timeout est une prédiction — vous savez que ce sélecteur devrait apparaître en 3s max, vous mettez 5s de marge, point." />
+<Warning title="Ne montez pas les timeouts partout à 30 secondes « au cas où ». Un scénario cassé prend alors une éternité à échouer, et vous êtes tenté de les baisser en catastrophe pour re-débloquer un CI trop lent. Un timeout est une prédiction — vous savez que ce sélecteur devrait apparaître en 3 s max, vous mettez 5 s de marge, point." />
 
-## `PRESTAFLOW_SCREENSHOT_DELAY` — spécifique aux régressions visuelles
+## `PRESTAFLOW_SCREENSHOT_DELAY` — seulement pour les captures d'échec
 
-Variable d'environnement qui ajoute N secondes d'attente **avant chaque capture d'écran** (contexte régressions visuelles + captures d'erreur). Défaut : 3 secondes.
+Cette variable ne sert **pas** à attendre avant une étape. Elle fixe le nombre de secondes que la lib patiente avant de prendre la capture d'erreur, quand une assertion `Expect` échoue (la capture part dans `prestaflow/screens/errors/`). Défaut : 3 secondes.
 
 ```env
 PRESTAFLOW_SCREENSHOT_DELAY=5
 ```
 
-Utile quand vos baselines visuelles clignotent — une animation d'entrée qui n'est pas finie, une font custom qui n'a pas encore rendu, un carrousel qui tourne au moment T. Un délai supplémentaire uniformise l'état capturé.
+Elle ne s'applique ni à `visualCheckpoint()`, ni aux étapes qui réussissent. Pour stabiliser une capture de régression visuelle, attendez une condition (`waitVisible()`, `waitUntil()` sur `document.fonts.status`) juste avant le checkpoint.
 
-**Coût** : chaque capture prend N secondes de plus. Sur une suite avec 20 `visualCheckpoint`, monter le delay à 5s ajoute deux minutes gratuites au run. À réserver au CI dédié aux régressions visuelles, pas à l'ensemble des runs.
+**Coût** : chaque assertion en échec coûte N secondes de plus. En debug local, où l'on relance souvent une suite rouge, `PRESTAFLOW_SCREENSHOT_DELAY=0` raccourcit la boucle. La lib lit cette variable dans `$_ENV` : déclarez-la dans le `.env` du projet.
 
 ## `sleep($sec)` — dernier recours assumé
 
-Le vrai `sleep()` PHP est parfois inévitable. Cas typique : après un `click` qui déclenche un envoi email SMTP asynchrone, on doit attendre que le mail arrive dans Mailpit — aucun sélecteur DOM ne peut nous renseigner.
+Le vrai `sleep()` PHP est parfois inévitable. Cas typique : attendre qu'un système extérieur à la page ait fini son travail — une tâche planifiée, un webhook, un email à relever dans Mailpit — sans condition qu'on sache interroger.
 
 ```php
 $page->click('#submit-contact');
-sleep(2);
-$message = $mailboxPage->findByRecipient($adminEmail);
+sleep(2); // la synchro vers l'ERP n'expose aucun état interrogeable
 ```
 
 **Règles à suivre** :
 
-1. **Justifiez-le en commentaire**. Un `sleep(2)` sans contexte donne envie à un mainteneur de le supprimer. `sleep(2); // SMTP async` évite la question.
+1. **Justifiez-le en commentaire**. Un `sleep(2)` sans contexte donne envie à un mainteneur de le supprimer. Le commentaire évite la question.
 2. **Encapsulez-le si possible**. Un `sleep(2)` répété dans 15 `it` doit devenir un helper (`$mailboxPage->waitForMessage($email, 10)`) qui poll intelligemment plutôt que d'attendre bêtement.
 3. **N'en abusez pas**. Un scénario truffé de `sleep(N)` est un scénario qui va grossir en durée à chaque ajout et qui masque les problèmes de wait précis.
 
-## Poll manuel — pour les conditions custom
+## Poll manuel — pour les conditions custom hors Page
 
-Quand l'attente porte sur une condition qui n'a aucun sélecteur DOM (un fichier créé sur le disque, une valeur en base de données, une réponse d'API tierce), la boucle poll reste le pattern :
+Dans une Page, `waitUntil()` fait le travail. Pour un helper qui n'est pas une Page (client d'API Mailpit, lecteur de fichiers), la boucle poll reste le pattern :
 
 ```php
 public function waitForMessage(string $recipient, int $timeoutSec = 10): ?array
@@ -125,29 +186,29 @@ public function waitForMessage(string $recipient, int $timeoutSec = 10): ?array
 }
 ```
 
-Trois choses à retenir : un timeout absolu (pour éviter l'infini), une **granularité de poll** raisonnable (500ms est un bon défaut — 100ms est trop agressif, 2s est trop lent), un retour explicite du résultat (`null` = timeout).
+Trois choses à retenir : un timeout absolu (pour éviter l'infini), une **granularité de poll** raisonnable (500 ms est un bon défaut pour un appel réseau — 100 ms est trop agressif, 2 s est trop lent), un retour explicite du résultat (`null` = timeout).
 
-C'est le pattern utilisé dans l'annexe emails — beaucoup plus fiable que le `sleep(2)` de l'exemple initial.
+C'est beaucoup plus fiable qu'un `sleep(2)` fixe : on rend la main dès que le message est là, et on attend plus longtemps quand le système est lent.
 
 ## Cas concret : combiner plusieurs waits dans un `it`
 
-Un `it` réel enchaîne souvent trois ou quatre types d'attente. Exemple avec un formulaire contact qui envoie un email :
+Un `it` réel enchaîne souvent trois ou quatre types d'attente. Exemple avec le formulaire de contact de la boutique (URL `contact-us` d'une boutique en anglais) qui envoie un email :
 
 ```php
 ->it('envoie le formulaire contact', function () use ($frontOfficeHomePage, $mailboxPage) {
-    // 1. Navigation initiale — waitForPageLoaded standard.
-    $frontOfficeHomePage->goToUrl($_ENV['PRESTAFLOW_FO_URL'] . 'nous-contacter');
-    $frontOfficeHomePage->waitForPageLoaded();
+    // 1. Navigation initiale — goToPage attend déjà le chargement.
+    $frontOfficeHomePage->goToPage('contact-us');
 
-    // 2. Attente que le formulaire (chargé par JS) apparaisse — isVisible.
-    Expect::that($frontOfficeHomePage->isVisible('#contact-form', 5000))->isTheSameAs(true);
+    // 2. Attente ciblée sur le formulaire.
+    $frontOfficeHomePage->waitVisible('textarea[name="message"]', 5000);
 
-    // 3. Interaction — pas de wait nécessaire, setValue/click sont synchrones.
+    // 3. Interaction — pas de wait nécessaire, setValue est synchrone.
+    $frontOfficeHomePage->setValue('input[name="from"]', 'client@example.com');
     $frontOfficeHomePage->setValue('textarea[name="message"]', 'test');
-    $frontOfficeHomePage->click('input[name="submitMessage"]');
 
-    // 4. Le submit provoque un reload — waitForPageReload.
-    $frontOfficeHomePage->waitForPageReload();
+    // 4. Le submit provoque un reload — clickAndWaitReload, puis preuve du succès.
+    $frontOfficeHomePage->clickAndWaitReload('input[name="submitMessage"]');
+    $frontOfficeHomePage->waitVisible('.alert.alert-success', 5000);
 
     // 5. Attente de l'email — poll custom sur l'API Mailpit.
     $message = $mailboxPage->waitForMessage('admin@prestashop.com', 10);
@@ -160,13 +221,13 @@ Chaque wait a son bon endroit. Rien de superflu, rien de manquant. Le scénario 
 ## Interaction avec les autres annexes
 
 - **[Debug](/blog/prestaflow-debug-un-scenario-qui-casse/)** — un scénario qui échoue avec une capture qui ressemble à *"j'ai capturé au mauvais moment"* est un problème de wait, pas un bug métier. Cette annexe donne le vocabulaire pour le diagnostiquer.
-- **Régressions visuelles** — les baselines qui clignotent sont presque toujours dues à un wait manquant avant `visualCheckpoint`. Combiner `waitForPageLoaded` + `isVisible` sur un élément stable + éventuellement `PRESTAFLOW_SCREENSHOT_DELAY` règle 90 % des cas.
-- **[Tester un thème](/blog/prestaflow-tester-un-theme/)** — les fonts custom, mentionnées comme piège, sont un cas typique où on attend sur *"le titre final est rendu"* plutôt que sur `DOMContentLoaded`.
+- **Régressions visuelles** (annexe à venir) — les baselines qui clignotent sont le plus souvent dues à un wait manquant avant `visualCheckpoint`. Un `waitVisible()` sur un élément stable, et au besoin un `waitUntil()` sur `document.fonts.status`, règlent l'essentiel des cas.
+- **[Tester un thème](/blog/prestaflow-tester-un-theme/)** — les fonts custom, mentionnées comme piège, sont un cas typique où on attend sur *"le titre final est rendu"* plutôt que sur le seul chargement de la page.
 
 ## Notes
 
-<Info title="Ordre de magnitude à garder en tête : DOMContentLoaded typiquement 100-500ms, chargement complet d'une page e-commerce 1-3s, apparition d'un contenu AJAX 500ms-2s, animation d'entrée 300ms-1s. Vos timeouts doivent laisser une marge x2 à x3 par rapport au temps normal — plus court c'est fragile, plus long c'est lent en cas de vrai bug." />
+<Info title="Ordre de grandeur à garder en tête : chargement complet d'une page e-commerce de l'ordre de 1 à 3 s, apparition d'un contenu AJAX de l'ordre de la seconde, animation d'entrée de quelques centaines de millisecondes. Mesurez sur votre boutique, puis laissez une marge x2 à x3 par rapport au temps normal — plus court c'est fragile, plus long c'est lent en cas de vrai bug." />
 
-<Info title="Sur un CI chargé (concurrence, disque saturé), les temps de rendu peuvent être 2 à 3× plus lents qu'en local. Un scénario qui passe chez vous en 5s peut prendre 12s en CI. Testez vos timeouts en conditions CI avant de considérer un scénario stable." />
+<Info title="Sur un CI chargé (concurrence, disque saturé), les temps de rendu peuvent être nettement plus lents qu'en local. Un scénario qui passe chez vous en 5 s peut en prendre le double en CI. Testez vos timeouts en conditions CI avant de considérer un scénario stable." />
 
-<Warning title="Ne mettez jamais de sleep() dans une méthode de Page — il pollue tous les it qui utilisent la Page. Un wait spécifique à une action métier va dans le it qui déclenche l'action. Un helper poll générique va dans la Page." />
+<Warning title="Ne mettez jamais de sleep() dans une méthode de Page — il pollue tous les it qui utilisent la Page. Un wait spécifique à une action métier va dans le it qui déclenche l'action. Un helper d'attente générique (waitUntil sur une condition) va dans la Page." />
