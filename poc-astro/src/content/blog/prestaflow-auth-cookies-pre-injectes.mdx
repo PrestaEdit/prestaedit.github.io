@@ -9,7 +9,11 @@ featuredimg: 'https://prestaedit.github.io/head/2026-09-11-prestaflow-auth-cooki
 summary: "Injecter des cookies avant le lancement du scénario pour bypasser un bandeau RGPD, ouvrir une session BO déjà connectée, ou forcer une variante — sans écrire un login à chaque suite."
 ---
 
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow »." />
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites ».">
+
+Les exemples reprennent le module fil rouge [PrestaFlow/psflowdemo](https://github.com/PrestaFlow/psflowdemo) et sa Page `Configuration` (`openConfiguration()`, `fillTitle()`, `save()`, `hasSuccessMessage()`), présentée dans l'annexe [Factoriser ses Pages](/blog/prestaflow-factoriser-ses-pages/).
+
+</Info>
 
 ## Le coût invisible du `login()`
 
@@ -22,26 +26,26 @@ Les suites BO de la série commencent presque toutes par le même préambule :
 })
 ```
 
-Cinq à quinze secondes par suite selon l'état de la boutique. Sur un projet actif avec 15 suites BO, c'est jusqu'à quatre minutes cumulées **par run**, dépensées à re-jouer le même formulaire. En CI multi-versions × multi-locales, on multiplie ce chiffre par le nombre de cellules de la matrice.
+Quelques secondes par suite : environ deux contre une boutique Flashlight locale, davantage sur une preprod chargée ou lointaine. Multipliées par le nombre de suites BO, elles s'additionnent **à chaque run**, dépensées à re-jouer le même formulaire. En CI multi-versions × multi-locales, on multiplie encore par le nombre de cellules de la matrice.
 
 PrestaFlow expose un mécanisme pour supprimer ce coût : **`PRESTAFLOW_COOKIES`**, une variable d'environnement qui injecte un jeu de cookies dans Chrome **avant toute navigation**. Vous arrivez sur la page cible avec la session déjà ouverte, comme si l'utilisateur venait de se connecter.
 
 ## `PRESTAFLOW_COOKIES` en un paragraphe
 
-C'est un **tableau JSON** d'objets cookie, avec tous les champs standards de l'API Chrome :
+C'est un **tableau JSON** d'objets cookie, avec les champs standards de l'API cookies de Chrome :
 
 ```
 PRESTAFLOW_COOKIES=[{"name":"...","value":"...","domain":"...","path":"/","secure":true,"httpOnly":true,"sameSite":"Strict","expires":1770000000}]
 ```
 
-- **`name`** et **`value`** — obligatoires.
+- **`name`** — obligatoire (un objet sans `name` est ignoré). **`value`** — vide par défaut, donc à fournir en pratique.
 - **`domain`** — obligatoire en pratique pour un cookie de session.
 - **`path`** — défaut `/`.
-- **`secure`, `httpOnly`, `sameSite`, `expires`, `url`** — optionnels, mappés directement sur l'API Chrome.
+- **`secure`, `httpOnly`, `sameSite`, `expires`, `url`** — optionnels, transmis tels quels à Chrome.
 
-L'injection se fait en **best-effort** : si l'API cookies échoue (cookie mal formé, domaine incohérent), le run continue sans erreur. C'est confortable, mais ça oblige à valider au moins une fois à la main que le cookie est bien pris — sinon on croit sauter le login alors qu'on l'exécute silencieusement.
+L'injection a lieu au début de chaque suite, dans `TestsSuite::before()`, juste après le nettoyage des cookies laissés par la suite précédente. Elle se fait en **best-effort** : si le JSON est invalide ou si Chrome refuse un cookie (cookie mal formé, domaine incohérent), le run continue sans erreur. C'est confortable, mais ça oblige à valider au moins une fois que le cookie est bien pris, sinon on croit sauter le login alors que les suites tombent sur le formulaire de connexion.
 
-Le code de référence vit dans [`TestsSuite.php:604-653`](https://github.com/PrestaFlow/php-library/blob/main/src/Tests/TestsSuite.php).
+Le code de référence est la méthode `presetEnvCookies()` de [`TestsSuite.php`, lignes 706 à 746 dans la v1.7.1](https://github.com/PrestaFlow/php-library/blob/v1.7.1/src/Tests/TestsSuite.php#L706-L746).
 
 ## Cas 1 : neutraliser un bandeau RGPD
 
@@ -55,72 +59,129 @@ Aucun changement dans les scénarios. Le bandeau disparaît de tous les runs qui
 
 ## Cas 2 : login BO déjà fait
 
-Le vrai gain. Reprenons la suite `UpdateTitle` de l'[article d'introduction](/blog/ecrire-son-premier-scenario-prestaflow/), qui a trois étapes :
+Le vrai gain. Reprenons la suite `UpdateTitle` de l'[article d'introduction](/blog/ecrire-son-premier-scenario-prestaflow/), réécrite avec la Page `Configuration` de l'annexe *Factoriser ses Pages*. Elle enchaîne quatre étapes :
 
-1. se connecte au BO ← 10s
-2. met à jour le titre du bloc ← 3s
-3. affiche le nouveau titre sur la home ← 3s
+1. se connecte au BO ;
+2. met à jour le titre du bloc ;
+3. affiche le nouveau titre sur la home ;
+4. remet le titre par défaut.
 
 Avec un cookie de session admin pré-injecté :
 
 ```env
 PRESTAFLOW_BO_URL=https://preprod.example.com/admin-dev/
-PRESTAFLOW_COOKIES=[{"name":"PrestaShop-a1b2c3d4e5f6","value":"def50200a1b2...","domain":"preprod.example.com","path":"/admin-dev","httpOnly":true}]
+PRESTAFLOW_COOKIES=[{"name":"PrestaShop-a1b2c3d4e5f6","value":"def50200a1b2...","domain":"preprod.example.com","path":"/","httpOnly":true}]
 ```
+
+Le nom du cookie de session BO est `PrestaShop-` suivi d'un hash propre à la boutique ; relevez-le tel quel, avec son `path` (voir plus bas comment le récupérer). Sur PrestaShop 8, ce seul cookie suffit (vérifié sur 8.1.7). Sur PrestaShop 9, l'authentification BO passe aussi par la session Symfony : ajoutez le cookie `PHPSESSID` au tableau (vérifié sur 9.0.0 : sans lui, la page de configuration renvoie au formulaire de connexion).
 
 La suite peut alors s'écrire sans le premier `it` :
 
 ```php
-public function init()
+<?php
+
+namespace Tests\Suites;
+
+use PrestaFlow\Library\Expects\Expect;
+use PrestaFlow\Library\Tests\TestsSuite;
+
+class UpdateTitleWithSession extends TestsSuite
 {
-    $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
-    $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
+    public function init()
+    {
+        $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
+        $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
 
-    extract($this->pages);
+        extract($this->pages);
 
-    // Plus de goToPage('login') / login() — le cookie de session est déjà là.
-    $this
-    ->describe('Modification du titre depuis le BO (auth pré-injectée)')
-    ->it('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage) {
-        $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
-        // ...
-    })
-    ->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage) {
-        // ...
-    });
+        $newTitle = 'Titre mis à jour par PrestaFlow';
+        $defaultTitle = 'Bienvenue sur notre boutique';
+        $boUrl = $this->getGlobals()['BO']['URL'];
+
+        // Plus de goToPage('login') / login() : le cookie de session est déjà là.
+        $this
+        ->describe('Modification du titre depuis le BO (session pré-injectée)')
+        ->it('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage, $boUrl, $newTitle) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($boUrl);
+            $modulesPsflowdemoConfigurationPage->fillTitle($newTitle);
+            $modulesPsflowdemoConfigurationPage->save();
+
+            // Garde-fou : si le cookie a expiré, on est sur le formulaire de
+            // connexion et ce message n'apparaît pas.
+            Expect::that($modulesPsflowdemoConfigurationPage->hasSuccessMessage())
+                ->isTheSameAs(true);
+        })
+        ->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage, $newTitle) {
+            $modulesPsflowdemoHomePage->goToPage('home');
+
+            Expect::that($modulesPsflowdemoHomePage->getBlockTitle())
+                ->contains($newTitle);
+        })
+        ->it('remet le titre par défaut', function () use ($modulesPsflowdemoConfigurationPage, $boUrl, $defaultTitle) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($boUrl);
+            $modulesPsflowdemoConfigurationPage->fillTitle($defaultTitle);
+            $modulesPsflowdemoConfigurationPage->save();
+        });
+    }
 }
 ```
 
-De 3 `it` à 2, et surtout le `it` le plus lent supprimé. Sur 15 suites BO qui bénéficient du même traitement, c'est trois à quatre minutes économisées par run.
+De quatre `it` à trois, et c'est le formulaire de connexion qui disparaît. L'assertion sur `hasSuccessMessage()` n'est pas décorative : sans session valide, `fillTitle()` et `save()` ne lèvent pas d'erreur sur la page de connexion, et c'est elle qui fait tomber la suite au bon endroit. Le gain total dépend du nombre de suites BO qui bénéficient du même traitement.
 
 ## Comment récupérer un cookie de session BO
 
 Trois méthodes, dans l'ordre de facilité :
 
-**Chrome DevTools (le plus rapide, pour un one-shot local).** Connectez-vous manuellement à votre BO, ouvrez DevTools → Application → Cookies → votre domaine. Copiez `name`, `value`, `domain`, `path`. Les cookies de session PS commencent typiquement par `PrestaShop-` suivi d'un hash.
+**Chrome DevTools (le plus rapide, pour un one-shot local).** Connectez-vous manuellement à votre BO, ouvrez DevTools → Application → Cookies → votre domaine. Copiez `name`, `value`, `domain`, `path` du cookie `PrestaShop-…` (et de `PHPSESSID` sur PrestaShop 9).
 
-**Dump depuis un run PrestaFlow headed (utile pour capter un flow spécifique).** Lancez le scénario avec `PRESTAFLOW_HEADLESS=false`, ajoutez temporairement dans un `it` juste après `login()` :
+**Dump depuis un run PrestaFlow (utile pour capter la session telle que PrestaFlow l'ouvre).** Ajoutez temporairement une suite qui se connecte puis écrit tous les cookies du navigateur dans un fichier. `getPage()` renvoie la page chrome-php, dont `getAllCookies()` renvoie une collection de cookies ; chaque cookie se convertit en tableau avec `iterator_to_array()` :
 
 ```php
-var_dump($modulesPsflowdemoHomePage->getPage()->getCookies()->getCookies());
+->it('se connecte au BO et exporte les cookies', function () use ($backOfficeLoginPage) {
+    $backOfficeLoginPage->goToPage('login');
+    $backOfficeLoginPage->login();
+
+    $cookies = [];
+    foreach ($backOfficeLoginPage->getPage()->getAllCookies() as $cookie) {
+        $cookies[] = iterator_to_array($cookie);
+    }
+    file_put_contents('cookies.json', json_encode($cookies, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+})
 ```
 
-Vous récupérez la liste complète (session, XSRF, préférences BO). Sélectionnez celui qui vous intéresse.
+Vous récupérez la liste complète (session PrestaShop, session PHP, éventuels cookies tiers). Gardez ceux qui vous intéressent, avec leurs champs `name`, `value`, `domain`, `path` et `httpOnly`, et ne versionnez pas `cookies.json`.
 
-**API PS (le plus propre pour la CI).** Un script pré-run qui appelle l'endpoint d'authentification programmatique de votre PS (ou simule le formulaire) et extrait le cookie de session de la réponse. Le résultat est écrit dans `PRESTAFLOW_COOKIES` avant l'exécution des suites. C'est la seule méthode qui tient dans le temps sans rotation manuelle.
+**Un login par run plutôt que par suite (le plus propre pour la CI).** Rangez cette suite de dump dans son propre dossier (en v1.7.1, `run` attend un dossier, pas un fichier) et lancez-la seule, dans une première commande, puis écrivez le résultat dans `PRESTAFLOW_COOKIES` pour la seconde commande, celle qui exécute vos suites. Vous payez un seul login par run, et le cookie est toujours frais : c'est la seule méthode qui tient dans le temps sans rotation manuelle.
+
+<Info title="Un cookie lié à une adresse IP">
+
+Si l'option de PrestaShop qui vérifie l'adresse IP du cookie (`PS_COOKIE_CHECKIP`) est active, la session n'est valable que depuis l'adresse IP qui s'est connectée. Un cookie relevé sur votre poste et rejoué depuis un runner CI est alors refusé. La troisième méthode, qui se connecte depuis la machine qui exécute les tests, n'a pas ce problème.
+
+</Info>
 
 ## En CI : passer le cookie comme secret
 
 Ajoutez `PRESTAFLOW_COOKIES` en secret du dépôt (Settings → Secrets and variables → Actions), puis dans votre workflow :
 
 ```yaml
+- name: Setup PHP 8.2
+  uses: shivammathur/setup-php@v2
+  with:
+    php-version: '8.2'
+    tools: composer:v2
+    ini-values: variables_order=EGPCS
+
+# ...
+
 - name: Run PrestaFlow
   env:
     PRESTAFLOW_COOKIES: ${{ secrets.PRESTAFLOW_COOKIES }}
-  run: ./vendor/bin/prestaflow run tests/prestaflow
+  run: composer prestaflow -- run ./tests/prestaflow
 ```
 
-<Warning title="Les cookies de session PrestaShop ont une durée de vie limitée (typiquement 24h à quelques jours selon la config). Un cookie expiré passé à PrestaFlow ne fait pas échouer le run explicitement — la boutique renvoie le login form, PrestaFlow tape dedans en pensant être sur la page cible, et vos assertions cassent avec des messages qui n'ont rien à voir avec le vrai problème. Prévoyez une rotation programmatique (méthode 3 ci-dessus) ou un renouvellement manuel régulier avec une date d'expiration documentée." />
+`ini-values: variables_order=EGPCS` n'est pas un détail : la bibliothèque v1.7.1 lit `PRESTAFLOW_COOKIES` dans `$_ENV`, que PHP laisse vide sans le `E`. Sans ce réglage, la variable passée par `env:` n'atteint pas PrestaFlow, sans aucun message.
+
+<Warning title="Un cookie de session a une durée de vie limitée. Côté navigateur, le cookie PrestaShop du back-office vit par défaut 480 heures (réglage Durée de vie des cookies du back-office), mais la session peut prendre fin avant : déconnexion, changement de mot de passe, et sur PrestaShop 9 expiration de la session PHP côté serveur. Un cookie périmé ne fait pas échouer le run explicitement : la boutique renvoie le formulaire de connexion, et vos assertions cassent avec des messages qui n'ont rien à voir avec le vrai problème. Prévoyez une rotation programmatique (troisième méthode ci-dessus) ou un renouvellement manuel régulier avec une date d'expiration documentée." />
 
 ## Cas 3 : forcer une variante ou bypass une whitelist
 
@@ -130,14 +191,18 @@ Le mécanisme s'applique à n'importe quel cookie, pas seulement d'auth.
 - **IP whitelist** — votre boutique redirige les IP inconnues vers une page maintenance sauf si un cookie `bypass_maintenance=<token>` est présent. Injectez le token, PrestaFlow entre.
 - **Locale forcée** — un cookie qui court-circuite la détection de langue par header.
 
-Rien de spécifique à PrestaShop dans ces trois cas — c'est l'API Chrome standard.
+Rien de spécifique à PrestaShop dans ces trois cas : ce sont des cookies ordinaires, posés par l'API cookies de Chrome.
 
 ## Notes
 
-<Warning title="Ne commit jamais un cookie de session en clair. Passez toujours par un secret GitHub / un vault d'organisation. Un cookie exposé dans un repo public équivaut à un mot de passe admin BO donné à la nature." />
+<Warning title="Ne commitez jamais un cookie de session en clair. Passez toujours par un secret GitHub ou un coffre d'organisation. Un cookie exposé dans un repo public équivaut à un mot de passe admin BO donné à la nature." />
 
-<Info title="Best-effort silencieux : si votre cookie est mal formé ou son domaine ne matche pas exactement l'URL cible, l'injection échoue sans erreur et vos scénarios exécutent quand même le login (ou tombent sur le login form). Après un premier setup, vérifiez avec PRESTAFLOW_HEADLESS=false que Chrome démarre bien sur la page BO logguée, pas sur /login." />
+<Info title="Best-effort silencieux : si votre cookie est mal formé ou si son domaine ne correspond pas à l'URL cible, l'injection échoue sans erreur et vos suites tombent sur le formulaire de connexion. Après un premier setup, vérifiez avec PRESTAFLOW_HEADLESS=false que Chrome arrive bien sur la page BO demandée, connecté, et gardez une assertion comme hasSuccessMessage() dans la suite." />
 
-<Info title="Multi-versions PrestaShop : le format du cookie de session (nom, structure interne) peut évoluer entre versions majeures. Si vous testez 1.7 / 8 / 9 en matrice (voir l'annexe multi-versions), prévoyez un cookie distinct par cellule, ou générez-le programmatiquement à l'exécution." />
+<Info title="Multi-versions PrestaShop : les cookies nécessaires changent d'une version majeure à l'autre (PrestaShop-… seul sur 8, PrestaShop-… et PHPSESSID sur 9). Si vous testez 1.7, 8 et 9 en matrice, prévoyez un jeu de cookies distinct par cellule, ou générez-le à l'exécution.">
 
-<Info title="Prochaine annexe (potentielle) : fixtures et seed data reproductibles — au-delà de la session, comment garantir que votre boutique de test a toujours les mêmes produits, catégories et clients avant chaque suite." />
+Voir l'annexe [Un scénario qui tient de PrestaShop 1.7 à 9](/blog/prestaflow-multi-versions-prestashop/).
+
+</Info>
+
+<Info title="Prochaine annexe : fixtures et seed data reproductibles — au-delà de la session, comment garantir que votre boutique de test a toujours les mêmes produits, catégories et clients avant chaque suite." />

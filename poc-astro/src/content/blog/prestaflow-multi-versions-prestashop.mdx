@@ -12,16 +12,15 @@ summary: >-
   PrestaShop, exécuter la même suite contre chacune, gérer les pièges classiques
   d'un passage 1.7 à 9.
 ---
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites ».">
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Automatiser ses scénarios PrestaFlow en CI ».">
+
+Les exemples suivent le module fil rouge [PrestaFlow/psflowdemo](https://github.com/PrestaFlow/psflowdemo) : son dépôt contient les Pages et les init-scripts présentés ici.
 
 </Info>
 
 ## Décor
 
-Deux facettes du multi-versions PS ont déjà été effleurées dans la série :
-
-* l'[annexe *Factoriser ses Pages*](/blog/prestaflow-factoriser-ses-pages/) a introduit la mécanique `Pages/v7/v8/v9/` en cinq lignes ;
-* l'[article 2 sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a montré la matrice `strategy.matrix.ps-version` qui lance la même suite contre plusieurs images Flashlight.
+L'[article 2 sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) a montré la matrice `strategy.matrix.ps-version` qui lance la même suite contre plusieurs images Flashlight. Encore faut-il que la suite passe sur chacune.
 
 Cette annexe va au bout : comment **structurer concrètement** ses Pages pour qu'un même scénario passe sur PS 1.7, 8 et 9 sans dupliquer sa logique métier, et comment vérifier ça en local *avant* de pousser sur la CI.
 
@@ -30,16 +29,16 @@ Cette annexe va au bout : comment **structurer concrètement** ses Pages pour qu
 Avant d'écrire du code, un inventaire rapide de ce qui varie et fait tomber un scénario d'un passage à l'autre :
 
 * **Layout BO refactoré**. Les pages BO ont migré progressivement de Smarty vers Twig au fil des versions majeures. Le même écran a des sélecteurs différents avant/après.
-* **Templates front**. Le thème Classic évolue entre versions majeures — c'est particulièrement visible sur le tunnel de commande entre 1.7 et 8.
+* **Templates front**. Le thème Classic évolue entre versions majeures, tunnel de commande compris.
 * **URLs friendly**. Les slugs par défaut d'un même contenu peuvent changer (ordre, majuscules, présence d'un préfixe langue).
-* **Features supprimées**. Certaines pages BO disparaissent (traduction legacy en 9, par exemple) — un scénario qui les visite doit être marqué skip ou repensé sur la version cible.
-* **CSRF et sessions**. Le nom du token d'authentification BO évolue ; `login()` gère mais un code custom qui pilote un formulaire à la main peut se coincer.
+* **Features supprimées**. Certaines pages BO disparaissent ou changent d'URL d'une version majeure à l'autre — un scénario qui les visite doit être marqué skip ou repensé sur la version cible.
+* **CSRF et sessions**. La connexion au BO et ses jetons évoluent (en 9, l'authentification BO passe par le composant de sécurité de Symfony) ; `login()` gère, mais un code custom qui pilote un formulaire à la main peut se coincer.
 
 Dit autrement : **ce qui bouge, ce sont les sélecteurs et parfois le flow — pas l'intention métier**. C'est précisément ce que la séparation Page / Suite de l'article 1 est faite pour absorber.
 
 ## Refactor : `psflowdemo` en version-portable
 
-Repartons de la Page `Modules\Psflowdemo\Configuration` de l'annexe 1 (une seule version, `v8`). On veut qu'elle tourne sur v7, v8, v9.
+Prenons la Page `Modules\Psflowdemo\Configuration` de psflowdemo, qui pilote la page de configuration du module dans le BO. On veut qu'elle tourne sur v7, v8, v9, avec une seule copie de sa logique.
 
 <Warning title="Il n'y a pas de fallback automatique. La lib construit le nom de classe strictement à partir de la version courante : Tests\Pages\v9\Modules\Psflowdemo\Configuration\Page. Si ce fichier n'existe pas, l'import lève une exception class-not-found — pas de « je prends v8 à la place ». Chaque version supportée doit avoir sa classe, même vide.">
 
@@ -47,7 +46,7 @@ Repartons de la Page `Modules\Psflowdemo\Configuration` de l'annexe 1 (une seule
 
 ### Le parent commun
 
-Créez `tests/prestaflow/Pages/Common/Modules/Psflowdemo/Configuration/Page.php` — il porte la logique métier et les sélecteurs qui ne changent pas :
+Créez `tests/prestaflow/Pages/Common/Modules/Psflowdemo/Configuration/Page.php` — il porte la logique métier et les sélecteurs, identiques de 1.7 à 9 pour ce module :
 
 ```php
 <?php
@@ -63,12 +62,21 @@ class Page extends BackOfficePage
         return [
             'titleInput' => 'input[name="PSFLOWDEMO_TITLE"]',
             'submitButton' => 'button[name="submitPsflowdemo"]',
+            'successAlert' => '.alert.alert-success',
+            'invalidTokenContinue' => 'a.btn-continue',
         ];
     }
 
     public function openConfiguration(string $boUrl): void
     {
         $this->goToUrl(rtrim($boUrl, '/') . '/index.php?controller=AdminModules&configure=psflowdemo');
+
+        // Sans jeton dans l'URL, PrestaShop affiche « Invalid security token »
+        // et propose un lien pour continuer.
+        if ($this->isVisible($this->getSelector('invalidTokenContinue'), 2000)) {
+            $this->click($this->getSelector('invalidTokenContinue'));
+            $this->waitForPageReload();
+        }
     }
 
     public function fillTitle(string $title): void
@@ -81,12 +89,17 @@ class Page extends BackOfficePage
         $this->click($this->getSelector('submitButton'));
         $this->waitForPageReload();
     }
+
+    public function hasSuccessMessage(): bool
+    {
+        return $this->isVisible($this->getSelector('successAlert'), 5000);
+    }
 }
 ```
 
 ### Les trois sous-classes de version
 
-Créez ensuite les trois fichiers `v7`, `v8`, `v9`. Chacun étend le parent commun et n'override que ce qui diverge :
+Créez ensuite les trois fichiers `v7`, `v8`, `v9`. Chacun étend le parent commun et n'override que ce qui diverge. Pour psflowdemo, rien ne diverge : les trois sont vides.
 
 **`tests/prestaflow/Pages/v8/Modules/Psflowdemo/Configuration/Page.php`** :
 
@@ -99,8 +112,6 @@ use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
 
 class Page extends BasePage
 {
-    // Le formulaire de module en v8 utilise les mêmes sélecteurs que Common.
-    // Rien à surcharger.
 }
 ```
 
@@ -118,7 +129,7 @@ class Page extends BasePage
 }
 ```
 
-**`tests/prestaflow/Pages/v7/Modules/Psflowdemo/Configuration/Page.php`** — imaginons ici que le bouton legacy porte un nom différent, pour illustrer un override :
+**`tests/prestaflow/Pages/v7/Modules/Psflowdemo/Configuration/Page.php`** — toujours identique :
 
 ```php
 <?php
@@ -129,17 +140,23 @@ use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
 
 class Page extends BasePage
 {
-    public function defineSelectors(): array
-    {
-        return array_merge(parent::defineSelectors(), [
-            // Exemple hypothétique : sélecteur qui diverge dans un template legacy.
-            'submitButton' => 'button[name="submitpsflowdemo"]',
-        ]);
-    }
 }
 ```
 
-Trois fichiers dont deux quasi-vides — c'est le coût d'entrée pour la portabilité. Toute la logique reste dans le parent, un seul endroit à modifier quand le comportement métier évolue.
+Le jour où un sélecteur diverge sur une version, c'est dans sa sous-classe qu'on le surcharge. Par exemple, si le bouton portait un autre nom en 1.7 (cas hypothétique, ce n'est pas le cas de psflowdemo) :
+
+```php
+public function defineSelectors(): array
+{
+    return array_merge(parent::defineSelectors(), [
+        'submitButton' => 'button[name="submitpsflowdemo"]',
+    ]);
+}
+```
+
+Trois fichiers vides — c'est le coût d'entrée pour la portabilité. Toute la logique reste dans le parent, un seul endroit à modifier quand le comportement métier évolue.
+
+La Page `Home` de psflowdemo suit le même principe, avec une variante : la classe `v8` porte la logique (sélecteurs du bloc, `getBlockTitle()`), et les classes `v7` et `v9` l'étendent sans rien ajouter.
 
 ## La mécanique de routage
 
@@ -149,27 +166,31 @@ Quand une suite fait :
 $this->importPage('Modules\Psflowdemo\Configuration', domain: 'Tests');
 ```
 
-La lib exécute (schématiquement) :
+La lib construit le nom de classe ainsi (trait `ImportPage`, v1.7.1) :
 
 ```php
-$pageClass = 'Tests\\Pages\\v' . $this->getMajorVersion(namespace: true)
-           . '\\Modules\\Psflowdemo\\Configuration\\Page';
-new $pageClass(...);
+$pageClass = $domain.'\\Pages\\v'.$this->getMajorVersion(namespace: true).'\\'.$pageName.'\\Page';
 ```
 
-`getMajorVersion()` lit `PRESTAFLOW_PS_VERSION` (`8.1.7` → `8`), le namespace est construit, la classe est instanciée. **Il n'y a pas de tentative avec une autre version si le fichier n'existe pas** — c'est pour ça que chaque `v7/`, `v8/`, `v9/` doit exister.
+`getMajorVersion()` part de `PRESTAFLOW_PS_VERSION` (`8.1.7` → `8`, `1.7.8.11` → `7` pour le namespace), le namespace est construit, la classe est instanciée. **Il n'y a pas de tentative avec une autre version si le fichier n'existe pas** — c'est pour ça que chaque `v7/`, `v8/`, `v9/` doit exister.
 
 Le paramètre `domain` change le préfixe du namespace : par défaut il pointe sur `\PrestaFlow\Library` (les Pages fournies par la lib), passer `'Tests'` route vers votre propre namespace `Tests\Pages\...`.
 
 ## Exécuter la même suite contre les trois versions, en local
 
-La matrice CI de l'article 2 fait tourner les trois versions en parallèle sur GitHub Actions. Pratique pour la vérification finale, mais long à la boucle courte du développement.
+La matrice CI de l'article 2 fait tourner les trois versions en parallèle sur GitHub Actions. Pratique pour la vérification finale, mais lent pour la boucle courte du développement.
 
 Un petit script shell fait le même travail localement, en série, avec Flashlight :
 
 ```sh
 #!/usr/bin/env bash
 set -e
+
+if [ -f .env.local ]; then
+    echo ".env.local existe déjà : renommez-le avant de lancer ce script." >&2
+    exit 1
+fi
+trap 'rm -f .env.local' EXIT
 
 docker network create prestaflow 2>/dev/null || true
 
@@ -189,7 +210,7 @@ for version in 1.7.8.11 8.1.7 9.0.0; do
         -e PS_DOMAIN=localhost \
         -e MYSQL_HOST=mysql \
         -v "$PWD":/var/www/html/modules/psflowdemo \
-        -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
+        -v "$PWD/tests/flashlight-init":/tmp/init-scripts:ro \
         prestashop/prestashop-flashlight:$version
 
     # Attente du boot : le back office redirige (302) vers la page de
@@ -201,17 +222,31 @@ for version in 1.7.8.11 8.1.7 9.0.0; do
     done
     [ "$code" = "302" ] || { echo "PrestaShop $version n'a pas démarré"; docker logs ps; exit 1; }
 
-    PRESTAFLOW_PS_VERSION=$version ./vendor/bin/prestaflow run tests/prestaflow
+    # La configuration du tour passe par .env.local, que la lib lit à la
+    # place de .env (voir plus bas).
+    {
+        echo "PRESTAFLOW_PS_VERSION=$version"
+        echo "PRESTAFLOW_LOCALE=en"
+        echo "PRESTAFLOW_FO_URL=http://localhost/"
+        echo "PRESTAFLOW_BO_URL=http://localhost/admin-dev/"
+        echo "PRESTAFLOW_BO_EMAIL=admin@prestashop.com"
+        echo "PRESTAFLOW_BO_PASSWD=prestashop"
+    } > .env.local
+    composer prestaflow -- run ./tests/prestaflow
 done
 
 docker rm -f ps mysql
 ```
 
-Le module est monté dans `modules/psflowdemo` et installé au boot par l'init-script de l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) (`.flashlight/init-scripts/10-install-module.sh`). Trois autres détails comptent. Flashlight n'embarque pas MySQL : chaque version a sa propre base MariaDB, sur un réseau Docker partagé, et la boutique réessaie de s'y connecter jusqu'à ce qu'elle réponde. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt) et doit correspondre à l'URL vue depuis votre machine. Enfin, vérifiez les tags avant de les épingler : `1.7.8` n'existe pas, `1.7.8.11` oui, et les versions récentes n'existent qu'avec un suffixe (`9.2.0-nginx`). L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) détaille ces points.
+Le module est monté dans `modules/psflowdemo` et installé au boot par l'init-script de l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) (`tests/flashlight-init/10-install-module.sh`). Trois autres détails comptent. Flashlight n'embarque pas MySQL : chaque version a sa propre base MariaDB, sur un réseau Docker partagé, et la boutique réessaie de s'y connecter jusqu'à ce qu'elle réponde. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt) et doit correspondre à l'URL vue depuis votre machine. Enfin, vérifiez les tags avant de les épingler : `1.7.8` n'existe pas, `1.7.8.11` oui, et les versions récentes n'existent qu'avec un suffixe (`9.2.0-nginx`). L'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/) détaille ces points.
 
 Côté PrestaFlow, le seul truc qui change entre chaque itération : la variable `PRESTAFLOW_PS_VERSION` qui pilote le routage `importPage`. Les scénarios ne connaissent pas la version qu'ils testent, ce sont les Pages qui s'adaptent.
 
-<Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans attendre les 5-10 minutes de la matrice complète. Vous re-jouez uniquement la version fautive avec PRESTAFLOW_HEADLESS=false pour voir Chrome faire son travail.">
+Pourquoi un `.env.local` plutôt qu'un simple `PRESTAFLOW_PS_VERSION=$version composer prestaflow -- …` ? La bibliothèque v1.7.1 lit sa configuration dans `$_ENV`, que PHP laisse vide quand `variables_order` ne contient pas le `E` (le réglage des `php.ini` fournis avec PHP). La variable passée en ligne de commande est alors ignorée sans message, et le `.env` aussi, puisque la variable existe déjà : toutes les itérations tourneraient avec la version par défaut de la lib. `.env.local`, quand il existe, est lu à la place de `.env` : le script en écrit un à chaque tour, avec les valeurs d'une boutique Flashlight (anglais, `admin@prestashop.com` / `prestashop`), et le supprime à la fin. Le `./` devant `tests/prestaflow` compte aussi : la v1.7.1 met la première lettre du chemin en majuscule, ce qui passe sur macOS mais pas sous Linux.
+
+Dernier point : une boutique Flashlight neuve n'a aucun moyen de paiement actif. Une suite qui passe commande, comme `Checkout` dans psflowdemo, s'arrête à l'étape de paiement, sur les trois versions. Activez un module de paiement dans un init-script, ou lancez un dossier de suites qui n'en contient pas.
+
+<Info title="Ce script est utile pour reproduire un échec CI vu sur une version, sans relancer toute la matrice. Réduisez la boucle à la version fautive et ajoutez PRESTAFLOW_HEADLESS=false au .env.local généré pour voir Chrome faire son travail.">
 
 </Info>
 
@@ -271,10 +306,10 @@ Reco : privilégier l'override, ne recourir à `getMajorVersion()` que quand la 
 
 </Info>
 
-<Info title="Combiné avec le tag automatique des régressions visuelles (voir l'annexe précédente), un même visualCheckpoint('home-block') produit un baseline distinct par version : visual-baseline/home-block--auto-v8-1280x800-fr.png et visual-baseline/home-block--auto-v9-1280x800-fr.png. Zéro configuration à ajouter.">
+<Info title="Combiné avec le tag automatique des régressions visuelles (sujet d'une annexe dédiée), un même visualCheckpoint('home-block') produit un baseline distinct par version, par exemple visual-baseline/home-block--auto-v8-1280x800-fr.png et visual-baseline/home-block--auto-v9-1280x800-fr.png pour une fenêtre de 1280 × 800. Zéro configuration à ajouter. Exception : en 1.7, la version majeure vaut 1.7, que le tag ne sait pas écrire ; le segment devient auto-v?-… (un baseline à part, qui reste distinct de ceux de 8 et 9).">
 
 </Info>
 
-<Info title="Prochaine annexe : gérer les scénarios sur plusieurs locales — traductions BO, contenus front localisés, assertions robustes à la langue de la boutique.">
+<Info title="Prochaine annexe : factoriser ses Pages entre plusieurs suites — plusieurs Pages par module, traits, sélecteurs stables, une Page par version PrestaShop.">
 
 </Info>

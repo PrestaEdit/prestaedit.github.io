@@ -13,7 +13,9 @@ summary: >-
   Le scénario reste, gratuit.
 draft: false
 ---
-<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow ».">
+<Info title="Annexe de la série PrestaFlow. Prérequis : avoir lu « Écrire son premier scénario de test avec PrestaFlow » et « Factoriser ses Pages entre plusieurs suites ».">
+
+On reprend le module fil rouge [PrestaFlow/psflowdemo](https://github.com/PrestaFlow/psflowdemo) et sa Page `Configuration` (`openConfiguration()`, `fillTitle()`, `save()`), présentée dans l'annexe [Factoriser ses Pages](/blog/prestaflow-factoriser-ses-pages/).
 
 </Info>
 
@@ -38,13 +40,15 @@ Le pattern TDD, appliqué à PrestaFlow, ré-ordonne :
 3. **Run local rouge** — confirmation qu'on a bien compris le bug (si le scénario passe vert du premier coup, le bug n'est pas là où on croit).
 4. **Écrire le fix**.
 5. **Run local vert** — confirmation que le fix fait vraiment ce qu'on croit (si le scénario reste rouge, le fix ne couvre pas le cas décrit).
-6. **Committer le fix ET le scénario** — le scénario reste dans la suite, il pesera trois secondes à chaque run futur, et il rattrape la régression le jour où elle reviendra.
+6. **Committer le fix ET le scénario** — le scénario reste dans la suite, il pèsera quelques secondes à chaque run futur, et il rattrape la régression le jour où elle reviendra.
 
 L'étape 3 est celle qu'on saute habituellement. Elle est cruciale — un scénario qui passe vert sans le fix indique qu'on regarde la mauvaise partie du code. Autant s'en rendre compte avant d'écrire 40 lignes de patch qui ne servent à rien.
 
 ## Cas concret avec `psflowdemo`
 
 Bug fictif mais représentatif : *"le titre du bloc n'est pas échappé côté template. Si un admin saisit un titre contenant du HTML (`<script>alert(1)</script>Bienvenue`), le navigateur exécute le script au lieu d'afficher le texte."*
+
+Côté code, le coupable tient en un mot. Le front de PrestaShop échappe par défaut les variables Smarty ; pour obtenir ce bug, il faut que le template l'ait désactivé, avec `{$psflowdemo_title nofilter}` dans `views/templates/hook/displayHome.tpl`.
 
 ### Étape 1 — Écrire le scénario qui reproduit
 
@@ -58,8 +62,10 @@ namespace Tests\Suites\Regression;
 use PrestaFlow\Library\Expects\Expect;
 use PrestaFlow\Library\Tests\TestsSuite;
 
-// Régression : issue #142. Le titre du bloc était rendu non échappé,
-// permettant une injection HTML/JS depuis la page de config BO.
+/**
+ * Regression #142 — le titre du bloc était affiché sans échappement par
+ * views/templates/hook/displayHome.tpl. Ne supprimez jamais cette suite.
+ */
 class NoXssInBlockTitle extends TestsSuite
 {
     public function init()
@@ -71,6 +77,7 @@ class NoXssInBlockTitle extends TestsSuite
         extract($this->pages);
 
         $payload = '<script>window.__xssFired=true</script>Bienvenue';
+        $defaultTitle = 'Bienvenue sur notre boutique';
 
         $this
         ->describe('Regression #142 — pas de XSS via le titre du bloc')
@@ -78,7 +85,7 @@ class NoXssInBlockTitle extends TestsSuite
             $backOfficeLoginPage->goToPage('login');
             $backOfficeLoginPage->login();
         })
-        ->it('accepte un titre contenant du HTML/JS depuis la config', function () use ($modulesPsflowdemoConfigurationPage) use ($payload) {
+        ->it('accepte un titre contenant du HTML/JS depuis la config', function () use ($modulesPsflowdemoConfigurationPage, $payload) {
             $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
             $modulesPsflowdemoConfigurationPage->fillTitle($payload);
             $modulesPsflowdemoConfigurationPage->save();
@@ -86,58 +93,83 @@ class NoXssInBlockTitle extends TestsSuite
         ->it('n\'exécute pas le script sur la home', function () use ($modulesPsflowdemoHomePage) {
             $modulesPsflowdemoHomePage->goToPage('home');
 
-            // Le titre doit apparaître littéralement, pas être interprété.
+            // '<script' et non '<script>' : PrestaShop passe la valeur dans
+            // HTMLPurifier, qui l'enregistre sous la forme
+            // <script type="text/javascript"><!--//--><![CDATA[ ...
             Expect::that($modulesPsflowdemoHomePage->getBlockTitle())
-                ->contains('<script>');
+                ->contains('<script');
 
-            // Le script ne doit pas avoir été exécuté.
             $xssFired = $modulesPsflowdemoHomePage->getPage()
                 ->evaluate('window.__xssFired === true')
                 ->getReturnValue();
 
             Expect::that($xssFired)->isTheSameAs(false);
+        })
+        ->it('remet le titre par défaut', function () use ($modulesPsflowdemoConfigurationPage, $defaultTitle) {
+            $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+            $modulesPsflowdemoConfigurationPage->fillTitle($defaultTitle);
+            $modulesPsflowdemoConfigurationPage->save();
         });
     }
 }
 ```
 
+Deux détails font que ce scénario peut passer au vert une fois le bug corrigé :
+
+* **HTMLPurifier.** Le module enregistre le titre avec `Configuration::updateValue(..., true)` (HTML autorisé), donc PrestaShop le fait passer par HTMLPurifier. Celui-ci ne supprime pas la balise, il la réécrit en `<script type="text/javascript"><!--//--><![CDATA[…`. Une assertion sur `<script>` échouerait même avec le fix. On cherche `<script`.
+* **Les entités HTML.** Une fois le template corrigé, la page contient `&lt;script…`, et `getTextContent()` renvoie ces entités telles quelles. La méthode `getBlockTitle()` de la Page `Home` de psflowdemo les décode (`html_entity_decode()`) avant de rendre le titre.
+
+Le dernier `it` remet le titre par défaut, pour que le run suivant reparte d'un état connu.
+
 ### Étape 2 — Confirmer le rouge
 
 ```sh
-./vendor/bin/prestaflow run tests/prestaflow
+composer prestaflow -- run ./tests/prestaflow/Suites/Regression
 ```
 
-Le troisième `it` tombe : `getBlockTitle()` retourne `"Bienvenue"` seul (le `<script>` a été *interprété* et n'apparaît pas dans le texte visible), et `window.__xssFired` vaut `true`. Deux assertions échouées, mais qui pointent vers **le même bug** de fond.
+En v1.7.1, `run` attend un dossier, pas un fichier : on vise `Suites/Regression` pour la boucle courte, la CI lance tout `./tests/prestaflow`. Gardez le `./` devant le chemin : cette version met la première lettre du chemin en majuscule (`Tests/prestaflow`), ce qui passe sur macOS mais pas sous Linux, donc pas en CI.
 
-Preuve documentée que vous avez bien compris le problème. La capture d'erreur (voir [annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/)) montre l'état exact de la home avec le script exécuté — attachable au ticket si besoin.
+Le troisième `it` tombe : `getBlockTitle()` retourne `"Bienvenue"` seul (le `<script>` a été *interprété* par le navigateur et n'apparaît pas dans le texte visible). Le `it` s'arrête à cette première assertion : la seconde, sur `window.__xssFired`, n'est pas évaluée, mais elle aurait échoué aussi, pour la même raison de fond. Le dernier `it` est sauté ; la boutique garde donc le titre piégé jusqu'au prochain run vert.
+
+Preuve documentée que vous avez bien compris le problème. La capture d'erreur (voir [annexe debug](/blog/prestaflow-debug-un-scenario-qui-casse/)) montre l'état exact de la home au moment de l'échec, attachable au ticket si besoin.
 
 ### Étape 3 — Fix
 
-Dans le template Smarty du module : `{$title|escape:'html'}` à la place de `{$title}`. Une ligne.
+Dans `views/templates/hook/displayHome.tpl`, remplacez `{$psflowdemo_title nofilter}` par `{$psflowdemo_title|escape:'html':'UTF-8'}`. Une ligne.
+
+Sur une boutique Flashlight, un détail de plus : les templates Smarty compilés sont conservés, le template modifié n'est pas relu. Videz le cache Smarty avant de relancer :
+
+```sh
+docker exec ps sh -c 'rm -rf /var/www/html/var/cache/*/smarty'
+```
+
+(`ps` est le nom du conteneur PrestaShop dans l'[article sur la CI](/blog/automatiser-ses-scenarios-prestaflow-en-ci/) ; adaptez-le au vôtre.)
 
 ### Étape 4 — Confirmer le vert
 
 ```sh
-./vendor/bin/prestaflow run tests/prestaflow
+composer prestaflow -- run ./tests/prestaflow/Suites/Regression
 ```
 
-`getBlockTitle()` contient désormais `<script>window.__xssFired=true</script>Bienvenue` littéralement (avec entities HTML), et `window.__xssFired` reste `undefined`. Le scénario passe vert.
+Le titre s'affiche désormais comme du texte : `getBlockTitle()` renvoie la balise réécrite par HTMLPurifier, qui contient bien `<script`, et `window.__xssFired` reste `undefined`, donc `window.__xssFired === true` vaut `false`. Le scénario passe vert.
 
 ### Étape 5 — Commit
 
+Depuis la racine du dépôt du module :
+
 ```sh
 git add tests/prestaflow/Suites/Regression/NoXssInBlockTitle.php
-git add modules/psflowdemo/views/templates/hook/displayHome.tpl
+git add views/templates/hook/displayHome.tpl
 git commit -m "fix(#142): escape title in home block template + regression test"
 ```
 
-Le scénario vit désormais avec le code. Chaque futur push le rejoue. Le jour où quelqu'un touche à ce template et oublie le `escape`, le CI passe rouge avec un message qui pointe directement sur le fichier de régression et le numéro d'issue.
+Le scénario vit désormais avec le code. Chaque futur push le rejoue. Le jour où quelqu'un touche à ce template et remet un `nofilter`, le CI passe rouge sur une suite dont la description, *"Regression #142 — pas de XSS via le titre du bloc"*, pointe directement sur le numéro d'issue.
 
 ## L'effet cumulé sur le CI
 
-Un `it` de régression ajouté prend 3 à 10 secondes par run. Négligeable individuellement. Après six mois d'usage TDD, votre suite `Suites/Regression/` contient vingt à quarante scénarios qui couvrent tous les cas limites que votre projet a rencontrés en production.
+Un scénario de régression comme celui-ci prend quelques secondes par run (environ cinq, connexion au BO comprise, contre une boutique Flashlight locale). Négligeable individuellement. Au fil des mois, votre dossier `Suites/Regression/` grossit d'un scénario par bug corrigé, et finit par couvrir les cas limites que votre projet a rencontrés en production.
 
-C'est votre **mémoire institutionnelle** — encodée en tests exécutables, pas dans des tickets fermés que personne ne relit. Le nouveau contributeur qui casse par accident un cas oublié voit son CI rouge, et la classe de la suite lui donne le contexte : *"Regression #142 — pas de XSS via le titre du bloc"*.
+C'est votre **mémoire institutionnelle** — encodée en tests exécutables, pas dans des tickets fermés que personne ne relit. Le nouveau contributeur qui casse par accident un cas oublié voit son CI rouge, et la description de la suite lui donne le contexte : *"Regression #142 — pas de XSS via le titre du bloc"*.
 
 ## Quand ça marche vraiment bien
 
@@ -171,7 +203,7 @@ Ce sont **les bugs qui exigent qu'on parcoure l'app comme un utilisateur** pour 
 
 </Info>
 
-<Warning title="Ne retirez jamais un scénario de régression une fois le bug fixé. C'est là, précisément, qu'il gagne sa valeur — il coûte 3 secondes au run pour vous éviter un jour de dette technique.">
+<Warning title="Ne retirez jamais un scénario de régression une fois le bug fixé. C'est là, précisément, qu'il gagne sa valeur — il coûte quelques secondes au run pour vous éviter un jour de dette technique.">
 
 </Warning>
 
