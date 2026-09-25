@@ -15,7 +15,7 @@ summary: "Garantir que la boutique de test a toujours le même état avant chaqu
 
 Plusieurs annexes précédentes ont contourné le sujet. L'annexe [*Tester un module tiers*](/blog/prestaflow-tester-un-module-tiers/) a couvert l'isolation des données au ras des pâquerettes : suffixe timestamp pour éviter les doublons, cleanup optionnel en fin de suite. Ça marche tant qu'on présuppose que la boutique a **déjà** ce qu'il faut — au moins un produit vendable, un mode de livraison configuré, une TVA active, un compte client valide.
 
-Sur une boutique de démo Flashlight fraîche, la plupart de ces prérequis existent par défaut (produits, transporteurs, compte client de démo), mais aucun moyen de paiement n'est actif. Sur un projet un peu plus mûr — module qui teste un cas métier précis, boutique dont on veut contrôler chaque objet — il faut souvent semer plus. C'est le sujet de cette annexe.
+Sur une boutique de démo Flashlight fraîche, la plupart de ces prérequis existent par défaut (produits, transporteurs, compte client de démo), mais les modules de paiement n'acceptent que le Royaume-Uni, le pays d'installation de l'image : une commande livrée en France ne trouve aucun moyen de paiement. C'est exactement le genre de prérequis qu'un init-script corrige (voir celui de psflowdemo, `tests/flashlight-init/30-enable-payment.sh`). Sur un projet un peu plus mûr — module qui teste un cas métier précis, boutique dont on veut contrôler chaque objet — il faut souvent semer plus. C'est le sujet de cette annexe.
 
 **Trois niveaux de fixtures**, choisis selon la question qui compte : *à quelle fréquence l'état doit-il être rechargé ?*
 

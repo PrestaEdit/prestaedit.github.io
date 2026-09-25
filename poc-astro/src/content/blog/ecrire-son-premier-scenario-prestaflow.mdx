@@ -160,7 +160,7 @@ Gardez le `./` devant le chemin : la version 1.7.1 de la CLI met en majuscule la
 </Info>
 
 <Warning title="Le scénario GuestCheckout cible par défaut la boutique de démo francophone (locale fr, produit 1-1-hummingbird-printed-t-shirt.html)">
-La suite lui passe la locale du `.env` en second argument de `scenario()`. Les autres paramètres (produit, adresse, e-mail invité) se surchargent de la même façon ; la liste est dans `src/Scenarios/GuestCheckout.php`. Le scénario va jusqu'à la confirmation de commande : la boutique doit donc avoir un moyen de paiement actif. Sur une boutique Flashlight neuve, aucun ne l'est et le parcours s'arrête à l'étape de paiement.
+La suite lui passe la locale du `.env` en second argument de `scenario()`. Les autres paramètres (produit, adresse, e-mail invité) se surchargent de la même façon ; la liste est dans `src/Scenarios/GuestCheckout.php`. Le scénario va jusqu'à la confirmation de commande : la boutique doit donc proposer un moyen de paiement pour l'adresse française du scénario. Sur une boutique Flashlight neuve, ce n'est pas le cas : les modules de paiement sont actifs, mais réservés au Royaume-Uni, le pays d'installation de l'image. Pour y remédier, l'init-script `tests/flashlight-init/30-enable-payment.sh` du module psflowdemo active la France et ouvre les modules de paiement à tous les pays actifs.
 </Warning>
 
 PrestaFlow ouvre Chrome en arrière-plan, va sur la page produit, ajoute au panier, remplit l'adresse, choisit la livraison et le paiement, puis vérifie que la page de confirmation est bien atteinte. Le déroulé s'affiche dans le terminal, étape par étape, avec un bilan final.

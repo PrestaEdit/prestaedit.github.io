@@ -295,7 +295,7 @@ Séquence :
 
 Pour le checkout, on réutilise le scénario `CheckoutOrder` fourni par la bibliothèque : il commande en front, puis stocke la référence de la commande, qu'on relit avec `$this->retrieve('orderReference')`.
 
-Sur une boutique Flashlight neuve, aucun moyen de paiement n'est actif : `CheckoutOrder` s'arrêterait à l'étape de paiement, et aucune commande ne serait créée. Installez et activez un module de paiement hors ligne (chèque ou virement, par exemple) dans un init-script de la boutique avant de lancer la suite.
+Sur une boutique Flashlight neuve, les modules de paiement sont réservés au Royaume-Uni, le pays d'installation de l'image : avec une adresse française, `CheckoutOrder` ne trouverait aucun moyen de paiement, et aucune commande ne serait créée. Avant de lancer la suite, l'init-script `tests/flashlight-init/30-enable-payment.sh` du module psflowdemo active la France et ouvre les modules de paiement à tous les pays actifs.
 
 Créez `tests/prestaflow/Suites/NotifyWebhook.php` :
 
