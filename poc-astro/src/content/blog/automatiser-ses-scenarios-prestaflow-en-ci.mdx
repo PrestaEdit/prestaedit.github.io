@@ -19,7 +19,7 @@ Cet article s'inscrit dans la suite de « Écrire son premier scénario de test 
 
 ## Préambule
 
-Dans l'[article précédent](/blog/ecrire-son-premier-scenario-prestaflow/), nous avons mis en place trois suites PrestaFlow pour le module `psflowdemo` — un parcours d'achat fourni, plus deux suites custom — et nous les avons lancées en local avec `./vendor/bin/prestaflow run tests/prestaflow`.
+Dans l'[article précédent](/blog/ecrire-son-premier-scenario-prestaflow/), nous avons mis en place trois suites PrestaFlow pour le module `psflowdemo` — un parcours d'achat fourni, plus deux suites custom — et nous les avons lancées en local avec `composer prestaflow -- run ./tests/prestaflow`. La librairie y est installée dans `vendor-dev/`, avec un script Composer `prestaflow` : voir la section Installation de l'article précédent.
 
 Fonctionnel, mais rapidement fastidieux : à chaque commit, sur chaque version de PrestaShop qu'on prétend supporter, il faudrait relancer ces scénarios à la main. C'est très exactement le même argumentaire que celui du [précédent article sur PHPStan en CI](/blog/tester-son-module-via-ci-cd/), transposé au fonctionnel.
 
@@ -61,6 +61,7 @@ jobs:
           php-version: '8.2'
           extensions: gd
           tools: composer:v2
+          ini-values: variables_order=EGPCS
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
@@ -88,7 +89,7 @@ jobs:
             -e PS_DOMAIN=localhost \
             -e MYSQL_HOST=mysql \
             -v "$PWD":/var/www/html/modules/psflowdemo \
-            -v "$PWD/.flashlight/init-scripts":/tmp/init-scripts:ro \
+            -v "$PWD/tests/flashlight-init":/tmp/init-scripts:ro \
             prestashop/prestashop-flashlight:8.1.7
 
       - name: Wait for PrestaShop to be ready
@@ -113,14 +114,15 @@ jobs:
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
           PRESTAFLOW_BO_PASSWD: prestashop
           PRESTAFLOW_HEADLESS: 'true'
-        run: ./vendor/bin/prestaflow run tests/prestaflow
+        run: composer prestaflow -- run ./tests/prestaflow
 
-      - name: Upload PrestaFlow report on failure
+      - name: Upload PrestaFlow screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: prestaflow-report
-          path: tests/prestaflow/reports/
+          name: prestaflow-output
+          path: prestaflow/
+          if-no-files-found: ignore
 ```
 
 <Info title="Les variables d'environnement PRESTAFLOW_* du bloc env: reprennent la même logique que le fichier .env local de l'article 1, avec les valeurs propres à Flashlight : le dossier admin est /admin-dev/ et les identifiants BO par défaut sont admin@prestashop.com / prestashop (définis dans assets/hydrate.sh du dépôt PrestaShop/prestashop-flashlight)." />
@@ -128,15 +130,15 @@ jobs:
 Ce workflow fait, dans l'ordre :
 
 1. **Cloner le module** (`actions/checkout`).
-2. **Installer PHP et Composer**, puis les dépendances du module (`shivammathur/setup-php`, `composer install`).
+2. **Installer PHP et Composer**, puis les dépendances du module (`shivammathur/setup-php`, `composer install`, qui les range dans `vendor-dev/`). Le réglage `variables_order=EGPCS` n'est pas décoratif : la librairie v1.7.1 lit sa configuration dans `$_ENV`, que le PHP installé par setup-php ne remplit pas par défaut. Sans lui, les variables du bloc `env:` n'atteignent pas PrestaFlow, qui retombe sur ses valeurs par défaut (`https://localhost/`, identifiants de la boutique de démo).
 3. **Démarrer une base MariaDB**. Flashlight embarque nginx et php-fpm, mais **pas MySQL** : sans base à côté, le conteneur boucle indéfiniment sur « Cannot connect to MySQL, retrying » et la boutique ne répond jamais. Attendre le healthcheck de la base fait échouer le job tout de suite, avec un message clair, si elle ne démarre pas.
 4. **Démarrer Flashlight** sur le même réseau Docker, avec l'image PS 8.1.7, en y montant le module (le dépôt cloné) dans `modules/psflowdemo`. `PS_DOMAIN` est obligatoire (sans lui, le conteneur s'arrête aussitôt avec le code 2 : « Missing PS_DOMAIN ») et doit correspondre à l'URL vue depuis le runner, port compris : ici `localhost`, puisque `-p 80:80` expose le port 80.
 5. **Installer le module** : monter le dossier ne suffit pas, PrestaShop doit encore l'installer. C'est le rôle de l'init-script monté dans `/tmp/init-scripts`, décrit juste après.
 6. **Attendre que PrestaShop réponde** en interrogeant `/admin-dev/` jusqu'à obtenir un 302 (redirection vers la page de connexion). Un 200 sur `/` ne suffit pas : il prouve seulement que quelque chose écoute sur le port, et le front répond avant la fin des post-scripts éventuels.
-7. **Lancer PrestaFlow** avec les variables d'environnement pointant vers `http://localhost/`. La locale est `en` : l'image Flashlight n'installe que l'anglais.
-8. **Uploader le rapport HTML en artifact** si un scénario échoue, pour pouvoir l'inspecter depuis l'interface GitHub sans avoir à rejouer.
+7. **Lancer PrestaFlow** via le script Composer, avec les variables d'environnement pointant vers `http://localhost/`. La locale est `en` : l'image Flashlight n'installe que l'anglais. Le `./` devant `tests/prestaflow` est indispensable sous Linux : la CLI v1.7.1 met en majuscule la première lettre du chemin, et `Tests/prestaflow` n'existe pas.
+8. **Uploader le dossier `prestaflow/` en artifact** si le job échoue. Il n'y a pas de rapport HTML : on y trouve les captures pleine page prises au moment où une assertion a échoué (`prestaflow/screens/errors/`), à inspecter depuis l'interface GitHub sans avoir à rejouer. Ajoutez `--junit` à la commande si vous voulez aussi un `prestaflow/junit.xml`.
 
-L'init-script, à versionner dans le dépôt du module sous `.flashlight/init-scripts/10-install-module.sh` (et à rendre exécutable avec `chmod +x`, sinon Flashlight le saute) :
+L'init-script, à versionner dans le dépôt du module sous `tests/flashlight-init/10-install-module.sh` (et à rendre exécutable avec `chmod +x`, sinon Flashlight le saute) :
 
 ```sh
 #!/bin/sh
@@ -148,9 +150,19 @@ Flashlight exécute les init-scripts au premier démarrage, une fois la base res
 
 Pour aller plus loin sur l'image elle-même (choix du tag, post-scripts, matrice de versions en `docker compose`, pièges), voir l'annexe [PrestaShop Flashlight : des boutiques jetables pour tester](/blog/prestaflow-flashlight-boutiques-jetables/).
 
-<Info title="La CLI PrestaFlow retourne un code de sortie non-nul en cas d'échec. C'est ce qui fait rougir le job." />
+<Warning title="Un job vert ne prouve pas tout avec la CLI v1.7.1">
+Quand une étape échoue, sur une assertion `Expect` ou sur une exception levée dans un `it`, la CLI se termine avec un code non nul et le job rougit. En revanche, une exception qui interrompt la CLI elle-même (dossier de suites introuvable, erreur dans le `init()` d'une suite…) affiche une ligne `ERROR` suivie d'une trace, puis la version 1.7.1 renvoie 0 : le job reste vert.
 
-C'est déjà utile en l'état : chaque push est testé, l'échec est visible, les rapports sont téléchargeables. Le tout sans avoir créé un seul compte externe.
+Pour vous en protéger, faites échouer l'étape quand la sortie contient cette ligne :
+
+```sh
+set -o pipefail
+composer prestaflow -- run ./tests/prestaflow 2>&1 | tee prestaflow-cli.log
+! grep -q '^ERROR' prestaflow-cli.log
+```
+</Warning>
+
+C'est déjà utile en l'état : chaque push est testé, les échecs d'assertion sont visibles, les captures sont téléchargeables. Le tout sans avoir créé un seul compte externe.
 
 ## Niveau 2 : l'Action officielle `PrestaFlow/github-action`
 
@@ -158,7 +170,7 @@ Le niveau 1 marche, mais il laisse plusieurs choses à désirer :
 
 * **Aucune synthèse dans la PR.** Il faut aller lire les logs pour savoir ce qui a échoué.
 * **Pas d'historique.** Chaque run repart de zéro, sans comparaison possible avec les précédents.
-* **Pas de régressions visuelles.** On ne détecte pas qu'un template s'est cassé si aucun sélecteur ne bouge.
+* **Pas de suivi des régressions visuelles.** Les références d'images ne sont pas partagées d'un run à l'autre : on ne détecte pas qu'un template s'est cassé si aucun sélecteur ne bouge.
 * **Le workflow YAML gonfle** dès qu'on ajoute des versions de PS.
 
 L'[Action officielle PrestaFlow](https://github.com/PrestaFlow/github-action) résout tout cela, en s'appuyant sur la plateforme [prestaflow.io](https://prestaflow.io).
@@ -175,13 +187,18 @@ Trois choses à faire, une seule fois :
 
 ### Déclarer le script Composer
 
-L'Action attend un script Composer nommé `prestaflow:json:file`, qui lance PrestaFlow avec le format de sortie qu'elle sait consommer. Ajoutez-le à votre `composer.json` :
+L'Action attend un script Composer nommé `prestaflow:json:file`, qui lance PrestaFlow avec le format de sortie qu'elle sait consommer (`prestaflow/results.json`). Ajoutez-le à côté du script `prestaflow` déclaré dans l'article précédent :
 
 ```json
 "scripts": {
-    "prestaflow:json:file": "./vendor/prestaflow/php-library/bin/prestaflow run --output=JSON ./tests --file"
+    "prestaflow": "./vendor-dev/prestaflow/php-library/bin/prestaflow",
+    "prestaflow:json:file": "@prestaflow run --output=JSON ./tests --file"
 }
 ```
+
+<Warning title="En v1.7.1, results.json ne contient que la dernière suite exécutée">
+Chaque suite réécrit le fichier : c'est donc la dernière suite, par ordre alphabétique, que l'Action analyse et remonte à la plateforme. Les compteurs `passed` / `failed`, le statut de l'étape et le commentaire de PR ne reflètent qu'elle. L'input `suites` de l'Action n'y change rien en v1.7.1 : la librairie ne lit pas encore ce filtre. Pour le détail des autres suites, lisez la sortie de l'étape, qui les affiche toutes.
+</Warning>
 
 ### Le workflow
 
@@ -211,6 +228,7 @@ jobs:
           php-version: '8.2'
           extensions: gd
           tools: composer:v2
+          ini-values: variables_order=EGPCS
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
@@ -218,21 +236,30 @@ jobs:
       - name: Run PrestaFlow
         id: prestaflow
         uses: PrestaFlow/github-action@v2
+        env:
+          PRESTAFLOW_LOCALE: en
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
         with:
           token: ${{ secrets.PRESTAFLOW_TOKEN }}
           projectId: 'pk_01ABCDEFGHIJKLMNOP'
           flashlight: true
           ps-version: '8.1.7'
-          flashlight-init-scripts: .flashlight/init-scripts
+          flashlight-init-scripts: tests/flashlight-init
 ```
 
-**15 lignes utiles**, contre 40 pour le niveau 1. Ce que l'Action fait à votre place :
+Nettement plus court que le niveau 1. Ce que l'Action fait à votre place :
 
-* **Démarre Flashlight** avec la version demandée via l'input `ps-version`, et monte le dépôt dans `modules/` (d'après le `type` de votre `composer.json`). Plus de `docker run` manuel, plus d'attente `curl`. Le module est monté, pas installé : l'input `flashlight-init-scripts` réutilise l'init-script du niveau 1 pour l'installer.
-* **Injecte les variables d'environnement** attendues par la lib (URLs, credentials, locale).
+* **Démarre Flashlight** et sa base MariaDB avec la version demandée via l'input `ps-version`, et monte le dépôt dans `modules/` : le `type` `prestashop-module` et le `name` `prestaflow/psflowdemo` de votre `composer.json` donnent `modules/psflowdemo`. Plus de `docker run` manuel, plus de boucle `curl`. Le module est monté, pas installé : l'input `flashlight-init-scripts` réutilise l'init-script du niveau 1 pour l'installer.
+* **Transmet l'URL de la boutique et la version** : l'Action ne fournit que `PRESTAFLOW_FO_URL` et `PRESTAFLOW_PS_VERSION` (elle les écrit aussi dans un `.env.local`). L'URL du BO s'en déduit (`/admin-dev/` est le dossier par défaut de la lib, et celui de Flashlight). Les identifiants BO et la locale, eux, ne sont pas injectés : c'est le rôle du bloc `env:` de l'étape, qui n'atteint la librairie qu'avec `variables_order=EGPCS` côté setup-php, comme au niveau 1.
 * **Lance le script Composer `prestaflow:json:file`** puis pousse le résultat à la plateforme.
-* **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (respecté par le bloc `permissions: pull-requests: write`).
-* **Synchronise les régressions visuelles** avec la plateforme : les baselines sont téléchargées avant l'exécution, les nouvelles captures et les diffs sont uploadés à la fin. Un template modifié qui casse le rendu apparaît dans le rapport visuel de la plateforme, même si aucun `it` ne tombe.
+* **Poste un commentaire de synthèse** sur la PR si le workflow tourne sur un `pull_request` (d'où le bloc `permissions: pull-requests: write`).
+* **Téléverse `prestaflow/results.json` et les captures d'échec** en artifact (input `upload-artifacts`, actif par défaut).
+* **Synchronise les régressions visuelles** avec la plateforme, si vos suites posent des points de contrôle visuels (`visualCheckpoint()`) : les baselines sont téléchargées avant l'exécution, les nouvelles captures et les diffs sont envoyés à la fin. Un template modifié qui casse le rendu apparaît alors dans le rapport visuel de la plateforme, même si aucun `it` ne tombe.
+
+<Info title="L'Action attend la boutique moins strictement que le niveau 1">
+Pour savoir si Flashlight est prêt, l'Action se contente d'une réponse entre 200 et 399 sur la page d'accueil, là où le niveau 1 attendait un 302 sur `/admin-dev/`. C'est la vérification jugée insuffisante plus haut, mais ses deux défauts pèsent moins ici : l'Action démarre elle-même un conteneur neuf sur un port libre, donc on ne peut pas tomber sur un ancien conteneur, et les init-scripts s'exécutent avant que la boutique réponde (l'Action ne propose pas de post-scripts).
+</Info>
 
 ### Consommer les outputs
 
@@ -265,28 +292,36 @@ jobs:
         ps-version: ['1.7.8.11', '8.1.7', '9.0.0']
     steps:
       - uses: actions/checkout@v4
-      # ... setup PHP, composer install ...
+      # ... setup PHP (avec variables_order=EGPCS), composer install ...
       - uses: PrestaFlow/github-action@v2
+        env:
+          PRESTAFLOW_LOCALE: en
+          PRESTAFLOW_BO_EMAIL: admin@prestashop.com
+          PRESTAFLOW_BO_PASSWD: prestashop
         with:
           token: ${{ secrets.PRESTAFLOW_TOKEN }}
           projectId: 'pk_01ABCDEFGHIJKLMNOP'
           flashlight: true
           ps-version: ${{ matrix.ps-version }}
-          flashlight-init-scripts: .flashlight/init-scripts
+          flashlight-init-scripts: tests/flashlight-init
 ```
 
 <Info title="fail-fast: false garantit qu'un échec sur PS 1.7 n'annule pas les runs 8.1 et 9.0. On veut voir le tableau complet — sinon un flake sur une version cache l'état des autres." />
 
-Côté plateforme, chaque version remonte comme un run distinct, avec son propre historique. Le commentaire PR agrège les trois. Vous détectez d'un coup d'œil que votre nouveau template casse spécifiquement en 1.7 sans toucher au reste.
+Côté plateforme, chaque job de la matrice envoie son propre run. Sur la PR, en revanche, il n'y a qu'un seul commentaire PrestaFlow : chaque job le retrouve et le réécrit avec son propre bilan. Seul le bilan du dernier job terminé reste visible (le commentaire indique sa version PS). Pour comparer les trois versions, passez par la plateforme ou par le statut de chaque job dans l'onglet Checks : c'est là que vous voyez que votre nouveau template casse spécifiquement en 1.7 sans toucher au reste.
+
+<Warning title="Artifacts et matrice">
+Le nom de l'artifact téléversé par l'Action (`prestaflow-report-<run>-<tentative>`) ne contient pas la version PS. Dans une matrice, les jobs se disputent donc le même nom : seul le premier à le téléverser y parvient, les autres se contentent d'un avertissement dans leur journal.
+</Warning>
 
 C'est exactement le pattern que nous avions installé pour PHPStan en 2024, transposé au fonctionnel.
 
 ## Notes
 
-<Warning title="Le token PRESTAFLOW_TOKEN est lié à votre projet. Si vous testez plusieurs modules dans une même organisation, utilisez plutôt un secret d'organisation avec une portée restreinte aux dépôts concernés — plutôt qu'un secret par dépôt." />
+<Warning title="Le token PRESTAFLOW_TOKEN est lié à un projet PrestaFlow : il doit correspondre au projectId passé à l'Action. Si vous testez plusieurs modules, chacun avec son projet, chaque dépôt a donc son propre token, dans ses propres secrets." />
 
-Le niveau 1 reste une option légitime pour un projet expérimental ou personnel, ou pour un module dont vous ne souhaitez pas remonter les résultats sur la plateforme. Il fait ce qu'il promet : rougir le CI quand un scénario casse.
+Le niveau 1 reste une option légitime pour un projet expérimental ou personnel, ou pour un module dont vous ne souhaitez pas remonter les résultats sur la plateforme. Il fait ce qu'il promet : rougir le CI quand un scénario casse, avec la réserve du code de sortie vue plus haut.
 
-Dès que le module vit en production, que plusieurs personnes contribuent, ou que vous supportez plus d'une version de PrestaShop, le niveau 2 s'amortit vite. Le commentaire PR remplace la lecture des logs, l'historique remplace la mémoire humaine, et les régressions visuelles rattrapent la classe de bugs *"j'ai touché un CSS et je ne l'ai pas vu"*.
+Dès que le module vit en production, que plusieurs personnes contribuent, ou que vous supportez plus d'une version de PrestaShop, le niveau 2 s'amortit vite. Le commentaire PR évite d'aller lire les logs pour savoir si ça passe, l'historique remplace la mémoire humaine, et les régressions visuelles rattrapent la classe de bugs *"j'ai touché un CSS et je ne l'ai pas vu"*.
 
-<Info title="Le prochain article de la série couvrira l'application PrestaFlow elle-même : dashboard, historique des runs, revue humaine des régressions visuelles, et cloud runs (déclencher un scénario depuis l'app sans passer par le CI)." />
+<Info title="Prochain article de la série : tester un module tiers, c'est-à-dire appliquer PrestaFlow à un module qu'on n'a pas écrit, dont on ne contrôle ni le code ni les sélecteurs." />

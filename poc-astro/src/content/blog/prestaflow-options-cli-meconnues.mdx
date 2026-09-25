@@ -28,13 +28,13 @@ Le format JUnit XML est le standard historique du reporting de tests. Jenkins l'
 PrestaFlow sait le produire :
 
 ```sh
-composer prestaflow -- run tests/prestaflow --junit
+composer prestaflow -- run ./tests/prestaflow --junit
 ```
 
 Écrit `prestaflow/junit.xml` par défaut. Ou path explicite :
 
 ```sh
-composer prestaflow -- run tests/prestaflow --junit=reports/junit.xml
+composer prestaflow -- run ./tests/prestaflow --junit=reports/junit.xml
 ```
 
 Le fichier suit la structure JUnit standard : un `<testsuite>` par suite exécutée, un `<testcase>` par `it`, avec `<failure>` / `<skipped>` selon l'état. Directement ingérable par n'importe quel outil qui parle JUnit.
@@ -47,7 +47,7 @@ Le fichier suit la structure JUnit standard : un `<testsuite>` par suite exécut
 e2e:
   # ...
   script:
-    - composer prestaflow -- run tests/prestaflow --junit=reports/junit.xml
+    - composer prestaflow -- run ./tests/prestaflow --junit=reports/junit.xml
   artifacts:
     when: always
     reports:
@@ -107,7 +107,7 @@ Combiné avec le flag CLI qui prend trois formes :
 
 ### Workflow suggéré
 
-- **En dev local** : `composer prestaflow -- run tests/prestaflow --draft` pendant qu'on itère sur un scénario neuf.
+- **En dev local** : `composer prestaflow -- run ./tests/prestaflow --draft` pendant qu'on itère sur un scénario neuf.
 - **En CI (workflow principal)** : `--no-draft` pour ignorer les brouillons et garantir la stabilité.
 - **En CI (workflow nightly optionnel)** : sans flag, pour un run complet qui inclut aussi les drafts et donne un signal sur leur maturité.
 
@@ -122,13 +122,13 @@ L'annexe [régressions visuelles](/blog/prestaflow-regressions-visuelles/) a int
 Le flag `--visual-report` produit un **rapport HTML séparé**, dédié uniquement aux régressions visuelles :
 
 ```sh
-composer prestaflow -- run tests/prestaflow --visual-report
+composer prestaflow -- run ./tests/prestaflow --visual-report
 ```
 
 Écrit `reports/visual/index.html` par défaut. Ou path explicite :
 
 ```sh
-composer prestaflow -- run tests/prestaflow --visual-report=public/visual-latest.html
+composer prestaflow -- run ./tests/prestaflow --visual-report=public/visual-latest.html
 ```
 
 Le rapport présente les checkpoints en cartes visuelles : référence / actuelle / diff en vignettes côte à côte (images embarquées dans le HTML), score de similarité et statut (conforme, écart, baseline créée). Le seuil utilisé n'y figure pas. C'est le format à envoyer au designer ou au chef de projet qui doit trancher *« ce changement de padding est-il volontaire ? »*.
@@ -141,10 +141,10 @@ Par défaut, le stamp *« généré le X »* du rapport est en UTC. Deux manièr
 
 ```sh
 # Via env var (globale)
-PRESTAFLOW_TZ=Europe/Brussels composer prestaflow -- run tests/prestaflow --visual-report
+PRESTAFLOW_TZ=Europe/Brussels composer prestaflow -- run ./tests/prestaflow --visual-report
 
 # Via option CLI (spécifique au run)
-composer prestaflow -- run tests/prestaflow --visual-report --visual-report-tz=Europe/Brussels
+composer prestaflow -- run ./tests/prestaflow --visual-report --visual-report-tz=Europe/Brussels
 ```
 
 L'option CLI gagne sur l'env var, l'env var gagne sur UTC. Si l'identifiant de fuseau est invalide, PrestaFlow retombe silencieusement sur UTC — le rapport est toujours généré.
@@ -156,7 +156,7 @@ L'option CLI gagne sur l'env var, l'env var gagne sur UTC. Si l'identifiant de f
 Les trois options sont indépendantes et se cumulent :
 
 ```sh
-composer prestaflow -- run tests/prestaflow \
+composer prestaflow -- run ./tests/prestaflow \
   --no-draft \
   --junit=reports/junit.xml \
   --visual-report=reports/visual/index.html \

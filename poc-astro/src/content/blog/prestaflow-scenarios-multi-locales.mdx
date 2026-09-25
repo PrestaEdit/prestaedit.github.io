@@ -174,7 +174,7 @@ for locale in fr en; do
 
     # Copie du .env + la locale du tour (la dernière valeur d'une clé l'emporte).
     { cat .env; echo; echo "PRESTAFLOW_LOCALE=$locale"; } > .env.local
-    composer prestaflow -- run tests/prestaflow
+    composer prestaflow -- run ./tests/prestaflow
 done
 ```
 
@@ -216,7 +216,7 @@ jobs:
           } >> .env
 
       - name: Run PrestaFlow
-        run: composer prestaflow -- run tests/prestaflow
+        run: composer prestaflow -- run ./tests/prestaflow
 ```
 
 Deux jobs parallèles, un par locale, contre la même preprod. Si elle est protégée, ajoutez les variables des annexes [htpasswd](/blog/prestaflow-preprod-htpasswd/) ou [Cloudflare](/blog/prestaflow-preprod-cloudflare/) dans la même étape.

@@ -31,8 +31,19 @@ class Page extends BasePage
         ];
     }
 
-    public function hasBlock(): bool { /* ... */ }
-    public function getBlockTitle(): string { /* ... */ }
+    public function hasBlock(): bool
+    {
+        return $this->isVisible($this->getSelector('block'), 5000);
+    }
+
+    public function getBlockTitle(): string
+    {
+        return html_entity_decode(
+            (string) $this->getTextContent($this->getSelector('title')),
+            ENT_QUOTES | ENT_HTML5,
+            'UTF-8'
+        );
+    }
 }
 ```
 
@@ -42,28 +53,36 @@ class Page extends BasePage
 
 Dans l'article d'introduction, nous avions volontairement laissé la page de configuration BO en primitives (`goToUrl`, `setValue`, `click` sur `$backOfficeLoginPage`). Il est temps de la sortir de là et d'en faire une Page à part entière.
 
-Créez `tests/prestaflow/Pages/v8/Modules/Psflowdemo/Configuration/Page.php` :
+On suit l'organisation du dépôt psflowdemo : la logique vit dans une classe commune à toutes les versions, `tests/prestaflow/Pages/Common/Modules/Psflowdemo/Configuration/Page.php`, qui étend directement `BackOfficePage` de la lib :
 
 ```php
 <?php
 
-namespace Tests\Pages\v8\Modules\Psflowdemo\Configuration;
+namespace Tests\Pages\Common\Modules\Psflowdemo\Configuration;
 
-use PrestaFlow\Library\Pages\v8\BackOffice\Page as BasePage;
+use PrestaFlow\Library\Pages\BackOfficePage;
 
-class Page extends BasePage
+class Page extends BackOfficePage
 {
     public function defineSelectors(): array
     {
         return [
             'titleInput' => 'input[name="PSFLOWDEMO_TITLE"]',
             'submitButton' => 'button[name="submitPsflowdemo"]',
+            'successAlert' => '.alert.alert-success',
+            'invalidTokenContinue' => 'a.btn-continue',
         ];
     }
 
     public function openConfiguration(string $boUrl): void
     {
         $this->goToUrl(rtrim($boUrl, '/') . '/index.php?controller=AdminModules&configure=psflowdemo');
+
+        // Sans token dans l'URL, PrestaShop affiche « Invalid security token »
+        if ($this->isVisible($this->getSelector('invalidTokenContinue'), 2000)) {
+            $this->click($this->getSelector('invalidTokenContinue'));
+            $this->waitForPageReload();
+        }
     }
 
     public function fillTitle(string $title): void
@@ -76,6 +95,25 @@ class Page extends BasePage
         $this->click($this->getSelector('submitButton'));
         $this->waitForPageReload();
     }
+
+    public function hasSuccessMessage(): bool
+    {
+        return $this->isVisible($this->getSelector('successAlert'), 5000);
+    }
+}
+```
+
+`importPage()` ne charge jamais `Common` directement : il cherche la classe de la version en cours. Créez donc `tests/prestaflow/Pages/v8/Modules/Psflowdemo/Configuration/Page.php`, qui se contente d'hériter (et ses équivalents dans `v7/` et `v9/` si vous testez ces versions, voir la technique 4) :
+
+```php
+<?php
+
+namespace Tests\Pages\v8\Modules\Psflowdemo\Configuration;
+
+use Tests\Pages\Common\Modules\Psflowdemo\Configuration\Page as BasePage;
+
+class Page extends BasePage
+{
 }
 ```
 
@@ -88,24 +126,33 @@ $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
 
 extract($this->pages);
 
+$boUrl = $this->getGlobals()['BO']['URL'];
+
 $this
 ->describe('Modification du titre depuis le BO')
 ->it('se connecte au BO', function () use ($backOfficeLoginPage) {
     $backOfficeLoginPage->goToPage('login');
     $backOfficeLoginPage->login();
 })
-->it('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage) {
-    $modulesPsflowdemoConfigurationPage->openConfiguration($_ENV['PRESTAFLOW_BO_URL']);
+->it('met à jour le titre du bloc', function () use ($modulesPsflowdemoConfigurationPage, $boUrl) {
+    $modulesPsflowdemoConfigurationPage->openConfiguration($boUrl);
     $modulesPsflowdemoConfigurationPage->fillTitle('Titre mis à jour par PrestaFlow');
     $modulesPsflowdemoConfigurationPage->save();
+
+    Expect::that($modulesPsflowdemoConfigurationPage->hasSuccessMessage())->isTheSameAs(true);
 })
 ->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage) {
     $modulesPsflowdemoHomePage->goToPage('home');
     Expect::that($modulesPsflowdemoHomePage->getBlockTitle())->contains('Titre mis à jour par PrestaFlow');
+})
+->it('remet le titre par défaut', function () use ($modulesPsflowdemoConfigurationPage, $boUrl) {
+    $modulesPsflowdemoConfigurationPage->openConfiguration($boUrl);
+    $modulesPsflowdemoConfigurationPage->fillTitle('Bienvenue sur notre boutique');
+    $modulesPsflowdemoConfigurationPage->save();
 });
 ```
 
-Plus une URL construite à la main, plus un sélecteur brut dans un `it`. Le scénario redevient lisible en français : *connexion → mise à jour → vérification*.
+Plus une URL construite à la main, plus un sélecteur brut dans un `it`. Au passage, la Page expose `hasSuccessMessage()` : l'étape de mise à jour vérifie désormais que PrestaShop a bien accepté l'enregistrement, ce que la version en primitives ne faisait pas. Le scénario redevient lisible en français : *connexion → mise à jour → vérification*.
 
 <Info title="Règle simple : un dossier par écran fonctionnel, une classe Page par dossier. Un module qui expose une page de config, un onglet dans une commande, et un bloc front → trois Pages.">
 
@@ -128,7 +175,8 @@ trait FrontOfficeUrl
 {
     protected function foUrl(string $path): string
     {
-        $base = rtrim((string) ($_ENV['PRESTAFLOW_FO_URL'] ?? ''), '/');
+        // PRESTAFLOW_FO_URL, tel que la lib l'a chargé
+        $base = rtrim((string) $this->getGlobals()['FO']['URL'], '/');
         $path = ltrim($path, '/');
 
         return $base . '/' . $path;
@@ -168,7 +216,7 @@ Trois parades, dans l'ordre à essayer :
 
 **1. Sélecteur plus spécifique.** `.page-title-h1` au lieu de `h1`, `#psflowdemo-block h3` au lieu de `h3`. Ça règle l'essentiel des cas et ne coûte rien.
 
-**2. Fallback JavaScript pour la donnée serveur.** Quand le contenu HTML est bourré par JS et arrive avec un délai, on peut lire à la place l'équivalent rendu côté serveur :
+**2. Fallback JavaScript pour la donnée serveur.** Quand le contenu HTML est rempli par JS et arrive avec un délai, on peut lire à la place l'équivalent rendu côté serveur :
 
 ```php
 public function getHeading(): string
@@ -189,20 +237,32 @@ public function getHeading(): string
 
 ## Technique 4 : une Page par version PrestaShop
 
-La lib PrestaFlow s'attend à trouver ses Pages dans un sous-dossier de version : `Pages/v7/`, `Pages/v8/`, `Pages/v9/`. Vos Pages custom suivent la même convention.
+La lib PrestaFlow range ses Pages dans un sous-dossier de version : `Pages/v7/`, `Pages/v8/`, `Pages/v9/`. Vos Pages custom suivent la même convention : `importPage()` construit le nom de la classe à partir de `PRESTAFLOW_PS_VERSION` (`v7` pour 1.7, `v8`, `v9`).
 
-Quand le DOM du BO change entre deux versions majeures — le cas typique du passage à une nouvelle version — on duplique la Page dans le sous-dossier de la version cible :
+Il n'y a **pas de repli** d'une version sur l'autre : si la classe `v9` n'existe pas, un run en 9.0 s'arrête sur une erreur de classe introuvable au lieu de réutiliser celle de `v8`. Chaque version supportée doit donc avoir sa classe, même vide. C'est ce que fait psflowdemo, qui tourne sur 1.7.8, 8.1 et 9.0 :
 
 ```
 tests/prestaflow/Pages/
-├─ v7/Modules/Psflowdemo/Configuration/Page.php   ← version legacy
-└─ v8/Modules/Psflowdemo/Configuration/Page.php   ← version reconstruite
+├─ Common/Modules/Psflowdemo/Configuration/Page.php   ← toute la logique
+├─ v7/Modules/Psflowdemo/Configuration/Page.php       ← hérite de Common
+├─ v8/Modules/Psflowdemo/Configuration/Page.php       ← hérite de Common
+└─ v9/Modules/Psflowdemo/Configuration/Page.php       ← hérite de Common
 ```
 
-Les deux classes ont **la même API publique** (`openConfiguration`, `fillTitle`, `save`) — ce qui change, ce sont les sélecteurs internes. Vos scénarios n'ont pas à savoir sur quelle version ils tournent : la lib route l'import selon la valeur de `PRESTAFLOW_PS_VERSION`.
+Les classes de version ont **la même API publique** (`openConfiguration`, `fillTitle`, `save`, `hasSuccessMessage`). Tant que le module rend le même formulaire partout, elles restent vides. Le jour où le DOM diverge sur une version, seule sa classe change. Vos scénarios n'ont pas à savoir sur quelle version ils tournent : c'est `PRESTAFLOW_PS_VERSION` qui décide quelle classe est chargée.
 
-<Info title="Vous pouvez limiter la duplication en gardant tout le comportement commun dans une classe parente sous Pages/Common/... dont les sous-classes v7/, v8/, v9/ n'overrident que les sélecteurs divergents. C'est le pattern qu'utilise la lib PrestaFlow en interne — rien n'empêche de l'appliquer dans votre propre namespace Tests\.">
+<Info title="Surcharger un sélecteur sans perdre les autres">
+`defineSelectors()` d'une sous-classe remplace entièrement celui de sa parente : la lib ne fusionne pas les deux tableaux. Pour ne changer qu'un sélecteur dans `v9/`, fusionnez vous-même :
 
+```php
+public function defineSelectors(): array
+{
+    return [
+        ...parent::defineSelectors(),
+        'submitButton' => 'button#submit-psflowdemo',
+    ];
+}
+```
 </Info>
 
 ## En résumé
@@ -216,6 +276,6 @@ Quatre leviers, appliqués dans l'ordre où le module les demande :
 
 Vos scénarios restent alors des phrases en français qui décrivent le comportement métier, sans un sélecteur en vue.
 
-<Info title="Prochaine annexe : tester un module dont on n'est pas l'auteur — appliquer PrestaFlow à un module tiers, sans pouvoir modifier son code.">
+<Info title="Prochaines annexes, parues le même jour : tester une preprod derrière un htpasswd, et brancher PrestaFlow sur sa stack locale, sans Flashlight.">
 
 </Info>

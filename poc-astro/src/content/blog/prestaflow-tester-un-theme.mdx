@@ -173,7 +173,7 @@ Le thème doit aussi tenir dans les langues qu'il annonce supporter. Rien à cha
 
 ```sh
 for locale in fr en de it es; do
-    PRESTAFLOW_LOCALE=$locale composer prestaflow -- run tests/prestaflow --visual-report=reports/visual/$locale/index.html
+    PRESTAFLOW_LOCALE=$locale composer prestaflow -- run ./tests/prestaflow --visual-report=reports/visual/$locale/index.html
 done
 ```
 

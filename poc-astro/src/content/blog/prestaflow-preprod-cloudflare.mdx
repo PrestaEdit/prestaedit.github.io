@@ -125,7 +125,7 @@ Deux points à connaître sur le chargement de ce fichier. La lib lit `.env.loca
     } >> .env
 
 - name: Run PrestaFlow (preprod protégée par Cloudflare)
-  run: composer prestaflow -- run tests/prestaflow
+  run: composer prestaflow -- run ./tests/prestaflow
 ```
 
 Le secret ne transite que par la variable `CF_BYPASS` de la première étape, et le `.env` ainsi produit disparaît avec le runner. Si votre dépôt versionne déjà un `.env`, l'ajout en fin de fichier (`>>`) suffit : quand une clé apparaît deux fois, c'est la dernière valeur qui l'emporte.

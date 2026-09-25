@@ -51,7 +51,7 @@ tests/prestaflow/Suites/
     ImportCatalog.php
 ```
 
-Un job local qui veut tout faire tourner lance `composer prestaflow -- run tests/prestaflow/Suites`. Un job CI qui ne cible que le panier lance `composer prestaflow -- run tests/prestaflow/Suites/Cart`.
+Un job local qui veut tout faire tourner lance `composer prestaflow -- run ./tests/prestaflow/Suites`. Un job CI qui ne cible que le panier lance `composer prestaflow -- run ./tests/prestaflow/Suites/Cart`.
 
 Le workflow GitHub Actions reprend le niveau 1 de l'article 2 (MariaDB, Flashlight avec le module monté et installé par l'init-script `tests/flashlight-init/10-install-module.sh`), et ajoute une matrice sur la partition :
 
@@ -108,7 +108,7 @@ jobs:
           PRESTAFLOW_BO_URL: http://localhost/admin-dev/
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
           PRESTAFLOW_BO_PASSWD: prestashop
-        run: composer prestaflow -- run tests/prestaflow/Suites/${{ matrix.partition }}
+        run: composer prestaflow -- run ./tests/prestaflow/Suites/${{ matrix.partition }}
 
       - name: Upload error screenshots
         if: failure()
@@ -163,9 +163,9 @@ class AddToCart extends TestsSuite
 Côté CLI :
 
 ```bash
-composer prestaflow -- run tests --group cart
-composer prestaflow -- run tests -g cart -g checkout
-composer prestaflow -- run tests --group fast
+composer prestaflow -- run ./tests --group cart
+composer prestaflow -- run ./tests -g cart -g checkout
+composer prestaflow -- run ./tests --group fast
 ```
 
 Le filtrage se fait par intersection : PrestaFlow ne lance que les suites dont `getGroups()` contient au moins un des groupes demandés. Ne pas passer `--group` du tout (ou passer `--group all`, la valeur par défaut) revient à tout faire tourner.
@@ -187,7 +187,7 @@ Le workflow GitHub Actions est le même que plus haut, à deux endroits près : 
           PRESTAFLOW_BO_URL: http://localhost/admin-dev/
           PRESTAFLOW_BO_EMAIL: admin@prestashop.com
           PRESTAFLOW_BO_PASSWD: prestashop
-        run: composer prestaflow -- run tests/prestaflow/Suites -g ${{ matrix.group }}
+        run: composer prestaflow -- run ./tests/prestaflow/Suites -g ${{ matrix.group }}
 ```
 
 Avantage : une même suite peut appartenir à `['cart', 'fast']` : elle tournera aussi bien dans le job « panier » que dans un futur job « smoke rapide sur toutes les versions ». Rééquilibrer une partition, c'est éditer une propriété, pas déplacer un fichier.

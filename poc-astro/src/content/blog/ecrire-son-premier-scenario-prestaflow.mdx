@@ -56,11 +56,29 @@ C'est le plus petit module possible qui expose à la fois du **front**, du **BO*
 
 <Info title="PrestaFlow s'installe dans les dépendances de développement de votre module." />
 
-Depuis la racine de votre module :
+Un détail compte avant de lancer la moindre commande : PrestaShop inclut le fichier `modules/<module>/vendor/autoload.php` de chaque module installé. Or la librairie PrestaFlow apporte ses propres composants Symfony 6, qui entrent en conflit avec ceux de la boutique et la font planter. Un module qui embarque ses tests range donc ses dépendances de développement ailleurs, dans `vendor-dev/`.
+
+Ajoutez ces deux blocs au `composer.json` du module :
+
+```json
+"config": {
+    "vendor-dir": "vendor-dev",
+    "process-timeout": 0
+},
+"scripts": {
+    "prestaflow": "./vendor-dev/prestaflow/php-library/bin/prestaflow"
+}
+```
+
+Le script `prestaflow` donne un raccourci vers la CLI : tout ce qui suit `--` lui est transmis, par exemple `composer prestaflow -- run ./tests/prestaflow`. `process-timeout: 0` est nécessaire, car Composer coupe un script au bout de 300 secondes, et une suite E2E complète peut durer plus longtemps.
+
+Puis, depuis la racine de votre module :
 
 ```sh
 composer require --dev prestaflow/php-library
 ```
+
+Ajoutez enfin `vendor-dev/` au `.gitignore` du module, ainsi que `prestaflow/`, le dossier où la CLI écrit ses sorties.
 
 PrestaFlow s'appuie sur [chrome-php/chrome](https://github.com/chrome-php/chrome). Vous aurez besoin d'un binaire Chrome (ou Chromium) accessible sur la machine qui exécute les tests. En local, l'installation standard de Chrome suffit.
 
@@ -77,6 +95,8 @@ PRESTAFLOW_HEADLESS=true
 PRESTAFLOW_DEBUG=false
 ```
 
+Ces valeurs correspondent à une boutique de démonstration en français. Le dépôt psflowdemo fournit le même contenu dans un `.env.example` à copier : le `.env`, propre à chaque machine, reste hors de git.
+
 <Warning title="L'URL BO doit correspondre à celle de votre instance. Le dossier /admin-dev/ n'est valable que sur une installation de développement — remplacez-le par le vrai dossier admin de votre boutique." />
 
 Structure de dossiers cible pour la suite de l'article :
@@ -86,6 +106,7 @@ psflowdemo/
 ├─ psflowdemo.php
 ├─ composer.json
 ├─ .env
+├─ vendor-dev/        (dépendances de dev, ignoré par git)
 └─ tests/
    └─ prestaflow/
       ├─ Pages/
@@ -97,7 +118,9 @@ psflowdemo/
       └─ Suites/
 ```
 
-<Info title="Le sous-dossier v8 correspond à la version majeure de PrestaShop ciblée. PrestaFlow s'appuie sur cette convention pour permettre de faire cohabiter, plus tard, des Pages différentes pour PS 1.7, 8 et 9." />
+<Info title="Le sous-dossier v8 correspond à la version majeure de PrestaShop ciblée">
+PrestaFlow construit le nom de la classe à charger à partir de `PRESTAFLOW_PS_VERSION` : `v7` pour 1.7, `v8`, `v9`. Cette convention permet de faire cohabiter des Pages différentes pour PS 1.7, 8 et 9. Il n'y a pas de repli d'une version sur l'autre : pour tester aussi en 1.7 ou en 9, il faudra une classe dans `v7/` et dans `v9/`. Dans psflowdemo, elles se contentent d'étendre celle de `v8`.
+</Info>
 
 ## Lancer un scénario fourni
 
@@ -119,7 +142,9 @@ class Checkout extends TestsSuite
     {
         $this
             ->describe('Parcours d\'achat invité')
-            ->scenario(GuestCheckout::class);
+            ->scenario(GuestCheckout::class, [
+                'locale' => $_ENV['PRESTAFLOW_LOCALE'] ?? 'fr',
+            ]);
     }
 }
 ```
@@ -127,16 +152,20 @@ class Checkout extends TestsSuite
 Puis, depuis la racine du module :
 
 ```sh
-./vendor/bin/prestaflow run tests/prestaflow
+composer prestaflow -- run ./tests/prestaflow
 ```
 
-<Info title="Ici on passe tests/prestaflow parce que nos suites y sont. Sans argument, la commande cherche dans le dossier tests." />
+<Info title="Ici on passe ./tests/prestaflow parce que nos suites y sont">
+Gardez le `./` devant le chemin : la version 1.7.1 de la CLI met en majuscule la première lettre de l'argument (`tests/prestaflow` devient `Tests/prestaflow`). Sur macOS, dont le système de fichiers ignore la casse par défaut, cela passe ; sous Linux, et donc en CI, le dossier est introuvable. Avec `./tests/prestaflow`, le premier caractère est un point et rien ne change. Sans argument, la CLI part du dossier `tests`, avec la même réserve.
+</Info>
 
-<Warning title="Le scénario GuestCheckout cible par défaut la boutique de démo francophone (locale fr, produit 1-1-hummingbird-printed-t-shirt.html). Sur une boutique dans une autre langue, il faudra passer les paramètres correspondants en second argument de scenario() — voir la doc." />
+<Warning title="Le scénario GuestCheckout cible par défaut la boutique de démo francophone (locale fr, produit 1-1-hummingbird-printed-t-shirt.html)">
+La suite lui passe la locale du `.env` en second argument de `scenario()`. Les autres paramètres (produit, adresse, e-mail invité) se surchargent de la même façon ; la liste est dans `src/Scenarios/GuestCheckout.php`. Le scénario va jusqu'à la confirmation de commande : la boutique doit donc avoir un moyen de paiement actif. Sur une boutique Flashlight neuve, aucun ne l'est et le parcours s'arrête à l'étape de paiement.
+</Warning>
 
-PrestaFlow ouvre Chrome en arrière-plan, va sur la page produit, ajoute au panier, remplit l'adresse, choisit la livraison et le paiement, puis vérifie que la page de confirmation est bien atteinte. À la fin de l'exécution, un rapport HTML est généré dans `tests/prestaflow/reports/`.
+PrestaFlow ouvre Chrome en arrière-plan, va sur la page produit, ajoute au panier, remplit l'adresse, choisit la livraison et le paiement, puis vérifie que la page de confirmation est bien atteinte. Le déroulé s'affiche dans le terminal, étape par étape, avec un bilan final.
 
-<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-checkout.svg" alt="Rapport d'exécution du scénario GuestCheckout" />
+<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-checkout.svg" alt="Sortie terminal du scénario GuestCheckout" />
 
 Si tout est vert, l'installation est bonne. On peut passer à l'écriture de son propre scénario.
 
@@ -179,16 +208,21 @@ class Page extends BasePage
 
     public function getBlockTitle(): string
     {
-        return $this->getTextContent($this->getSelector('title'));
+        return html_entity_decode(
+            (string) $this->getTextContent($this->getSelector('title')),
+            ENT_QUOTES | ENT_HTML5,
+            'UTF-8'
+        );
     }
 }
 ```
 
-Trois points à retenir sur cette Page :
+Quatre points à retenir sur cette Page :
 
 1. Elle **étend `FrontOffice\Page` de la version 8**. Le namespace `v8` de la lib PrestaFlow apporte tout ce qui est spécifique à cette version majeure de PS.
 2. **`defineSelectors()`** centralise les sélecteurs CSS. On les récupère ensuite via `$this->getSelector('block')`.
 3. Les méthodes publiques exposent une **API sémantique**. Un scénario qui lit ce code comprend ce qui est testé sans avoir à connaître le DOM.
+4. `getTextContent()` renvoie le texte avec ses entités HTML brutes (`&lt;` plutôt que `<`), et `false` si l'élément n'apparaît pas : `getBlockTitle()` convertit en chaîne et décode, pour que les scénarios comparent le titre tel qu'il s'affiche.
 
 ### La suite
 
@@ -231,9 +265,9 @@ class DisplayHome extends TestsSuite
 * **`importPage('Modules\Psflowdemo\Home', domain: 'Tests')`** — le paramètre `domain` indique à PrestaFlow que la Page n'est pas dans la librairie mais dans **votre** namespace `Tests` (défini plus bas dans le `composer.json`).
 * **La variable exposée** suit le nommage camelCase du chemin : `Modules\Psflowdemo\Home` devient `$modulesPsflowdemoHomePage`.
 * **`describe()->it()`** — la syntaxe est empruntée à Jest / Mocha. Chaque `it` est une étape, qui échoue ou réussit indépendamment.
-* **`Expect::that(...)->isTheSameAs(...) / ->contains(...)`** — les assertions. La liste complète est dans le dossier `src/Expects/` de la librairie.
+* **`Expect::that(...)->isTheSameAs(...) / ->contains(...)`** — les assertions. La liste complète est dans la classe `src/Expects/Expect.php` de la librairie.
 
-Pour que le namespace `Tests\` soit résolu, ajoutez dans le `composer.json` de votre module :
+Pour que le namespace `Tests\` soit résolu, ajoutez dans le `composer.json` de votre module, à côté des blocs `config` et `scripts` :
 
 ```json
 "autoload-dev": {
@@ -248,7 +282,7 @@ Puis relancez `composer dump-autoload`.
 Enfin, exécutez :
 
 ```sh
-./vendor/bin/prestaflow run tests/prestaflow
+composer prestaflow -- run ./tests/prestaflow
 ```
 
 Les deux étapes doivent passer si votre hook `displayHome` renvoie bien un bloc avec l'id `psflowdemo-block`.
@@ -259,9 +293,11 @@ Objectif : se connecter au BO, ouvrir la page de configuration de psflowdemo, ch
 
 C'est un scénario un peu plus intéressant : il enchaîne BO → front et vérifie la persistance.
 
-Ce scénario met en jeu **une page fournie par la librairie** (`BackOffice\Login`, qui expose une méthode `login()` prête à l'emploi) et **notre page custom** (celle du bloc sur la home, que nous venons d'écrire).
+Ce scénario met en jeu **deux pages fournies par la librairie** (`BackOffice\Login`, qui expose une méthode `login()` prête à l'emploi, et `BackOffice\Dashboard`, qui sert à vérifier que la connexion a réussi) et **notre page custom** (celle du bloc sur la home, que nous venons d'écrire).
 
-Pour la page de configuration du module elle-même, on pourrait — et *devrait*, en régime de croisière — écrire une seconde Page custom. Pour rester dans le format de cette introduction, nous allons plutôt piloter cette page au niveau **primitive** (`goToUrl`, `setValue`, `click`) depuis la page BO déjà logguée. C'est un pattern utile à connaître : dès qu'on interagit avec une page one-shot, non factorisée, on descend aux primitives sans se sentir coupable.
+Pour la page de configuration du module elle-même, on pourrait — et *devrait*, en régime de croisière — écrire une seconde Page custom. Pour rester dans le format de cette introduction, nous allons plutôt piloter cette page au niveau **primitive** (`goToUrl`, `setValue`, `click`) depuis la page BO déjà connectée. C'est un pattern utile à connaître : dès qu'on interagit avec une page one-shot, non factorisée, on descend aux primitives sans se sentir coupable.
+
+Une particularité de PrestaShop à connaître : une URL de back office sans jeton de sécurité (`token`) affiche d'abord une page « Invalid security token », avec un lien pour continuer quand même. Le scénario clique sur ce lien (`a.btn-continue`) s'il apparaît.
 
 Créez `tests/prestaflow/Suites/UpdateTitle.php` :
 
@@ -278,62 +314,89 @@ class UpdateTitle extends TestsSuite
     public function init()
     {
         $this->importPage('BackOffice\Login');
+        $this->importPage('BackOffice\Dashboard');
         $this->importPage('Modules\Psflowdemo\Home', domain: 'Tests');
 
         extract($this->pages);
 
-        $newTitle = 'Titre mis à jour par PrestaFlow';
-        $boUrl    = rtrim($_ENV['PRESTAFLOW_BO_URL'], '/');
+        $newTitle     = 'Titre mis à jour par PrestaFlow';
+        $defaultTitle = 'Bienvenue sur notre boutique';
+        // PRESTAFLOW_BO_URL, lu depuis le .env, toujours terminé par un /
+        $configUrl = $this->getGlobals()['BO']['URL']
+            . 'index.php?controller=AdminModules&configure=psflowdemo';
+
+        // Adaptez l'URL et les sélecteurs à la page de config de votre module
+        $updateTitle = function (string $title) use ($backOfficeLoginPage, $configUrl) {
+            $backOfficeLoginPage->goToUrl($configUrl);
+
+            // Sans token dans l'URL, PrestaShop demande une confirmation
+            if ($backOfficeLoginPage->isVisible('a.btn-continue', 2000)) {
+                $backOfficeLoginPage->click('a.btn-continue');
+                $backOfficeLoginPage->waitForPageReload();
+            }
+
+            $backOfficeLoginPage->setValue('input[name="PSFLOWDEMO_TITLE"]', $title);
+            $backOfficeLoginPage->click('button[name="submitPsflowdemo"]');
+            $backOfficeLoginPage->waitForPageReload();
+        };
 
         $this
         ->describe('Modification du titre depuis le BO')
-        ->it('se connecte au BO', function () use ($backOfficeLoginPage) {
+        ->it('se connecte au BO', function () use ($backOfficeLoginPage, $backOfficeDashboardPage) {
             $backOfficeLoginPage->goToPage('login');
             $backOfficeLoginPage->login();
-            Expect::that($backOfficeLoginPage->getPageTitle())->isNotEmpty();
+
+            // Connexion réussie : on atterrit sur le tableau de bord
+            Expect::that($backOfficeDashboardPage->getPageTitle())
+                ->contains($backOfficeDashboardPage->pageTitle());
         })
-        ->it('met à jour le titre du bloc', function () use ($backOfficeLoginPage, $boUrl, $newTitle) {
-            // Adaptez l'URL et les sélecteurs à la page de config de votre module
-            $backOfficeLoginPage->goToUrl(
-                $boUrl . '/index.php?controller=AdminModules&configure=psflowdemo'
-            );
-            $backOfficeLoginPage->setValue('input[name="PSFLOWDEMO_TITLE"]', $newTitle);
-            $backOfficeLoginPage->click('button[name="submitPsflowdemo"]');
-            $backOfficeLoginPage->waitForPageReload();
+        ->it('met à jour le titre du bloc', function () use ($updateTitle, $newTitle) {
+            $updateTitle($newTitle);
         })
         ->it('affiche le nouveau titre sur la home', function () use ($modulesPsflowdemoHomePage, $newTitle) {
             $modulesPsflowdemoHomePage->goToPage('home');
 
             Expect::that($modulesPsflowdemoHomePage->getBlockTitle())
                 ->contains($newTitle);
+        })
+        ->it('remet le titre par défaut', function () use ($updateTitle, $defaultTitle) {
+            $updateTitle($defaultTitle);
         });
     }
 }
 ```
 
-<Info title="La méthode login() lit par défaut les identifiants dans les variables d'environnement PRESTAFLOW_BO_EMAIL et PRESTAFLOW_BO_PASSWD (déclarées dans votre .env). Aucune credential ne traîne donc dans le code du test." />
+<Info title="La méthode login() lit par défaut les identifiants dans les variables d'environnement PRESTAFLOW_BO_EMAIL et PRESTAFLOW_BO_PASSWD (déclarées dans votre .env). Aucun identifiant ne traîne donc dans le code du test." />
+
+Quelques remarques sur ce code :
+
+* **La preuve de connexion.** Après `login()`, le navigateur doit être sur le tableau de bord. `getPageTitle()` lit le titre du document, et `pageTitle()` renvoie le titre attendu de la page Dashboard (« Dashboard », traduit selon la locale : « Tableau de bord » en français). Si les identifiants sont faux, on reste sur la page de connexion et l'assertion échoue.
+* **L'URL du BO** vient de `$this->getGlobals()['BO']['URL']` : la suite y trouve la valeur de `PRESTAFLOW_BO_URL`, normalisée avec un `/` final.
+* **La dernière étape remet le titre par défaut.** Sans elle, un second passage échouerait : les suites s'exécutent dans l'ordre alphabétique des fichiers, et `DisplayHome` trouverait encore le titre modifié par `UpdateTitle` lors du passage précédent.
 
 Notez que **la troisième étape réutilise la Page custom** créée pour le premier scénario : `getBlockTitle()`. C'est tout l'intérêt d'avoir factorisé — la vérification finale reste triviale à lire et on ne duplique aucun sélecteur.
 
 Relancez la commande `run`. Passez `PRESTAFLOW_HEADLESS=false` le temps de la démo pour voir Chrome enchaîner : login BO, ouverture de la config, saisie, sauvegarde, retour front, vérification.
 
-## Lire un rapport
+## Lire le résultat
 
-Après chaque exécution, PrestaFlow génère un rapport dans `tests/prestaflow/reports/`. Deux choses utiles à savoir y trouver :
+Il n'y a pas de rapport HTML à ouvrir : le résultat d'un run s'affiche dans le terminal, et les fichiers produits atterrissent dans `./prestaflow/`, à la racine du module. Deux choses utiles à savoir y trouver :
 
-* **La liste des étapes** avec leur statut (vert = passé, rouge = échec, gris = skipped/todo).
-* **Les captures d'écran** prises à chaque étape, particulièrement précieuses quand une étape casse et qu'on cherche à comprendre pourquoi.
+* **La liste des étapes** de chaque suite avec leur statut, puis le bilan : suites et tests passés, en échec, ignorés, durée totale.
+* **Les captures d'écran d'échec**, dans `prestaflow/screens/errors/`. PrestaFlow n'en prend qu'au moment où une assertion `Expect` échoue : pas de capture pour une étape qui passe.
 
-<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-suites.svg" alt="Rapport avec les trois suites exécutées" />
+<img src="/posts/2026-07-29-ecrire-son-premier-scenario-prestaflow/report-suites.svg" alt="Sortie terminal avec les trois suites exécutées" />
 
-Quand un `it` échoue, la capture prise juste avant l'assertion vous montre l'état exact de la page à ce moment. Souvent, ça suffit pour identifier le problème sans avoir à rejouer localement.
+Quand un `it` échoue sur une assertion, la capture pleine page montre l'état exact de la page à ce moment. Souvent, ça suffit pour identifier le problème sans avoir à rejouer localement.
+
+Pour exploiter le résultat dans un autre outil, `composer prestaflow -- run ./tests/prestaflow -o json --file` écrit `prestaflow/results.json`. En v1.7.1, ce fichier ne contient que la dernière suite exécutée.
 
 ## Notes
 
 <Warning title="Les sélecteurs CSS que vous utilisez dans vos assertions dépendent du thème actif de votre boutique. Un thème custom peut modifier la structure DOM et casser un scénario écrit contre le thème Classic." />
 
-Nous avons vu le pattern minimal `Page` + `Suite` avec un seul sélecteur factorisé. Une prochaine annexe reviendra sur le sujet en profondeur : couvrir plusieurs pages d'un module, gérer les sélecteurs instables (contenu injecté par JS, modales tierces qui polluent le DOM), factoriser entre suites via un `use Trait`, et adapter ses Pages entre PS 1.7, 8 et 9.
+Nous avons vu le pattern minimal `Page` + `Suite` avec une seule Page custom. L'annexe [Factoriser ses Pages entre plusieurs suites](/blog/prestaflow-factoriser-ses-pages/) reprend le sujet en profondeur : couvrir plusieurs pages d'un module, gérer les sélecteurs instables (contenu injecté par JS, modales tierces qui polluent le DOM), factoriser entre suites via un `use Trait`, et adapter ses Pages entre PS 1.7, 8 et 9.
 
-<Info title="La suite de la série couvrira : automatiser l'exécution de ces scénarios en GitHub Actions (avec matrice de versions PS), puis les orchestrer depuis l'application PrestaFlow." />
+<Info title="La suite de la série couvrira : automatiser l'exécution de ces scénarios en CI (GitHub Actions, avec matrice de versions PS), tester un module dont on n'est pas l'auteur, puis piloter ses tests depuis l'application PrestaFlow." />
 
 D'ici là, vous avez de quoi tester votre module en local, sur votre version de PrestaShop du moment. C'est déjà un filet de sécurité qui rattrape la classe de bugs "j'ai touché un template et j'ai cassé le rendu sans m'en rendre compte" — et cette classe est plus large qu'on ne le pense.

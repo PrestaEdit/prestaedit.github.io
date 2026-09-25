@@ -199,7 +199,7 @@ test:
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer install --prefer-dist --no-progress
   script:
-    - composer prestaflow -- run tests/prestaflow
+    - composer prestaflow -- run ./tests/prestaflow
 ```
 
 GitLab n'accepte en cache que des chemins situés dans le dossier du projet, d'où `.cache/apt` et l'option `dir::cache::archives` qui y redirige apt. Ce cache évite les téléchargements, pas l'installation elle-même : copier seulement `/usr/bin/chromium` ne suffirait pas, car sous Debian ce n'est qu'un script de lancement, qui s'appuie sur `/usr/lib/chromium/` et sur des dizaines de bibliothèques.

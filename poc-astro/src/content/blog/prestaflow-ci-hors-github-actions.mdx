@@ -43,7 +43,7 @@ Le workflow niveau 1 fait six choses, dans l'ordre :
 3. `composer install`
 4. Démarrer une base MariaDB puis Flashlight, **en y montant le module**
 5. Installer le module au démarrage de Flashlight (init-script), puis attendre que le back office réponde
-6. Lancer `composer prestaflow -- run tests/prestaflow` avec les variables d'environnement qui pointent sur la boutique
+6. Lancer `composer prestaflow -- run ./tests/prestaflow` avec les variables d'environnement qui pointent sur la boutique
 
 Le point 4 conditionne le reste. Pour que PrestaShop voie le module, il faut monter le dépôt cloné dans `modules/psflowdemo` du conteneur, puis l'installer : c'est l'init-script `tests/flashlight-init/10-install-module.sh` de l'article 2, qui lance `php /var/www/html/bin/console prestashop:module install psflowdemo` au premier démarrage.
 
@@ -105,7 +105,7 @@ e2e:
       prestashop/prestashop-flashlight:$PS_VERSION
     - timeout 300 sh -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://docker/admin-dev/)" = "302" ]; do sleep 2; done' || { docker logs ps; exit 1; }
   script:
-    - composer prestaflow -- run tests/prestaflow
+    - composer prestaflow -- run ./tests/prestaflow
   artifacts:
     when: on_failure
     paths:
@@ -204,7 +204,7 @@ pipelines:
           - export PRESTAFLOW_BO_PASSWD=prestashop
           - export PRESTAFLOW_HEADLESS=true
           - export CHROME_NO_SANDBOX=1
-          - composer prestaflow -- run tests/prestaflow
+          - composer prestaflow -- run ./tests/prestaflow
         artifacts:
           - prestaflow/screens/errors/**
 ```
@@ -344,7 +344,7 @@ pipeline {
 
         stage('Run PrestaFlow') {
             steps {
-                sh 'composer prestaflow -- run tests/prestaflow'
+                sh 'composer prestaflow -- run ./tests/prestaflow'
             }
         }
     }
