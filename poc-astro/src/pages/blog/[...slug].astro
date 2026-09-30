@@ -45,9 +45,10 @@ const related = all
 
 const formatted = post.data.date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
-// Cover PNG for social meta (Satori-generated at build time)
+// Cover PNG for social meta: Satori-generated in /head/, or the hand-made cover itself
+const customCover = post.data.featuredimg && !post.data.featuredimg.includes('/head/');
 const ogSlug = (post.data.featuredimg ?? '').split('/').pop()?.replace(/\.[a-z]+$/i, '') ?? post.id;
-const ogImage = `/head/${ogSlug}.png`;
+const ogImage = customCover ? post.data.featuredimg : `/head/${ogSlug}.png`;
 ---
 <BaseLayout
   title={post.data.title}

@@ -173,6 +173,8 @@ for (const file of files) {
   const raw = await readFile(join(BLOG_DIR, file), 'utf8');
   const fm = parseFrontmatter(raw);
   if (!fm?.title) continue;
+  // A featuredimg outside /head/ is a hand-made cover: never overwrite it.
+  if (fm.featuredimg && !fm.featuredimg.includes('/head/')) continue;
   const slug = coverSlug(fm.featuredimg, file.replace(/\.mdx$/, ''));
   const family = primaryFamily(fm.tags);
 
