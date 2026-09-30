@@ -65,3 +65,19 @@ export function primaryFamily(tags: string[]): Family {
 export function placeholderFor(tags: string[]): string {
   return PLACEHOLDERS[primaryFamily(tags)];
 }
+
+/** Teintes Tailwind par famille, exposées en variables CSS pour les composants d'article. */
+const ACCENT_STOPS = ['50', '100', '200', '500', '600', '700', '800'] as const;
+const ACCENT_SHADES: Record<Family, string[]> = {
+  outillage: ['#ecfdf5', '#d1fae5', '#a7f3d0', '#10b981', '#059669', '#047857', '#065f46'],
+  plateforme: ['#fff7ed', '#ffedd5', '#fed7aa', '#f97316', '#ea580c', '#c2410c', '#9a3412'],
+  meta: ['#f8fafc', '#f1f5f9', '#e2e8f0', '#64748b', '#475569', '#334155', '#1e293b'],
+  format: ['#f5f3ff', '#ede9fe', '#ddd6fe', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6'],
+  default: ['#eff6ff', '#dbeafe', '#bfdbfe', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af'],
+};
+
+/** `--accent-50: …; --accent-100: …` for the dominant family of the tags. */
+export function accentStyle(tags: string[]): string {
+  const shades = ACCENT_SHADES[primaryFamily(tags)];
+  return ACCENT_STOPS.map((stop, i) => `--accent-${stop}: ${shades[i]}`).join('; ');
+}

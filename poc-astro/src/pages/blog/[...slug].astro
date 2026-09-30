@@ -8,7 +8,7 @@ import Note from '../../components/Note.astro';
 import Tip from '../../components/Tip.astro';
 import Danger from '../../components/Danger.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
-import { chipClass, placeholderFor } from '../../lib/palette';
+import { accentStyle, chipClass, placeholderFor } from '../../lib/palette';
 import { seriesLabel as seriesLabelFor } from '../../lib/series';
 
 const mdxComponents = { Info, Warning, Note, Tip, Danger };
@@ -57,7 +57,7 @@ const ogImage = customCover ? post.data.featuredimg : `/head/${ogSlug}.png`;
   ogType="article"
   articleDate={post.data.date}
 >
-  <article class="mx-auto max-w-6xl px-4 py-16">
+  <article class="mx-auto max-w-6xl px-4 py-16" style={accentStyle(post.data.tags)}>
     <a href="/" class="mb-8 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-800">
       <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z"/></svg>
       Retour au blog
