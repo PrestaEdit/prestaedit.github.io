@@ -1,0 +1,938 @@
+---
+title: "Les nouveaux hooks de PrestaShop 9.2, testés en conditions réelles"
+date: 2026-09-30
+tags:
+  - PrestaShop 9
+  - Tutoriel
+author: PrestaEdit
+featuredimg: '/head/2026-09-30-hooks-prestashop-9-2.svg'
+summary: "La 9.2 ajoute 47 hooks. Cinq touchent le front office, à commencer par le tunnel de commande. Pour chacun : où il est appelé, un cas d'usage concret, le code complet d'un module de démonstration et ce que les tests ont révélé."
+---
+
+La 9.2 ajoute 47 hooks. Quarante-deux sont générés automatiquement par les pages du back office migrées vers Symfony. Les cinq autres touchent le front office et changent vraiment ce qu'un module peut faire, à commencer par le tunnel de commande. Pour chacun : où il est appelé, un cas d'usage concret, le code complet et ce que les tests ont révélé.
+
+<Info title="Environnement de test">
+**PrestaShop 9.2.0-rc.1**, thème **Hummingbird 2.1**, **PHP 8.5**. Tout le code vient du module de démonstration [`pe_hooks92`](#le-module-de-démonstration), téléchargeable en fin d'article.
+</Info>
+
+## Le parcours client, hook par hook
+
+| Où | Hook |
+|---|---|
+| Catégorie | [`displaySubcategories`](#displaysubcategories) |
+| Panier | [`displayCartBelowSummary`](#displaycartbelowsummary) |
+| Commande | [`actionCheckoutBuildProcess`](#actioncheckoutbuildprocess) |
+| Compte client | [`displayOrderDetailProductLine`](#displayorderdetailproductline) |
+| Page introuvable | [`actionNotFound`](#actionnotfound) |
+| Back office | [`actionOrderReturnForm` et les 41 autres](#les-hooks-du-back-office) |
+
+## L'essentiel en 30 secondes
+
+- **Checkout** : un module peut enfin fournir son propre tunnel de commande. Mais s'il y a deux providers actifs, PrestaShop n'en garde aucun et affiche le tunnel natif, sans prévenir. Or la 9.2 livre justement un one-page checkout officiel qui utilise ce hook.
+- **Panier** : le bloc sous les totaux n'est pas rafraîchi quand le client change une quantité. Il faut le recharger soi-même.
+- **Thème** : les trois hooks `display*` n'existent que dans Hummingbird. Classic ne les appelle pas, et `displayOrderDetailProductLine` demande Hummingbird 2.1.1 ou plus.
+- **404** : `Tools::redirect()` interprète un chemin relatif comme un nom de page. Passez-lui toujours une URL absolue.
+- **Back office** : ajouter un champ à un formulaire d'options avec `action…Form` provoque une erreur 500 à l'enregistrement. La solution est un champ non mappé.
+
+## actionCheckoutBuildProcess
+
+*Action · Tunnel de commande.* Le hook le plus attendu de la version : un module peut remplacer le tunnel de commande, sans override d'`OrderController`.
+
+| | |
+|---|---|
+| **Appelé par** | `CheckoutProcessProviderResolver::getValidProviders()`, depuis `OrderController::buildCheckoutProcess()` |
+| **Paramètres** | Aucun |
+| **Retour attendu** | Un objet qui implémente `CheckoutProcessProviderInterface` |
+| **Règle** | Utilisé seulement s'il y a **exactement un** provider valide et activé. Sinon, tunnel natif. |
+
+Le fonctionnement tient en quelques lignes. À chaque affichage de la page commande, le core exécute le hook en mode tableau (un résultat par module). Il écarte ce qui n'implémente pas l'interface ou dont `isEnabled()` renvoie `false`. S'il reste un seul provider, il appelle sa méthode `buildCheckoutProcess()`. S'il en reste zéro ou plusieurs, il construit le tunnel natif.
+
+L'interface demande deux méthodes :
+
+*`src/Adapter/Order/Checkout/CheckoutProcessProviderInterface.php (core)`*
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace PrestaShop\PrestaShop\Adapter\Order\Checkout;
+
+use CheckoutProcess;
+use CheckoutSession;
+use PrestaShopBundle\Translation\TranslatorComponent;
+
+/**
+ * Contract for modules that provide their own checkout process.
+ * If exactly one enabled provider is returned by hooked modules, its checkout
+ * process replaces the native one. Otherwise, we falls back to the
+ * native checkout.
+ */
+interface CheckoutProcessProviderInterface
+{
+    /**
+     * Indicates whether the module checkout can be used.
+     */
+    public function isEnabled(): bool;
+
+    /**
+     * Builds the checkout process for the current customer session.
+     */
+    public function buildCheckoutProcess(
+        CheckoutSession $session,
+        TranslatorComponent $translator
+    ): CheckoutProcess;
+}
+```
+
+### Cas d'usage : un tunnel B2B
+
+Les clients professionnels d'un groupe donné sont toujours connectés : l'étape « Informations personnelles » ne leur sert à rien. En revanche, leur service achats exige un numéro de bon de commande. On construit donc un tunnel en quatre étapes : adresses, livraison, **bon de commande**, paiement. Tous les autres clients gardent le tunnel natif.
+
+Côté module, le hook se contente de renvoyer le provider :
+
+*`pe_hooks92.php`*
+
+```php
+public function hookActionCheckoutBuildProcess(array $params): CheckoutProcessProviderInterface
+{
+    return new B2bCheckoutProvider($this->context);
+}
+```
+
+Le provider porte la logique. `isEnabled()` décide qui a droit au tunnel B2B, et `buildCheckoutProcess()` assemble les étapes natives et la nôtre :
+
+*`src/Checkout/B2bCheckoutProvider.php`*
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace PrestaEdit\Hooks92\Checkout;
+
+use PrestaShop\PrestaShop\Adapter\Order\Checkout\CheckoutProcessProviderInterface;
+use PrestaShopBundle\Translation\TranslatorComponent;
+
+/**
+ * Checkout for professional customers: addresses, shipping, purchase order number, payment.
+ * The "personal information" step is dropped, the customer is always logged in here.
+ */
+final class B2bCheckoutProvider implements CheckoutProcessProviderInterface
+{
+    public function __construct(
+        private readonly \Context $context,
+    ) {
+    }
+
+    /**
+     * Returning false keeps the native checkout for everybody else.
+     */
+    public function isEnabled(): bool
+    {
+        $idGroup = (int) \Configuration::get(\Pe_Hooks92::CONFIG_B2B_GROUP);
+        $customer = $this->context->customer;
+
+        return $idGroup > 0
+            && $customer->isLogged()
+            && in_array($idGroup, array_map('intval', $customer->getGroups()), true);
+    }
+
+    public function buildCheckoutProcess(
+        \CheckoutSession $session,
+        TranslatorComponent $translator,
+    ): \CheckoutProcess {
+        $process = new \CheckoutProcess($this->context, $session);
+
+        $process->addStep(new \CheckoutAddressesStep(
+            $this->context,
+            $translator,
+            $this->makeAddressForm($translator)
+        ));
+
+        if (!$this->context->cart->isVirtualCart()) {
+            $process->addStep($this->makeDeliveryStep($translator));
+        }
+
+        $process
+            ->addStep(new CheckoutPurchaseOrderStep($this->context, $translator))
+            ->addStep(new \CheckoutPaymentStep(
+                $this->context,
+                $translator,
+                new \PaymentOptionsFinder(),
+                new \ConditionsToApproveFinder($this->context, $translator)
+            ));
+
+        return $process;
+    }
+
+    /**
+     * Same form as FrontController::makeAddressForm(), which is protected.
+     */
+    private function makeAddressForm(TranslatorComponent $translator): \CustomerAddressForm
+    {
+        $idLang = (int) $this->context->language->id;
+        $countries = \Configuration::get('PS_RESTRICT_DELIVERED_COUNTRIES')
+            ? \Carrier::getDeliveredCountries($idLang, true, true)
+            : \Country::getCountries($idLang, true);
+
+        $form = new \CustomerAddressForm(
+            $this->context->smarty,
+            $this->context->language,
+            $translator,
+            new \CustomerAddressPersister(
+                $this->context->customer,
+                $this->context->cart,
+                \Tools::getToken(true, $this->context)
+            ),
+            new \CustomerAddressFormatter($this->context->country, $translator, $countries)
+        );
+        $form->setAction($this->context->link->getPageLink('order'));
+
+        return $form;
+    }
+
+    /**
+     * Same settings as OrderController::buildCheckoutProcess().
+     */
+    private function makeDeliveryStep(TranslatorComponent $translator): \CheckoutDeliveryStep
+    {
+        $cart = $this->context->cart;
+        $step = new \CheckoutDeliveryStep($this->context, $translator);
+
+        $step
+            ->setRecyclablePackAllowed((bool) \Configuration::get('PS_RECYCLABLE_PACK'))
+            ->setGiftAllowed((bool) \Configuration::get('PS_GIFT_WRAPPING'))
+            ->setIncludeTaxes(
+                !\Product::getTaxCalculationMethod((int) $cart->id_customer)
+                && (int) \Configuration::get('PS_TAX')
+            )
+            ->setDisplayTaxesLabel(\Configuration::get('PS_TAX'))
+            ->setGiftCost($cart->getGiftWrappingPrice($step->getIncludeTaxes()));
+
+        return $step;
+    }
+}
+```
+
+<Warning title="Piège : formulaires protégés">
+Les étapes natives ont besoin de formulaires (`CustomerAddressForm`, etc.). Or les méthodes qui les fabriquent, `makeAddressForm()` et ses voisines, sont `protected` dans `FrontController`. Un provider ne peut pas les appeler : il faut reconstruire ces objets, comme ci-dessus.
+</Warning>
+
+L'étape personnalisée étend `AbstractCheckoutStep`. Elle lit la saisie dans `handleRequest()`, se déclare complète, puis passe la main à l'étape suivante. `getDataToPersist()` et `restorePersistedData()` conservent la valeur dans le panier, dans la colonne `checkout_session_data`, que le core gère pour nous.
+
+*`src/Checkout/CheckoutPurchaseOrderStep.php`*
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace PrestaEdit\Hooks92\Checkout;
+
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+/**
+ * Custom checkout step asking for the customer purchase order number.
+ */
+class CheckoutPurchaseOrderStep extends \AbstractCheckoutStep
+{
+    public const IDENTIFIER = 'checkout-purchase-order-step';
+
+    private string $purchaseOrder = '';
+    private string $error = '';
+
+    public function __construct(\Context $context, TranslatorInterface $translator)
+    {
+        parent::__construct($context, $translator);
+        $this->setTemplate('module:pe_hooks92/views/templates/front/checkout/purchase-order-step.tpl');
+    }
+
+    /**
+     * The default identifier is built from the class name, namespace included:
+     * it ends up as an HTML id and a JSON key, so keep it simple.
+     */
+    public function getIdentifier(): string
+    {
+        return self::IDENTIFIER;
+    }
+
+    public function handleRequest(array $requestParameters = [])
+    {
+        $this->setTitle($this->getTranslator()->trans('Purchase order', [], 'Modules.Pehooks92.Shop'));
+
+        if (!$this->isReachable() || !isset($requestParameters['submitPurchaseOrder'])) {
+            return;
+        }
+
+        $purchaseOrder = trim((string) ($requestParameters['purchase_order'] ?? ''));
+        $this->purchaseOrder = $purchaseOrder;
+
+        if (!preg_match('/^[\p{L}\p{N} \/._-]{3,40}$/u', $purchaseOrder)) {
+            $this->error = $this->getTranslator()->trans(
+                'Please enter a valid purchase order number (3 to 40 characters).',
+                [],
+                'Modules.Pehooks92.Shop'
+            );
+            $this->setComplete(false);
+            $this->setCurrent(true);
+            $this->getCheckoutProcess()->setHasErrors(true);
+
+            return;
+        }
+
+        $this->setComplete(true);
+        $this->setNextStepAsCurrent();
+    }
+
+    public function render(array $extraParams = [])
+    {
+        return $this->renderTemplate($this->getTemplate(), $extraParams, [
+            'purchase_order' => $this->purchaseOrder,
+            'purchase_order_error' => $this->error,
+        ]);
+    }
+
+    public function getDataToPersist()
+    {
+        return ['purchase_order' => $this->purchaseOrder];
+    }
+
+    public function restorePersistedData(array $data)
+    {
+        $this->purchaseOrder = (string) ($data['purchase_order'] ?? '');
+
+        return $this;
+    }
+
+    /**
+     * Reads the value persisted by OrderController in cart.checkout_session_data.
+     */
+    public static function getPurchaseOrderFromCart(int $idCart): string
+    {
+        $data = json_decode((string) \Db::getInstance()->getValue(
+            'SELECT `checkout_session_data` FROM `' . _DB_PREFIX_ . 'cart` WHERE `id_cart` = ' . $idCart
+        ), true);
+
+        $step = $data[self::IDENTIFIER] ?? [];
+
+        return empty($step['step_is_complete']) ? '' : (string) ($step['purchase_order'] ?? '');
+    }
+}
+```
+
+<Warning title="Piège : identifiant d'étape">
+Par défaut, `getIdentifier()` dérive l'identifiant du nom de la classe, **namespace compris**. Cette valeur sert d'`id` HTML et de clé JSON : surchargez-la avec une chaîne simple.
+</Warning>
+
+Le template étend celui des étapes du thème. L'étape s'intègre alors dans la navigation de Hummingbird, compteur « 3 / 4 » compris, et réutilise ses boutons :
+
+*`views/templates/front/checkout/purchase-order-step.tpl`*
+
+```smarty
+{extends file='checkout/_partials/steps/checkout-step.tpl'}
+
+{block name='step_content'}
+  <form method="post" class="purchase-order__form" novalidate>
+    <div class="mb-3">
+      <label class="form-label required" for="purchase_order">
+        {l s='Your purchase order number' d='Modules.Pehooks92.Shop'}
+      </label>
+      <input
+        type="text"
+        class="form-control{if $purchase_order_error} is-invalid{/if}"
+        id="purchase_order"
+        name="purchase_order"
+        value="{$purchase_order}"
+        maxlength="40"
+        autocomplete="off"
+        required
+      >
+      {if $purchase_order_error}
+        <div class="invalid-feedback">{$purchase_order_error}</div>
+      {else}
+        <div class="form-text">{l s='It will be attached to your order.' d='Modules.Pehooks92.Shop'}</div>
+      {/if}
+    </div>
+
+    <div class="buttons-wrapper buttons-wrapper--split buttons-wrapper--invert-mobile mt-3">
+      {include file='checkout/_partials/checkout-step-buttons.tpl' submit_name='submitPurchaseOrder' submit_value='1'}
+    </div>
+  </form>
+{/block}
+```
+
+Il reste à rattacher le numéro à la commande. `actionValidateOrder` le lit dans le panier et l'ajoute à la note interne de la commande, visible dans le back office :
+
+*`pe_hooks92.php`*
+
+```php
+public function hookActionValidateOrder(array $params): void
+{
+    /** @var Cart $cart */
+    $cart = $params['cart'];
+    /** @var Order $order */
+    $order = $params['order'];
+
+    $purchaseOrder = CheckoutPurchaseOrderStep::getPurchaseOrderFromCart((int) $cart->id);
+    if ($purchaseOrder === '') {
+        return;
+    }
+
+    $order->note = trim($order->note . "\n" . sprintf('Purchase order: %s', $purchaseOrder));
+    $order->update();
+}
+```
+
+<Warning title="Piège : le one-page checkout officiel">
+PrestaShop 9.2 livre le module `ps_onepagecheckout`, qui passe lui aussi par `actionCheckoutBuildProcess`. Il est installé mais désactivé par défaut. Si le marchand l'active, vos clients B2B se retrouvent avec deux providers valides : le core n'en garde aucun et affiche le tunnel natif, sans aucun message. Si votre module fournit un tunnel, vérifiez `PS_ONE_PAGE_CHECKOUT_ENABLED` dans sa page de configuration et affichez un avertissement.
+</Warning>
+
+`isEnabled()` est appelé à chaque affichage de la page commande : gardez-le rapide, sans appel réseau ni requête lourde.
+
+**Banc d'essai**
+
+| | Test | Résultat |
+|---|---|---|
+| ✅ | Client du groupe B2B connecté, page commande | 4 étapes, sans « Informations personnelles » |
+| ✅ | Numéro saisi : `x` | refusé, message sous le champ |
+| ✅ | Numéro saisi : `PO-2026/0042` | étape complète, passage au paiement |
+| ✅ | Commande par virement | note : `Purchase order: PO-2026/0042` |
+| ✅ | One-page checkout activé + client B2B | tunnel natif (2 providers) |
+| ✅ | One-page checkout activé + visiteur | one-page checkout (seul provider) |
+
+## displayCartBelowSummary
+
+*Display · Page panier.* Un emplacement juste sous les totaux du panier, là où le client regarde avant de cliquer sur « Commander ».
+
+| | |
+|---|---|
+| **Appelé dans** | `themes/hummingbird/templates/checkout/cart.tpl`, bloc `cart_below_summary` |
+| **Paramètres** | Aucun (le panier est dans `$this->context->cart`) |
+| **Retour attendu** | Du HTML |
+| **Thème** | Hummingbird uniquement |
+
+### Cas d'usage : la jauge de livraison offerte
+
+« Plus que 12,40 € pour la livraison offerte » est l'un des leviers de panier moyen les plus simples. Encore faut-il que le montant affiché soit exactement celui que le core applique. On reprend donc le calcul de `Cart::getPackageShippingCost()` à l'identique : le seuil `PS_SHIPPING_FREE_PRICE` converti dans la devise du panier, le hook `actionOverrideShippingFreePrice` qui permet à d'autres modules de le modifier, et le total `BOTH_WITHOUT_SHIPPING`.
+
+*`pe_hooks92.php`*
+
+```php
+public function hookDisplayCartBelowSummary(array $params): string
+{
+    // The container stays in the page even when empty, so the JS refresh always has a target.
+    return '<div class="js-pe-free-shipping" data-refresh-url="'
+        . htmlspecialchars($this->context->link->getModuleLink($this->name, 'freeshipping'), ENT_QUOTES)
+        . '">' . $this->renderFreeShippingProgress() . '</div>';
+}
+
+public function renderFreeShippingProgress(): string
+{
+    $cart = $this->context->cart;
+    if (!Validate::isLoadedObject($cart) || $cart->isVirtualCart()) {
+        return '';
+    }
+
+    // Same threshold as Cart::getPackageShippingCost(): configuration value converted
+    // to the cart currency, then open to modules through actionOverrideShippingFreePrice.
+    $threshold = (float) Configuration::get('PS_SHIPPING_FREE_PRICE');
+    if ($threshold > 0) {
+        $threshold = (float) Tools::convertPrice($threshold, Currency::getCurrencyInstance((int) $cart->id_currency));
+    }
+    Hook::exec('actionOverrideShippingFreePrice', [
+        'shippingFreePrice' => &$threshold,
+        'id_zone' => $this->getCartZoneId($cart),
+        'id_currency' => (int) $cart->id_currency,
+    ]);
+
+    if ($threshold <= 0) {
+        return '';
+    }
+
+    $total = (float) $cart->getOrderTotal(true, Cart::BOTH_WITHOUT_SHIPPING, null, null, false);
+    $remaining = max(0.0, $threshold - $total);
+    $locale = $this->context->getCurrentLocale();
+    $isoCode = Currency::getIsoCodeById((int) $cart->id_currency);
+
+    $this->context->smarty->assign([
+        'free_shipping' => [
+            'reached' => $remaining <= 0,
+            'remaining' => $locale->formatPrice($remaining, $isoCode),
+            'percent' => (int) min(100, floor($total / $threshold * 100)),
+        ],
+    ]);
+
+    return $this->fetch('module:' . $this->name . '/views/templates/hook/cart-free-shipping.tpl');
+}
+```
+
+*`views/templates/hook/cart-free-shipping.tpl`*
+
+```smarty
+<div class="pe-free-shipping mt-3" role="status">
+  {if $free_shipping.reached}
+    <p class="mb-2 fw-bold text-success">
+      {l s='Free shipping unlocked!' d='Modules.Pehooks92.Shop'}
+    </p>
+  {else}
+    <p class="mb-2">
+      {l s='Only %amount% left to get free shipping.' sprintf=['%amount%' => $free_shipping.remaining] d='Modules.Pehooks92.Shop'}
+    </p>
+  {/if}
+  <div class="progress" role="progressbar" aria-valuenow="{$free_shipping.percent}" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-bar{if $free_shipping.reached} bg-success{/if}" style="width: {$free_shipping.percent}%"></div>
+  </div>
+</div>
+```
+
+<Warning title="Piège : pas de rafraîchissement AJAX">
+Quand le client change une quantité, Hummingbird recalcule les totaux en AJAX, mais **pas** le contenu des hooks autour. Sans rien faire, la jauge reste figée sur l'ancienne valeur. Le test le montre : quantité passée à 4, jauge toujours à 42,64 €.
+</Warning>
+
+La solution : écouter l'événement `updatedCart` du thème et recharger le bloc depuis un petit contrôleur du module, qui réutilise exactement le même rendu PHP.
+
+*`views/js/free-shipping.js`*
+
+```javascript
+/**
+ * The cart page refreshes its totals in AJAX, but not the hook blocks around them:
+ * reload our block each time the cart changes.
+ */
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.querySelector('.js-pe-free-shipping');
+
+  if (!container || typeof prestashop === 'undefined') {
+    return;
+  }
+
+  prestashop.on('updatedCart', async () => {
+    const response = await fetch(container.dataset.refreshUrl, {
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
+    });
+
+    if (response.ok) {
+      container.innerHTML = await response.text();
+    }
+  });
+});
+```
+
+*`controllers/front/freeshipping.php`*
+
+```php
+<?php
+declare(strict_types=1);
+
+/**
+ * Returns the free shipping block alone, for the AJAX refresh of the cart page.
+ */
+class Pe_Hooks92FreeshippingModuleFrontController extends ModuleFrontController
+{
+    public function init(): void
+    {
+        $this->ajax = true;
+        parent::init();
+    }
+
+    public function displayAjax(): void
+    {
+        /** @var Pe_Hooks92 $module */
+        $module = $this->module;
+
+        header('Cache-Control: no-store');
+        $this->ajaxRender($module->renderFreeShippingProgress());
+    }
+}
+```
+
+*`pe_hooks92.php`*
+
+```php
+public function hookActionFrontControllerSetMedia(): void
+{
+    if ($this->context->controller->php_self !== 'cart') {
+        return;
+    }
+
+    $this->context->controller->registerJavascript(
+        'pe-hooks92-free-shipping',
+        'modules/' . $this->name . '/views/js/free-shipping.js',
+        ['position' => 'bottom', 'priority' => 200]
+    );
+}
+```
+
+**Banc d'essai (seuil à 100 €)**
+
+| | Test | Résultat |
+|---|---|---|
+| ✅ | 1 t-shirt à 19,12 € | « Plus que 80,88 € » |
+| ✅ | Quantité passée à 3, en AJAX | « Plus que 42,64 € » |
+| ❌ | Quantité passée à 4 sans le script | figé à 42,64 € |
+| ✅ | Quantité passée à 6 | « Livraison offerte », jauge à 100 % |
+
+## displayOrderDetailProductLine
+
+*Display · Compte client.* Enfin un point d'accroche sur chaque ligne produit du détail de commande, et plus seulement sur la page entière.
+
+| | |
+|---|---|
+| **Appelé dans** | Les 4 templates `customer/_partials/order-detail-*.tpl` de Hummingbird |
+| **Paramètres** | `id_order`, `id_order_detail`, `id_product` |
+| **Retour attendu** | Du HTML |
+| **Thème** | Hummingbird **2.1.1 ou plus** |
+
+<Info title="Disponibilité">
+Ce hook arrive tard dans le cycle de la 9.2. La 9.2.0-rc.1 embarque Hummingbird 2.1.0, qui ne l'appelle pas, et une installation neuve de la RC ne le déclare même pas en base (`registerHook()` le crée au besoin). Il est prévu pour la 9.2.0 finale, avec Hummingbird 2.1.1 ou plus. Pour les tests, les templates de Hummingbird 2.1.2 ont été copiés dans la boutique.
+</Info>
+
+### Cas d'usage : la garantie, ligne par ligne
+
+En France, la garantie légale de conformité dure deux ans. Afficher sur chaque produit « Sous garantie jusqu'au… » évite une bonne partie des demandes au SAV. Le point de départ est la date de livraison si elle est connue, sinon la date de commande.
+
+*`pe_hooks92.php`*
+
+```php
+public function hookDisplayOrderDetailProductLine(array $params): string
+{
+    $months = (int) Configuration::get(self::CONFIG_WARRANTY_MONTHS);
+    $order = $this->getOrder((int) ($params['id_order'] ?? 0));
+    if ($months <= 0 || $order === null) {
+        return '';
+    }
+
+    // The warranty starts on delivery; before that, fall back on the order date.
+    $start = Validate::isDate($order->delivery_date) && $order->delivery_date !== '0000-00-00 00:00:00'
+        ? $order->delivery_date
+        : $order->date_add;
+    $end = (new DateTimeImmutable($start))->modify(sprintf('+%d months', $months));
+
+    $this->context->smarty->assign([
+        'warranty' => [
+            'end_date' => Tools::displayDate($end->format('Y-m-d')),
+            'active' => $end > new DateTimeImmutable(),
+        ],
+    ]);
+
+    return $this->fetch('module:' . $this->name . '/views/templates/hook/order-line-warranty.tpl');
+}
+
+/**
+ * The hook runs once per product line: load each order only once.
+ */
+private function getOrder(int $idOrder): ?Order
+{
+    if (!array_key_exists($idOrder, $this->orderCache)) {
+        $order = new Order($idOrder);
+        $isOwner = Validate::isLoadedObject($order)
+            && (int) $order->id_customer === (int) $this->context->customer->id;
+        $this->orderCache[$idOrder] = $isOwner ? $order : null;
+    }
+
+    return $this->orderCache[$idOrder];
+}
+```
+
+*`views/templates/hook/order-line-warranty.tpl`*
+
+```smarty
+<span class="pe-warranty d-block mt-1 small">
+  {if $warranty.active}
+    <span class="badge bg-success">{l s='Under warranty' d='Modules.Pehooks92.Shop'}</span>
+    {l s='until %date%' sprintf=['%date%' => $warranty.end_date] d='Modules.Pehooks92.Shop'}
+  {else}
+    <span class="badge bg-secondary">{l s='Warranty expired' d='Modules.Pehooks92.Shop'}</span>
+    {l s='since %date%' sprintf=['%date%' => $warranty.end_date] d='Modules.Pehooks92.Shop'}
+  {/if}
+</span>
+```
+
+Deux détails qui comptent. Le hook est appelé **une fois par ligne** : on charge chaque commande une seule fois grâce à un cache local. Et on vérifie que la commande appartient bien au client connecté, car un hook d'affichage peut être appelé ailleurs demain.
+
+**Banc d'essai (garantie de 24 mois)**
+
+| | Test | Résultat |
+|---|---|---|
+| ✅ | Commande du 30/09/2026, non livrée | « Sous garantie jusqu'au 30/09/2028 » |
+| ✅ | Commandée le 01/06/2023, livrée le 10/06/2023 | « Garantie expirée depuis le 10/06/2025 » |
+| ✅ | Retours produits activés (autre template) | bloc affiché |
+
+## displaySubcategories
+
+*Display · Page catégorie.* Des entrées supplémentaires dans la liste des sous-catégories : articles de blog, landing pages, marques, liens transverses.
+
+| | |
+|---|---|
+| **Appelé dans** | `themes/hummingbird/templates/catalog/_partials/subcategories.tpl` |
+| **Paramètres** | `displaySubcategoryImages` (booléen du thème) |
+| **Retour attendu** | Du HTML, inséré après les sous-catégories natives |
+| **Thème** | Hummingbird uniquement |
+
+Le thème exécute le hook **avant** de décider s'il affiche la liste. Résultat : même une catégorie sans aucune sous-catégorie affichera le bloc si votre module renvoie quelque chose.
+
+*`themes/hummingbird/templates/catalog/_partials/subcategories.tpl (thème)`*
+
+```smarty
+{capture name="displaySubcategoriesContent"}{hook h='displaySubcategories' displaySubcategoryImages=$displaySubcategoryImages}{/capture}
+
+{if !empty($subcategories) || !empty($smarty.capture.displaySubcategoriesContent)}
+  <div class="{$componentName}">
+    …
+      {* Render the content of displaySubcategories hook we got before *}
+      {$smarty.capture.displaySubcategoriesContent nofilter}
+  </div>
+{/if}
+```
+
+### Cas d'usage : les marques de la catégorie
+
+On liste les marques présentes dans la catégorie avec le balisage exact du thème (`subcategory__link`, `subcategory__thumbnail`…). Elles se fondent dans la liste sans une ligne de CSS, et respectent le réglage d'images du thème grâce au paramètre `displaySubcategoryImages`.
+
+*`pe_hooks92.php`*
+
+```php
+public function hookDisplaySubcategories(array $params): string
+{
+    $controller = $this->context->controller;
+    if (!$controller instanceof CategoryController) {
+        return '';
+    }
+
+    $brands = $this->getCategoryBrands((int) $controller->getCategory()->id);
+    if (empty($brands)) {
+        return '';
+    }
+
+    $withImages = !empty($params['displaySubcategoryImages']);
+    foreach ($brands as &$brand) {
+        $brand['url'] = $this->context->link->getManufacturerLink((int) $brand['id_manufacturer']);
+        $brand['image'] = $withImages
+            ? $this->context->link->getManufacturerImageLink((int) $brand['id_manufacturer'], 'small_default')
+            : null;
+    }
+    unset($brand);
+
+    $this->context->smarty->assign([
+        'brands' => $brands,
+        'with_images' => $withImages,
+    ]);
+
+    return $this->fetch('module:' . $this->name . '/views/templates/hook/subcategories-brands.tpl');
+}
+
+/**
+ * @return array<int, array{id_manufacturer: string, name: string}>
+ */
+private function getCategoryBrands(int $idCategory): array
+{
+    $idShop = (int) $this->context->shop->id;
+
+    return Db::getInstance()->executeS(
+        'SELECT DISTINCT m.`id_manufacturer`, m.`name`
+        FROM `' . _DB_PREFIX_ . 'category_product` cp
+        INNER JOIN `' . _DB_PREFIX_ . 'product` p ON p.`id_product` = cp.`id_product`
+        INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps ON ps.`id_product` = p.`id_product`
+            AND ps.`id_shop` = ' . $idShop . ' AND ps.`active` = 1
+            AND ps.`visibility` IN ("both", "catalog")
+        INNER JOIN `' . _DB_PREFIX_ . 'manufacturer` m ON m.`id_manufacturer` = p.`id_manufacturer`
+            AND m.`active` = 1
+        INNER JOIN `' . _DB_PREFIX_ . 'manufacturer_shop` ms ON ms.`id_manufacturer` = m.`id_manufacturer`
+            AND ms.`id_shop` = ' . $idShop . '
+        WHERE cp.`id_category` = ' . $idCategory . '
+        ORDER BY m.`name`
+        LIMIT 6'
+    ) ?: [];
+}
+```
+
+*`views/templates/hook/subcategories-brands.tpl`*
+
+```smarty
+{* Same markup as the theme subcategories, so brands blend into the list *}
+{foreach from=$brands item=brand}
+  <a class="subcategory__link{if $with_images} subcategory__link--with-image{/if}" href="{$brand.url}" title="{$brand.name}">
+    {if $with_images}
+      <img class="subcategory__thumbnail img-fluid" src="{$brand.image}" alt="{$brand.name}" loading="lazy">
+    {/if}
+    <span class="subcategory__name">{$brand.name}</span>
+  </a>
+{/foreach}
+```
+
+**Banc d'essai**
+
+| | Test | Résultat |
+|---|---|---|
+| ✅ | Catégorie « Clothes » (2 sous-catégories) | Men, Women, Studio Design |
+| ✅ | Catégorie « Men » (aucune sous-catégorie) | bloc affiché : Studio Design |
+| ✅ | Réglage images du thème actif | logos affichés |
+
+## actionNotFound
+
+*Action · Erreur 404.* Réagir à une page introuvable : la journaliser, rediriger, alimenter un module SEO.
+
+| | |
+|---|---|
+| **Appelé par** | `PageNotFoundController::init()`, `ProductController` (produit introuvable), `CategoryController` (catégorie introuvable) |
+| **Paramètres** | Aucun |
+| **Retour attendu** | Rien |
+| **Version** | Aussi disponible dès la 9.1.5 ([PR #41824](https://github.com/PrestaShop/PrestaShop/pull/41824)) |
+
+Le hook se déclenche aux trois endroits où PrestaShop renvoie une 404, avant l'envoi des en-têtes. On peut donc encore rediriger. Dans `PageNotFoundController`, il s'exécute même avant `parent::init()` : ne comptez pas sur un contexte front office complet à ce stade.
+
+### Cas d'usage : journal des 404 et redirections 301
+
+Chaque URL introuvable est enregistrée avec un compteur. Il suffit ensuite de renseigner `redirect_to` sur une ligne pour que les visites suivantes soient redirigées en 301.
+
+*`pe_hooks92.php`*
+
+```php
+private function installDatabase(): bool
+{
+    return Db::getInstance()->execute(
+        'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . self::NOT_FOUND_TABLE . '` (
+            `id_not_found` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `id_shop` INT UNSIGNED NOT NULL,
+            `request_uri` VARCHAR(255) NOT NULL,
+            `redirect_to` VARCHAR(255) DEFAULT NULL,
+            `hits` INT UNSIGNED NOT NULL DEFAULT 0,
+            `date_last_hit` DATETIME NOT NULL,
+            PRIMARY KEY (`id_not_found`),
+            UNIQUE KEY `shop_uri` (`id_shop`, `request_uri`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4'
+    );
+}
+```
+
+*`pe_hooks92.php`*
+
+```php
+public function hookActionNotFound(array $params): void
+{
+    $path = mb_substr((string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH), 0, 255);
+    if ($path === '') {
+        return;
+    }
+
+    $db = Db::getInstance();
+    $table = _DB_PREFIX_ . self::NOT_FOUND_TABLE;
+    $idShop = (int) $this->context->shop->id;
+
+    $db->execute(
+        'INSERT INTO `' . $table . '` (`id_shop`, `request_uri`, `hits`, `date_last_hit`)
+        VALUES (' . $idShop . ', "' . pSQL($path) . '", 1, NOW())
+        ON DUPLICATE KEY UPDATE `hits` = `hits` + 1, `date_last_hit` = NOW()'
+    );
+
+    $target = (string) $db->getValue(
+        'SELECT `redirect_to` FROM `' . $table . '`
+        WHERE `id_shop` = ' . $idShop . ' AND `request_uri` = "' . pSQL($path) . '"'
+    );
+    if ($target === '') {
+        return;
+    }
+
+    // Tools::redirect() reads a relative value as a page name: always give it an absolute URL.
+    if (!preg_match('@^https?://@i', $target)) {
+        $target = Tools::getShopDomainSsl(true) . '/' . ltrim($target, '/');
+    }
+
+    Tools::redirect($target, __PS_BASE_URI__, null, 'HTTP/1.1 301 Moved Permanently');
+}
+```
+
+<Warning title="Piège : Tools::redirect()">
+Si l'URL passée à `Tools::redirect()` ne commence pas par `http`, PrestaShop la traite comme un nom de page et la fait passer par `Link::getPageLink()`. `/nouvelle-page` devient alors une URL fausse. Construisez toujours une URL absolue.
+</Warning>
+
+**Banc d'essai**
+
+| | Test | Résultat |
+|---|---|---|
+| ✅ | `/ancienne-page-promo`, 3 visites | 404, compteur à 3 |
+| ✅ | `/999999-produit-disparu.html` | 404 via ProductController, journalisée |
+| ✅ | `/99999-categorie-fantome` | 404 via CategoryController, journalisée |
+| ✅ | `redirect_to` renseigné | 301 vers l'URL absolue |
+
+## Les hooks du back office
+
+*+42 · Action · Back office.* Les pages migrées vers Symfony reçoivent la panoplie complète de hooks. Aucune surprise sur les noms, un piège sur les options.
+
+Ces hooks sont générés à partir d'un nom de base, comme sur toutes les pages déjà migrées. Si vous connaissez `actionCustomerFormBuilderModifier`, vous savez déjà vous en servir.
+
+| Page | Famille | Hooks | Exemple |
+|---|---|---|---|
+| Tax rules, Quick access, Fulfill shipment, Extra property definition | Formulaire d'objet | 28 | `actionTaxRuleFormBuilderModifier`, `actionAfterCreateQuickAccessFormHandler` |
+| Email body template, Extra property definition | Grille (liste) | 10 | `actionEmailBodyTemplateGridQueryBuilderModifier` |
+| Pays (options), Retours produits (options) | Formulaire d'options | 4 | `actionOrderReturnForm`, `actionCountriesPageOptionsSave` |
+
+### Le piège des formulaires d'options
+
+Sur le papier, c'est simple : `actionOrderReturnForm` reçoit le `form_builder` pour ajouter un champ, et `actionOrderReturnSave` reçoit `form_data` pour l'enregistrer. En pratique, l'enregistrement plante :
+
+*`Back office · Retours produits · Enregistrer`*
+
+```text
+The option "pe_return_email" does not exist. Defined options are:
+"enable_order_return", "order_return_period_in_days", "order_return_prefix".
+(500 Internal Server Error)
+```
+
+La raison est dans le core. Avant d'appeler le hook `…Save`, le gestionnaire passe toutes les données à la configuration de la page, qui les valide avec un `OptionsResolver` strict. Une clé inconnue lève une exception, et le hook n'est jamais atteint. Toute page d'options dont la configuration valide ses données de cette façon est concernée : vérifiez celle de la page que vous étendez.
+
+La solution : déclarer le champ avec `'mapped' => false` pour qu'il reste hors des données envoyées au core, et l'enregistrer soi-même dans un listener `POST_SUBMIT`, après la validation du formulaire.
+
+*`pe_hooks92.php`*
+
+```php
+public function hookActionOrderReturnForm(array $params): void
+{
+    /** @var FormBuilderInterface $builder */
+    $builder = $params['form_builder'];
+
+    $builder->add('pe_return_email', EmailType::class, [
+        'label' => $this->trans('Returns department email', [], 'Modules.Pehooks92.Admin'),
+        'required' => false,
+        // Not mapped: the core configuration rejects any key it does not know,
+        // with a 500 error, before actionOrderReturnSave is even called.
+        'mapped' => false,
+        'data' => (string) Configuration::get(self::CONFIG_RETURN_EMAIL),
+        'constraints' => [new Assert\Email()],
+    ]);
+
+    // Priority -10: runs after the validation listener, so isValid() is reliable.
+    $builder->addEventListener(FormEvents::POST_SUBMIT, static function (FormEvent $event): void {
+        $form = $event->getForm();
+        if ($form->isValid()) {
+            Configuration::updateValue(
+                self::CONFIG_RETURN_EMAIL,
+                trim((string) $form->get('pe_return_email')->getData())
+            );
+        }
+    }, -10);
+}
+```
+
+**Banc d'essai (Retours produits)**
+
+| | Test | Résultat |
+|---|---|---|
+| ❌ | Champ mappé + `actionOrderReturnSave` | erreur 500 à l'enregistrement |
+| ✅ | Champ non mappé, saisie `not-an-email` | refusé, message sous le champ |
+| ✅ | Saisie `retours@acme.test` | « Update successful », valeur relue |
+| ✅ | Options natives modifiées en même temps | retours activés, délai de 30 jours enregistré |
+
+## Le module de démonstration
+
+Tout le code de cet article vient d'un seul module, `pe_hooks92`, installé et testé sur une boutique PrestaShop 9.2.0-rc.1 (image Docker Flashlight) avec le thème Hummingbird. Les extraits ci-dessus sont copiés tels quels depuis ses fichiers.
+
+<Tip title="Télécharger le module">
+[pe_hooks92.zip](/posts/2026-09-30-hooks-prestashop-9-2/pe_hooks92.zip) (22 Ko)
+</Tip>
+
+Pour l'essayer : `composer dump-autoload` dans le dossier du module, puis `php bin/console prestashop:module install pe_hooks92`. Le tunnel B2B reste désactivé tant que `PE_HOOKS92_B2B_GROUP` vaut 0.
+
+- `pe_hooks92.php`
+- `src/Checkout/B2bCheckoutProvider.php`
+- `src/Checkout/CheckoutPurchaseOrderStep.php`
+- `controllers/front/freeshipping.php`
+- `views/js/free-shipping.js`
+- `views/templates/…`
