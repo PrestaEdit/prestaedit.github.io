@@ -7,13 +7,16 @@ tags:
 author: PrestaEdit
 featuredimg: '/posts/2026-09-30-hooks-prestashop-9-2/cover.png'
 summary: "La 9.2 ajoute 47 hooks. Cinq touchent le front office, à commencer par le tunnel de commande. Pour chacun : où il est appelé, un cas d'usage concret, le code complet d'un module de démonstration et ce que les tests ont révélé."
+hero:
+  eyebrow: "PrestaShop 9.2 · Développement de modules"
+  highlight: "hooks"
+  lead: "La 9.2 ajoute 47 hooks. Quarante-deux sont générés automatiquement par les pages du back office migrées vers Symfony. Les cinq autres touchent le front office et changent vraiment ce qu'un module peut faire, à commencer par le tunnel de commande. Pour chacun : où il est appelé, un cas d'usage concret, le code complet et ce que les tests ont révélé."
+  meta:
+    - "Testé sur PrestaShop 9.2.0-rc.1"
+    - "Thème Hummingbird 2.1"
+    - "PHP 8.5"
+    - "Module de démo pe_hooks92"
 ---
-
-La 9.2 ajoute 47 hooks. Quarante-deux sont générés automatiquement par les pages du back office migrées vers Symfony. Les cinq autres touchent le front office et changent vraiment ce qu'un module peut faire, à commencer par le tunnel de commande. Pour chacun : où il est appelé, un cas d'usage concret, le code complet et ce que les tests ont révélé.
-
-<Info title="Environnement de test">
-**PrestaShop 9.2.0-rc.1**, thème **Hummingbird 2.1**, **PHP 8.5**. Tout le code vient du module de démonstration [`pe_hooks92`](#le-module-de-démonstration), téléchargeable en fin d'article.
-</Info>
 
 ## Le parcours client, hook par hook
 

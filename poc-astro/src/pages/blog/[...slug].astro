@@ -8,6 +8,7 @@ import Note from '../../components/Note.astro';
 import Tip from '../../components/Tip.astro';
 import Danger from '../../components/Danger.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
+import ArticleHero from '../../components/rich/ArticleHero.astro';
 import { accentStyle, chipClass, placeholderFor } from '../../lib/palette';
 import { seriesLabel as seriesLabelFor } from '../../lib/series';
 
@@ -63,28 +64,46 @@ const ogImage = customCover ? post.data.featuredimg : `/head/${ogSlug}.png`;
       Retour au blog
     </a>
 
+    {post.data.hero && (
+      <div class="mb-12">
+        <ArticleHero
+          id={post.id}
+          title={post.data.title}
+          summary={post.data.summary}
+          author={post.data.author}
+          date={post.data.date}
+          tags={post.data.tags}
+          hero={post.data.hero}
+        />
+      </div>
+    )}
+
     <div class="grid gap-12 lg:grid-cols-[1fr_280px]">
       <div class="min-w-0">
-        <div class="mb-4 flex flex-wrap gap-2">
-          {post.data.tags.map((t) => (
-            <span class:list={['rounded-full px-2.5 py-0.5 text-xs font-medium', chipClass(t)]}>{t}</span>
-          ))}
-        </div>
-        <h1 transition:name={`title-${post.id}`} class="text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">{post.data.title}</h1>
-        <div transition:name={`meta-${post.id}`} class="mt-4 flex items-center gap-3 text-sm text-gray-500">
-          <span class="font-medium text-gray-700">{post.data.author}</span>
-          <span>•</span>
-          <time datetime={post.data.date.toISOString()}>{formatted}</time>
-        </div>
-        <img
-          src={post.data.featuredimg ?? placeholderFor(post.data.tags)}
-          alt={post.data.title}
-          transition:name={`hero-${post.id}`}
-          class="mt-8 aspect-[1200/630] w-full rounded-2xl object-cover"
-          onerror={`this.onerror=null;this.src='${placeholderFor(post.data.tags)}';`}
-        />
+        {!post.data.hero && (
+          <Fragment>
+            <div class="mb-4 flex flex-wrap gap-2">
+              {post.data.tags.map((t) => (
+                <span class:list={['rounded-full px-2.5 py-0.5 text-xs font-medium', chipClass(t)]}>{t}</span>
+              ))}
+            </div>
+            <h1 transition:name={`title-${post.id}`} class="text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">{post.data.title}</h1>
+            <div transition:name={`meta-${post.id}`} class="mt-4 flex items-center gap-3 text-sm text-gray-500">
+              <span class="font-medium text-gray-700">{post.data.author}</span>
+              <span>•</span>
+              <time datetime={post.data.date.toISOString()}>{formatted}</time>
+            </div>
+            <img
+              src={post.data.featuredimg ?? placeholderFor(post.data.tags)}
+              alt={post.data.title}
+              transition:name={`hero-${post.id}`}
+              class="mt-8 aspect-[1200/630] w-full rounded-2xl object-cover"
+              onerror={`this.onerror=null;this.src='${placeholderFor(post.data.tags)}';`}
+            />
+          </Fragment>
+        )}
 
-        <div class="prose prose-lg prose-blue mt-10 max-w-none prose-pre:rounded-xl prose-pre:border prose-pre:border-gray-200 prose-code:before:content-none prose-code:after:content-none">
+        <div class:list={['prose prose-lg prose-blue max-w-none prose-pre:rounded-xl prose-pre:border prose-pre:border-gray-200 prose-code:before:content-none prose-code:after:content-none', !post.data.hero && 'mt-10']}>
           <Content components={mdxComponents} />
         </div>
 
