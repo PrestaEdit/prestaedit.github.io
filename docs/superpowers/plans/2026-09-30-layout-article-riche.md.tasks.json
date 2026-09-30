@@ -4,13 +4,13 @@
     {
       "id": 0,
       "subject": "Task 1: Variables d'accent sur les pages article",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Each <article> carries --accent-50..800 from the dominant tag family.\n\n**Verify:** grep --accent-500 in dist: hooks #f97316, tester #10b981\n\n```json:metadata\n{\"files\": [\"poc-astro/src/lib/palette.ts\", \"poc-astro/src/pages/blog/[...slug].astro\"], \"verifyCommand\": \"grep --accent-500 in dist: hooks #f97316, tester #10b981\", \"acceptanceCriteria\": []}\n```"
     },
     {
       "id": 1,
       "subject": "Task 2: Blocs de code avec nom de fichier",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Shiki transformer title= -> data-title/data-lang + CSS bar; hooks article captions converted.\n\n**Verify:** 20 data-title in hooks, 0 in tester\n\n```json:metadata\n{\"files\": [\"poc-astro/src/lib/shiki-title.mjs\", \"poc-astro/astro.config.mjs\", \"poc-astro/src/styles/global.css\", \"poc-astro/src/content/blog/hooks-prestashop-9-2.mdx\"], \"verifyCommand\": \"20 data-title in hooks, 0 in tester\", \"acceptanceCriteria\": []}\n```",
       "blockedBy": [
         0
@@ -19,7 +19,7 @@
     {
       "id": 2,
       "subject": "Task 3: Hero sombre activé par le frontmatter",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Optional hero schema, ArticleHero component, page switch, hooks frontmatter.\n\n**Verify:** data-article-hero 1 in hooks, 0 in tester\n\n```json:metadata\n{\"files\": [\"poc-astro/src/content.config.ts\", \"poc-astro/src/components/rich/ArticleHero.astro\", \"poc-astro/src/pages/blog/[...slug].astro\", \"poc-astro/src/content/blog/hooks-prestashop-9-2.mdx\"], \"verifyCommand\": \"data-article-hero 1 in hooks, 0 in tester\", \"acceptanceCriteria\": []}\n```",
       "blockedBy": [
         0
@@ -28,7 +28,7 @@
     {
       "id": 3,
       "subject": "Task 4: Composants MDX Journey, Takeaways, Kicker, Spec, Bench",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Five generic components registered in mdxComponents + .pfx heading styles.\n\n**Verify:** build ok, components registered\n\n```json:metadata\n{\"files\": [\"poc-astro/src/components/rich/\", \"poc-astro/src/pages/blog/[...slug].astro\", \"poc-astro/src/styles/global.css\"], \"verifyCommand\": \"build ok, components registered\", \"acceptanceCriteria\": []}\n```",
       "blockedBy": [
         0,
@@ -38,7 +38,7 @@
     {
       "id": 4,
       "subject": "Task 5: Migrer le corps de l'article hooks 9.2",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Article body uses the components, anchors unchanged.\n\n**Verify:** component counts 1/1/6/5/6, six hook ids present\n\n```json:metadata\n{\"files\": [\"poc-astro/src/content/blog/hooks-prestashop-9-2.mdx\"], \"verifyCommand\": \"component counts 1/1/6/5/6, six hook ids present\", \"acceptanceCriteria\": []}\n```",
       "blockedBy": [
         1,
@@ -49,12 +49,12 @@
     {
       "id": 5,
       "subject": "Task 6: Contrôle visuel bureau et mobile",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Browser check of rich article and unchanged control article.\n\n**Verify:** hero true, 20 titles, no broken TOC, no overflow\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"hero true, 20 titles, no broken TOC, no overflow\", \"acceptanceCriteria\": []}\n```",
       "blockedBy": [
         4
       ]
     }
   ],
-  "lastUpdated": "2026-09-30T14:50:11.653724"
+  "lastUpdated": "2026-09-30T15:01:44.233284"
 }
