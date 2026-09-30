@@ -21,6 +21,7 @@ articles.
   hero:
     eyebrow: "PrestaShop 9.2 · Développement de modules"   # requis
     highlight: "hooks"                                     # optionnel, 1re occurrence dans le titre
+    lead: "La 9.2 ajoute 47 hooks…"                        # optionnel, chapô du hero (défaut : summary)
     meta: ["Testé sur PrestaShop 9.2.0-rc.1", "PHP 8.5"]   # optionnel, défaut []
   ```
 
@@ -31,8 +32,9 @@ articles.
 
 ## Couleurs
 
-- Accent = famille du premier tag qui a une famille, via `src/lib/palette.ts`
-  (même règle que les chips). Nouvelle fonction exportée qui renvoie un jeu de
+- Accent = famille dominante des tags, via `primaryFamily()` de `src/lib/palette.ts`
+  (même règle que les placeholders et les couvertures : outillage > plateforme >
+  format > meta). Nouvelle fonction exportée qui renvoie un jeu de
   variables CSS : `--accent-50`, `--accent-100`, `--accent-200`, `--accent-500`,
   `--accent-600`, `--accent-700`, `--accent-800` (valeurs Tailwind de la couleur
   de la famille : emerald, orange, slate, violet, blue par défaut).
@@ -81,7 +83,9 @@ la classe `.pfx` est stylée en `--accent-600` dans la prose. Le slug reste
 
 ## Hors périmètre
 
-Mode sombre, polices spécifiques de la page source, refonte des callouts existants.
+Mode sombre, polices spécifiques de la page source, refonte des callouts existants,
+prise en charge de `hero` et des nouveaux composants dans Keystatic (un article
+riche s'édite dans le fichier `.mdx`).
 
 ## Vérification
 
