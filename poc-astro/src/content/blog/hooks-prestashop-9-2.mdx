@@ -20,26 +20,34 @@ hero:
 
 ## Le parcours client, hook par hook
 
-| Où | Hook |
-|---|---|
-| Catégorie | [`displaySubcategories`](#displaysubcategories) |
-| Panier | [`displayCartBelowSummary`](#displaycartbelowsummary) |
-| Commande | [`actionCheckoutBuildProcess`](#actioncheckoutbuildprocess) |
-| Compte client | [`displayOrderDetailProductLine`](#displayorderdetailproductline) |
-| Page introuvable | [`actionNotFound`](#actionnotfound) |
-| Back office | [`actionOrderReturnForm` et les 41 autres](#les-hooks-du-back-office) |
+<Journey items={[
+  { place: 'Catégorie', hook: 'displaySubcategories', href: '#displaysubcategories' },
+  { place: 'Panier', hook: 'displayCartBelowSummary', href: '#displaycartbelowsummary' },
+  { place: 'Commande', hook: 'actionCheckoutBuildProcess', href: '#actioncheckoutbuildprocess' },
+  { place: 'Compte client', hook: 'displayOrderDetailProductLine', href: '#displayorderdetailproductline' },
+  { place: 'Page introuvable', hook: 'actionNotFound', href: '#actionnotfound' },
+  { place: 'Back office', hook: 'actionOrderReturnForm & co', href: '#les-hooks-du-back-office', muted: true },
+]} />
 
 ## L'essentiel en 30 secondes
 
-- **Checkout** : un module peut enfin fournir son propre tunnel de commande. Mais s'il y a deux providers actifs, PrestaShop n'en garde aucun et affiche le tunnel natif, sans prévenir. Or la 9.2 livre justement un one-page checkout officiel qui utilise ce hook.
-- **Panier** : le bloc sous les totaux n'est pas rafraîchi quand le client change une quantité. Il faut le recharger soi-même.
-- **Thème** : les trois hooks `display*` n'existent que dans Hummingbird. Classic ne les appelle pas, et `displayOrderDetailProductLine` demande Hummingbird 2.1.1 ou plus.
-- **404** : `Tools::redirect()` interprète un chemin relatif comme un nom de page. Passez-lui toujours une URL absolue.
-- **Back office** : ajouter un champ à un formulaire d'options avec `action…Form` provoque une erreur 500 à l'enregistrement. La solution est un champ non mappé.
+<Takeaways>
 
-## actionCheckoutBuildProcess
+- **Checkout** Un module peut enfin fournir son propre tunnel de commande. Mais s'il y a deux providers actifs, PrestaShop n'en garde aucun et affiche le tunnel natif, sans prévenir. Or la 9.2 livre justement un one-page checkout officiel qui utilise ce hook.
+- **Panier** Le bloc sous les totaux n'est pas rafraîchi quand le client change une quantité. Il faut le recharger soi-même.
+- **Thème** Les trois hooks `display*` n'existent que dans Hummingbird. Classic ne les appelle pas, et `displayOrderDetailProductLine` demande Hummingbird 2.1.1 ou plus.
+- **404** `Tools::redirect()` interprète un chemin relatif comme un nom de page. Passez-lui toujours une URL absolue.
+- **Back office** Ajouter un champ à un formulaire d'options avec `action…Form` provoque une erreur 500 à l'enregistrement. La solution est un champ non mappé.
 
-*Action · Tunnel de commande.* Le hook le plus attendu de la version : un module peut remplacer le tunnel de commande, sans override d'`OrderController`.
+</Takeaways>
+
+<Kicker>01 · Action · Tunnel de commande</Kicker>
+
+## <span class="pfx">action</span>CheckoutBuildProcess
+
+Le hook le plus attendu de la version : un module peut remplacer le tunnel de commande, sans override d'`OrderController`.
+
+<Spec>
 
 | | |
 |---|---|
@@ -47,6 +55,8 @@ hero:
 | **Paramètres** | Aucun |
 | **Retour attendu** | Un objet qui implémente `CheckoutProcessProviderInterface` |
 | **Règle** | Utilisé seulement s'il y a **exactement un** provider valide et activé. Sinon, tunnel natif. |
+
+</Spec>
 
 Le fonctionnement tient en quelques lignes. À chaque affichage de la page commande, le core exécute le hook en mode tableau (un résultat par module). Il écarte ce qui n'implémente pas l'interface ou dont `isEnabled()` renvoie `false`. S'il reste un seul provider, il appelle sa méthode `buildCheckoutProcess()`. S'il en reste zéro ou plusieurs, il construit le tunnel natif.
 
@@ -378,7 +388,7 @@ PrestaShop 9.2 livre le module `ps_onepagecheckout`, qui passe lui aussi par `ac
 
 `isEnabled()` est appelé à chaque affichage de la page commande : gardez-le rapide, sans appel réseau ni requête lourde.
 
-**Banc d'essai**
+<Bench>
 
 | | Test | Résultat |
 |---|---|---|
@@ -389,9 +399,15 @@ PrestaShop 9.2 livre le module `ps_onepagecheckout`, qui passe lui aussi par `ac
 | ✅ | One-page checkout activé + client B2B | tunnel natif (2 providers) |
 | ✅ | One-page checkout activé + visiteur | one-page checkout (seul provider) |
 
-## displayCartBelowSummary
+</Bench>
 
-*Display · Page panier.* Un emplacement juste sous les totaux du panier, là où le client regarde avant de cliquer sur « Commander ».
+<Kicker>02 · Display · Page panier</Kicker>
+
+## <span class="pfx">display</span>CartBelowSummary
+
+Un emplacement juste sous les totaux du panier, là où le client regarde avant de cliquer sur « Commander ».
+
+<Spec>
 
 | | |
 |---|---|
@@ -399,6 +415,8 @@ PrestaShop 9.2 livre le module `ps_onepagecheckout`, qui passe lui aussi par `ac
 | **Paramètres** | Aucun (le panier est dans `$this->context->cart`) |
 | **Retour attendu** | Du HTML |
 | **Thème** | Hummingbird uniquement |
+
+</Spec>
 
 ### Cas d'usage : la jauge de livraison offerte
 
@@ -541,7 +559,7 @@ public function hookActionFrontControllerSetMedia(): void
 }
 ```
 
-**Banc d'essai (seuil à 100 €)**
+<Bench title="Banc d'essai · seuil à 100 €">
 
 | | Test | Résultat |
 |---|---|---|
@@ -550,9 +568,15 @@ public function hookActionFrontControllerSetMedia(): void
 | ❌ | Quantité passée à 4 sans le script | figé à 42,64 € |
 | ✅ | Quantité passée à 6 | « Livraison offerte », jauge à 100 % |
 
-## displayOrderDetailProductLine
+</Bench>
 
-*Display · Compte client.* Enfin un point d'accroche sur chaque ligne produit du détail de commande, et plus seulement sur la page entière.
+<Kicker>03 · Display · Compte client</Kicker>
+
+## <span class="pfx">display</span>OrderDetailProductLine
+
+Enfin un point d'accroche sur chaque ligne produit du détail de commande, et plus seulement sur la page entière.
+
+<Spec>
 
 | | |
 |---|---|
@@ -560,6 +584,8 @@ public function hookActionFrontControllerSetMedia(): void
 | **Paramètres** | `id_order`, `id_order_detail`, `id_product` |
 | **Retour attendu** | Du HTML |
 | **Thème** | Hummingbird **2.1.1 ou plus** |
+
+</Spec>
 
 <Info title="Disponibilité">
 Ce hook arrive tard dans le cycle de la 9.2. La 9.2.0-rc.1 embarque Hummingbird 2.1.0, qui ne l'appelle pas, et une installation neuve de la RC ne le déclare même pas en base (`registerHook()` le crée au besoin). Il est prévu pour la 9.2.0 finale, avec Hummingbird 2.1.1 ou plus. Pour les tests, les templates de Hummingbird 2.1.2 ont été copiés dans la boutique.
@@ -624,7 +650,7 @@ private function getOrder(int $idOrder): ?Order
 
 Deux détails qui comptent. Le hook est appelé **une fois par ligne** : on charge chaque commande une seule fois grâce à un cache local. Et on vérifie que la commande appartient bien au client connecté, car un hook d'affichage peut être appelé ailleurs demain.
 
-**Banc d'essai (garantie de 24 mois)**
+<Bench title="Banc d'essai · garantie de 24 mois">
 
 | | Test | Résultat |
 |---|---|---|
@@ -632,9 +658,15 @@ Deux détails qui comptent. Le hook est appelé **une fois par ligne** : on char
 | ✅ | Commandée le 01/06/2023, livrée le 10/06/2023 | « Garantie expirée depuis le 10/06/2025 » |
 | ✅ | Retours produits activés (autre template) | bloc affiché |
 
-## displaySubcategories
+</Bench>
 
-*Display · Page catégorie.* Des entrées supplémentaires dans la liste des sous-catégories : articles de blog, landing pages, marques, liens transverses.
+<Kicker>04 · Display · Page catégorie</Kicker>
+
+## <span class="pfx">display</span>Subcategories
+
+Des entrées supplémentaires dans la liste des sous-catégories : articles de blog, landing pages, marques, liens transverses.
+
+<Spec>
 
 | | |
 |---|---|
@@ -642,6 +674,8 @@ Deux détails qui comptent. Le hook est appelé **une fois par ligne** : on char
 | **Paramètres** | `displaySubcategoryImages` (booléen du thème) |
 | **Retour attendu** | Du HTML, inséré après les sous-catégories natives |
 | **Thème** | Hummingbird uniquement |
+
+</Spec>
 
 Le thème exécute le hook **avant** de décider s'il affiche la liste. Résultat : même une catégorie sans aucune sous-catégorie affichera le bloc si votre module renvoie quelque chose.
 
@@ -728,7 +762,7 @@ private function getCategoryBrands(int $idCategory): array
 {/foreach}
 ```
 
-**Banc d'essai**
+<Bench>
 
 | | Test | Résultat |
 |---|---|---|
@@ -736,9 +770,15 @@ private function getCategoryBrands(int $idCategory): array
 | ✅ | Catégorie « Men » (aucune sous-catégorie) | bloc affiché : Studio Design |
 | ✅ | Réglage images du thème actif | logos affichés |
 
-## actionNotFound
+</Bench>
 
-*Action · Erreur 404.* Réagir à une page introuvable : la journaliser, rediriger, alimenter un module SEO.
+<Kicker>05 · Action · Erreur 404</Kicker>
+
+## <span class="pfx">action</span>NotFound
+
+Réagir à une page introuvable : la journaliser, rediriger, alimenter un module SEO.
+
+<Spec>
 
 | | |
 |---|---|
@@ -746,6 +786,8 @@ private function getCategoryBrands(int $idCategory): array
 | **Paramètres** | Aucun |
 | **Retour attendu** | Rien |
 | **Version** | Aussi disponible dès la 9.1.5 ([PR #41824](https://github.com/PrestaShop/PrestaShop/pull/41824)) |
+
+</Spec>
 
 Le hook se déclenche aux trois endroits où PrestaShop renvoie une 404, avant l'envoi des en-têtes. On peut donc encore rediriger. Dans `PageNotFoundController`, il s'exécute même avant `parent::init()` : ne comptez pas sur un contexte front office complet à ce stade.
 
@@ -810,7 +852,7 @@ public function hookActionNotFound(array $params): void
 Si l'URL passée à `Tools::redirect()` ne commence pas par `http`, PrestaShop la traite comme un nom de page et la fait passer par `Link::getPageLink()`. `/nouvelle-page` devient alors une URL fausse. Construisez toujours une URL absolue.
 </Warning>
 
-**Banc d'essai**
+<Bench>
 
 | | Test | Résultat |
 |---|---|---|
@@ -819,9 +861,13 @@ Si l'URL passée à `Tools::redirect()` ne commence pas par `http`, PrestaShop l
 | ✅ | `/99999-categorie-fantome` | 404 via CategoryController, journalisée |
 | ✅ | `redirect_to` renseigné | 301 vers l'URL absolue |
 
+</Bench>
+
+<Kicker>+42 · Action · Back office</Kicker>
+
 ## Les hooks du back office
 
-*+42 · Action · Back office.* Les pages migrées vers Symfony reçoivent la panoplie complète de hooks. Aucune surprise sur les noms, un piège sur les options.
+Les pages migrées vers Symfony reçoivent la panoplie complète de hooks. Aucune surprise sur les noms, un piège sur les options.
 
 Ces hooks sont générés à partir d'un nom de base, comme sur toutes les pages déjà migrées. Si vous connaissez `actionCustomerFormBuilderModifier`, vous savez déjà vous en servir.
 
@@ -874,7 +920,7 @@ public function hookActionOrderReturnForm(array $params): void
 }
 ```
 
-**Banc d'essai (Retours produits)**
+<Bench title="Banc d'essai · Retours produits">
 
 | | Test | Résultat |
 |---|---|---|
@@ -882,6 +928,8 @@ public function hookActionOrderReturnForm(array $params): void
 | ✅ | Champ non mappé, saisie `not-an-email` | refusé, message sous le champ |
 | ✅ | Saisie `retours@acme.test` | « Update successful », valeur relue |
 | ✅ | Options natives modifiées en même temps | retours activés, délai de 30 jours enregistré |
+
+</Bench>
 
 ## Le module de démonstration
 
