@@ -1,0 +1,12 @@
+---
+/** Small mono overline, placed right before a ## heading. */
+---
+<p class="kicker not-prose mb-0 mt-16 font-mono text-xs font-semibold uppercase tracking-wider" style="color: var(--accent-700)">
+  <slot />
+</p>
+
+<style>
+  .kicker + :global(h2) {
+    margin-top: 0.25rem;
+  }
+</style>

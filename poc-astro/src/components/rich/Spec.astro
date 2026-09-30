@@ -1,0 +1,28 @@
+---
+/** Wraps a 2-column markdown table with an empty header: label / value grid. */
+---
+<div class="spec"><slot /></div>
+
+<style>
+  .spec :global(table) {
+    margin: 1.5rem 0;
+    font-size: 0.95rem;
+  }
+  .spec :global(thead) {
+    display: none;
+  }
+  .spec :global(td) {
+    padding: 0.6rem 0;
+    vertical-align: top;
+  }
+  .spec :global(td:first-child) {
+    width: 9rem;
+    padding-right: 1rem;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+  .spec :global(td:first-child strong) {
+    font-weight: 500;
+    color: inherit;
+  }
+</style>

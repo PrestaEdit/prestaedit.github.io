@@ -1,0 +1,28 @@
+---
+/** Wraps a markdown list whose items start with **Label**: the label becomes a pill. */
+---
+<div class="takeaways my-10 rounded-2xl bg-gray-50 px-6 py-2" style="border-left: 4px solid var(--accent-500); border-radius: 0 1rem 1rem 0;">
+  <slot />
+</div>
+
+<style>
+  .takeaways :global(ul) {
+    list-style: none;
+    padding-left: 0;
+  }
+  .takeaways :global(li) {
+    padding-left: 0;
+  }
+  .takeaways :global(li > strong:first-child),
+  .takeaways :global(li > p:first-child > strong:first-child) {
+    display: inline-block;
+    margin-right: 0.5rem;
+    border-radius: 0.375rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--accent-100);
+    color: var(--accent-800);
+  }
+</style>

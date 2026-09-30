@@ -29,3 +29,12 @@ pre[data-title]::after {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* Hook headings: ## <span class="pfx">action</span>Name */
+.prose h2:has(.pfx) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: -0.02em;
+}
+.prose .pfx {
+  color: var(--accent-600);
+}

@@ -1,0 +1,42 @@
+---
+/** Test bench card around a markdown table: | | Test | Résultat |, first cell ✅ or ❌. */
+interface Props { title?: string }
+const { title = "Banc d'essai" } = Astro.props;
+---
+<div class="bench my-8 rounded-2xl border p-5" style="border-color: var(--accent-200); background: var(--accent-50);">
+  <p class="bench-title">{title}</p>
+  <slot />
+</div>
+
+<style>
+  .bench-title {
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent-800);
+  }
+  .bench :global(table) {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .bench :global(thead) {
+    display: none;
+  }
+  .bench :global(td) {
+    padding: 0.5rem;
+    vertical-align: top;
+  }
+  .bench :global(td:first-child) {
+    width: 2rem;
+    text-align: center;
+  }
+  .bench :global(td:last-child) {
+    text-align: right;
+    color: var(--accent-800);
+  }
+  .bench :global(tbody tr) {
+    border-color: var(--accent-200);
+  }
+</style>

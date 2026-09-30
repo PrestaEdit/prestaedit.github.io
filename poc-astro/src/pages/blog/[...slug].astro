@@ -9,10 +9,15 @@ import Tip from '../../components/Tip.astro';
 import Danger from '../../components/Danger.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
 import ArticleHero from '../../components/rich/ArticleHero.astro';
+import Journey from '../../components/rich/Journey.astro';
+import Takeaways from '../../components/rich/Takeaways.astro';
+import Kicker from '../../components/rich/Kicker.astro';
+import Spec from '../../components/rich/Spec.astro';
+import Bench from '../../components/rich/Bench.astro';
 import { accentStyle, chipClass, placeholderFor } from '../../lib/palette';
 import { seriesLabel as seriesLabelFor } from '../../lib/series';
 
-const mdxComponents = { Info, Warning, Note, Tip, Danger };
+const mdxComponents = { Info, Warning, Note, Tip, Danger, Journey, Takeaways, Kicker, Spec, Bench };
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
