@@ -19,6 +19,10 @@ pre[data-title]::before {
   content: attr(data-title);
   left: 0;
   right: 0;
+  padding-right: 6rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: #c9d1d9;
   border-bottom: 1px solid #30363d;
 }

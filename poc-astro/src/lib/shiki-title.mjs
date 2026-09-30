@@ -9,7 +9,8 @@ export function transformerTitle() {
       const title = (this.options.meta?.__raw ?? '').match(/title="([^"]+)"/)?.[1];
       if (!title) return;
       node.properties['data-title'] = title;
-      node.properties['data-lang'] = this.options.lang;
+      // Unknown languages (smarty…) fall back to plaintext: no label rather than a wrong one.
+      if (this.options.lang !== 'plaintext') node.properties['data-lang'] = this.options.lang;
     },
   };
 }
