@@ -1,2 +1,31 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
+/* Code blocks with title="…": file name bar, language on the right */
+pre[data-title] {
+  position: relative;
+  padding-top: 3rem !important;
+}
+pre[data-title]::before,
+pre[data-title]::after {
+  position: absolute;
+  top: 0;
+  padding: 0.6rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+pre[data-title]::before {
+  content: attr(data-title);
+  left: 0;
+  right: 0;
+  color: #c9d1d9;
+  border-bottom: 1px solid #30363d;
+}
+pre[data-title]::after {
+  content: attr(data-lang);
+  right: 0;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

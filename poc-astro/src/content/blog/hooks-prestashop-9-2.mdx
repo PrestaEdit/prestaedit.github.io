@@ -49,9 +49,7 @@ Le fonctionnement tient en quelques lignes. À chaque affichage de la page comma
 
 L'interface demande deux méthodes :
 
-*`src/Adapter/Order/Checkout/CheckoutProcessProviderInterface.php (core)`*
-
-```php
+```php title="src/Adapter/Order/Checkout/CheckoutProcessProviderInterface.php (core)"
 <?php
 declare(strict_types=1);
 
@@ -90,9 +88,7 @@ Les clients professionnels d'un groupe donné sont toujours connectés : l'étap
 
 Côté module, le hook se contente de renvoyer le provider :
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookActionCheckoutBuildProcess(array $params): CheckoutProcessProviderInterface
 {
     return new B2bCheckoutProvider($this->context);
@@ -101,9 +97,7 @@ public function hookActionCheckoutBuildProcess(array $params): CheckoutProcessPr
 
 Le provider porte la logique. `isEnabled()` décide qui a droit au tunnel B2B, et `buildCheckoutProcess()` assemble les étapes natives et la nôtre :
 
-*`src/Checkout/B2bCheckoutProvider.php`*
-
-```php
+```php title="src/Checkout/B2bCheckoutProvider.php"
 <?php
 declare(strict_types=1);
 
@@ -219,9 +213,7 @@ Les étapes natives ont besoin de formulaires (`CustomerAddressForm`, etc.). Or 
 
 L'étape personnalisée étend `AbstractCheckoutStep`. Elle lit la saisie dans `handleRequest()`, se déclare complète, puis passe la main à l'étape suivante. `getDataToPersist()` et `restorePersistedData()` conservent la valeur dans le panier, dans la colonne `checkout_session_data`, que le core gère pour nous.
 
-*`src/Checkout/CheckoutPurchaseOrderStep.php`*
-
-```php
+```php title="src/Checkout/CheckoutPurchaseOrderStep.php"
 <?php
 declare(strict_types=1);
 
@@ -324,9 +316,7 @@ Par défaut, `getIdentifier()` dérive l'identifiant du nom de la classe, **name
 
 Le template étend celui des étapes du thème. L'étape s'intègre alors dans la navigation de Hummingbird, compteur « 3 / 4 » compris, et réutilise ses boutons :
 
-*`views/templates/front/checkout/purchase-order-step.tpl`*
-
-```smarty
+```smarty title="views/templates/front/checkout/purchase-order-step.tpl"
 {extends file='checkout/_partials/steps/checkout-step.tpl'}
 
 {block name='step_content'}
@@ -361,9 +351,7 @@ Le template étend celui des étapes du thème. L'étape s'intègre alors dans l
 
 Il reste à rattacher le numéro à la commande. `actionValidateOrder` le lit dans le panier et l'ajoute à la note interne de la commande, visible dans le back office :
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookActionValidateOrder(array $params): void
 {
     /** @var Cart $cart */
@@ -413,9 +401,7 @@ PrestaShop 9.2 livre le module `ps_onepagecheckout`, qui passe lui aussi par `ac
 
 « Plus que 12,40 € pour la livraison offerte » est l'un des leviers de panier moyen les plus simples. Encore faut-il que le montant affiché soit exactement celui que le core applique. On reprend donc le calcul de `Cart::getPackageShippingCost()` à l'identique : le seuil `PS_SHIPPING_FREE_PRICE` converti dans la devise du panier, le hook `actionOverrideShippingFreePrice` qui permet à d'autres modules de le modifier, et le total `BOTH_WITHOUT_SHIPPING`.
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookDisplayCartBelowSummary(array $params): string
 {
     // The container stays in the page even when empty, so the JS refresh always has a target.
@@ -464,9 +450,7 @@ public function renderFreeShippingProgress(): string
 }
 ```
 
-*`views/templates/hook/cart-free-shipping.tpl`*
-
-```smarty
+```smarty title="views/templates/hook/cart-free-shipping.tpl"
 <div class="pe-free-shipping mt-3" role="status">
   {if $free_shipping.reached}
     <p class="mb-2 fw-bold text-success">
@@ -489,9 +473,7 @@ Quand le client change une quantité, Hummingbird recalcule les totaux en AJAX, 
 
 La solution : écouter l'événement `updatedCart` du thème et recharger le bloc depuis un petit contrôleur du module, qui réutilise exactement le même rendu PHP.
 
-*`views/js/free-shipping.js`*
-
-```javascript
+```javascript title="views/js/free-shipping.js"
 /**
  * The cart page refreshes its totals in AJAX, but not the hook blocks around them:
  * reload our block each time the cart changes.
@@ -515,9 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 ```
 
-*`controllers/front/freeshipping.php`*
-
-```php
+```php title="controllers/front/freeshipping.php"
 <?php
 declare(strict_types=1);
 
@@ -543,9 +523,7 @@ class Pe_Hooks92FreeshippingModuleFrontController extends ModuleFrontController
 }
 ```
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookActionFrontControllerSetMedia(): void
 {
     if ($this->context->controller->php_self !== 'cart') {
@@ -588,9 +566,7 @@ Ce hook arrive tard dans le cycle de la 9.2. La 9.2.0-rc.1 embarque Hummingbird 
 
 En France, la garantie légale de conformité dure deux ans. Afficher sur chaque produit « Sous garantie jusqu'au… » évite une bonne partie des demandes au SAV. Le point de départ est la date de livraison si elle est connue, sinon la date de commande.
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookDisplayOrderDetailProductLine(array $params): string
 {
     $months = (int) Configuration::get(self::CONFIG_WARRANTY_MONTHS);
@@ -631,9 +607,7 @@ private function getOrder(int $idOrder): ?Order
 }
 ```
 
-*`views/templates/hook/order-line-warranty.tpl`*
-
-```smarty
+```smarty title="views/templates/hook/order-line-warranty.tpl"
 <span class="pe-warranty d-block mt-1 small">
   {if $warranty.active}
     <span class="badge bg-success">{l s='Under warranty' d='Modules.Pehooks92.Shop'}</span>
@@ -668,9 +642,7 @@ Deux détails qui comptent. Le hook est appelé **une fois par ligne** : on char
 
 Le thème exécute le hook **avant** de décider s'il affiche la liste. Résultat : même une catégorie sans aucune sous-catégorie affichera le bloc si votre module renvoie quelque chose.
 
-*`themes/hummingbird/templates/catalog/_partials/subcategories.tpl (thème)`*
-
-```smarty
+```smarty title="themes/hummingbird/templates/catalog/_partials/subcategories.tpl (thème)"
 {capture name="displaySubcategoriesContent"}{hook h='displaySubcategories' displaySubcategoryImages=$displaySubcategoryImages}{/capture}
 
 {if !empty($subcategories) || !empty($smarty.capture.displaySubcategoriesContent)}
@@ -686,9 +658,7 @@ Le thème exécute le hook **avant** de décider s'il affiche la liste. Résulta
 
 On liste les marques présentes dans la catégorie avec le balisage exact du thème (`subcategory__link`, `subcategory__thumbnail`…). Elles se fondent dans la liste sans une ligne de CSS, et respectent le réglage d'images du thème grâce au paramètre `displaySubcategoryImages`.
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookDisplaySubcategories(array $params): string
 {
     $controller = $this->context->controller;
@@ -743,9 +713,7 @@ private function getCategoryBrands(int $idCategory): array
 }
 ```
 
-*`views/templates/hook/subcategories-brands.tpl`*
-
-```smarty
+```smarty title="views/templates/hook/subcategories-brands.tpl"
 {* Same markup as the theme subcategories, so brands blend into the list *}
 {foreach from=$brands item=brand}
   <a class="subcategory__link{if $with_images} subcategory__link--with-image{/if}" href="{$brand.url}" title="{$brand.name}">
@@ -782,9 +750,7 @@ Le hook se déclenche aux trois endroits où PrestaShop renvoie une 404, avant l
 
 Chaque URL introuvable est enregistrée avec un compteur. Il suffit ensuite de renseigner `redirect_to` sur une ligne pour que les visites suivantes soient redirigées en 301.
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 private function installDatabase(): bool
 {
     return Db::getInstance()->execute(
@@ -802,9 +768,7 @@ private function installDatabase(): bool
 }
 ```
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookActionNotFound(array $params): void
 {
     $path = mb_substr((string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH), 0, 255);
@@ -868,9 +832,7 @@ Ces hooks sont générés à partir d'un nom de base, comme sur toutes les pages
 
 Sur le papier, c'est simple : `actionOrderReturnForm` reçoit le `form_builder` pour ajouter un champ, et `actionOrderReturnSave` reçoit `form_data` pour l'enregistrer. En pratique, l'enregistrement plante :
 
-*`Back office · Retours produits · Enregistrer`*
-
-```text
+```text title="Back office · Retours produits · Enregistrer"
 The option "pe_return_email" does not exist. Defined options are:
 "enable_order_return", "order_return_period_in_days", "order_return_prefix".
 (500 Internal Server Error)
@@ -880,9 +842,7 @@ La raison est dans le core. Avant d'appeler le hook `…Save`, le gestionnaire p
 
 La solution : déclarer le champ avec `'mapped' => false` pour qu'il reste hors des données envoyées au core, et l'enregistrer soi-même dans un listener `POST_SUBMIT`, après la validation du formulaire.
 
-*`pe_hooks92.php`*
-
-```php
+```php title="pe_hooks92.php"
 public function hookActionOrderReturnForm(array $params): void
 {
     /** @var FormBuilderInterface $builder */

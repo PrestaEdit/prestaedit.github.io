@@ -4,6 +4,7 @@ import react from '@astrojs/react';
 import keystatic from '@keystatic/astro';
 import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
+import { transformerTitle } from './src/lib/shiki-title.mjs';
 
 export default defineConfig({
   site: 'https://blog.prestaedit.com',
@@ -12,6 +13,6 @@ export default defineConfig({
   integrations: [mdx(), react(), keystatic()],
   vite: { plugins: [tailwindcss()] },
   markdown: {
-    shikiConfig: { theme: 'github-dark', wrap: true },
+    shikiConfig: { theme: 'github-dark', wrap: true, transformers: [transformerTitle()] },
   },
 });
